@@ -1,0 +1,46 @@
+---
+depends_on: [ui/style]
+conflicts_with: []
+exposes: [sidebar/panel, sidebar/panel/header, sidebar/panel/title, sidebar/panel/scroll, sidebar/panel/loading]
+---
+
+# sidebar/panel
+
+The base of every sidebar panel: a column with a header holding the title, and a scroll area below it for the panel's content. Until the panel has a title, the scroll area says "Loading...". Colors come from `ui/style`.
+
+## Components
+
+- `sidebar/panel = { title, width, scroll_speed }` on the panel entity, a UI node. Missing `width` (280) and `scroll_speed` (20 pixels per wheel step) get defaults when it is added. `title`:
+  - missing: still loading; the header is hidden and the scroll area shows "Loading...";
+  - `""`: no header;
+  - text: the header shows it.
+- `sidebar/panel/scroll = { offset, speed }`: marks the scroll area, a child of the panel. Put your content here. `offset` is how far it is scrolled.
+- `sidebar/panel/header`, `sidebar/panel/title`, `sidebar/panel/loading`: mark the other parts. All parts are added and removed by this mod.
+
+## Systems
+
+| Schedule | Label | Purpose |
+|----------|-------|---------|
+| First | SidebarPanelInit | On an added `sidebar/panel`, fill in missing config |
+| First, after `SidebarPanelInit` | SidebarPanelBuild | Style the panel and spawn its header, title, scroll area and loading text |
+| First, after `SidebarPanelBuild` | SidebarPanelTitle | When the config changes, from the frame the panel is built: width, header shown for a non-empty title, title text, loading text gone once there is a title |
+| First | SidebarPanelRemoved | When `sidebar/panel` is removed from an entity that stays, remove its `Node` and style (its marked parts go by `mod_registry`, even when this mod stops with its last carrier) |
+
+## Use
+
+```lua
+local panel = spawn({ ["sidebar/panel"] = { width = 320 } }):with_parent(container)
+
+-- later, when the content is ready: fill the scroll area, then set the title
+for _, scroll in ipairs(world:query({ entities = { panel_id }, with = { "sidebar/panel/scroll" } })) do
+    spawn({ Text = { text = "hello" }, ["ui/style"] = { text = "text" } }):with_parent(scroll:id())
+end
+panel:patch({ ["sidebar/panel"] = { title = "Files" } })
+```
+
+## Notes
+
+- The wheel scrolls in a `Pointer<Scroll>` observer on the scroll area, keeping the offset between the top and the end of the content. A suite scrolls with `scroll:invoke_observer("Pointer<Scroll>", { event = { y = <steps> } })`.
+- When content shrinks, Bevy clamps what is drawn; the next wheel step clamps `offset` too.
+- Find the parts by their markers under the panel (`entities = { panel }`), never by a stored id.
+- Layout needs a window: a suite for a panel runs windowed.
