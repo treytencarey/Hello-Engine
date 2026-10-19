@@ -1,0 +1,55 @@
+---
+depends_on: []
+conflicts_with: []
+exposes: [input, input/held, input/actions]
+---
+
+# input
+
+Keys, mouse buttons, motion and scroll, turned into one component per bound action. An action component exists only while the action is active, so a mod reads input with ordinary query edges instead of flags.
+
+## Components
+
+- `input = { mode, show_cursor, sensitivity }` on each local player:
+  - `mode` names the component holding the bindings that apply, such as `"input/game"` or `"input/ui"`. With no mode set, nothing is active.
+  - `show_cursor` shows the cursor when true and confines it when false.
+  - `sensitivity` scales motion and scroll.
+- `input/game`, `input/ui` (or any other mode component): bindings, `{ <group> = { <action> = <binding> } }`, where a binding is `{ key = <KeyCode> }`, `{ button = <MouseButton> }`, `{ motion = true }` or `{ scroll = true }`. Each mod writes its own group.
+- `<mode>/<group>/<action>`: present while the action is active. `{ value = <1, or the analog strength> }` for keys and buttons; `{ dx, dy }` for motion and scroll, present only on frames with movement. Added, updated and removed by `input`.
+- `input/held`, `input/actions`: `input`'s own state (held keys and buttons; which action components it added).
+
+## Systems
+
+| Schedule | Label | Purpose |
+|----------|-------|---------|
+| First | InputHeld | Fold key, button and analog events into `input/held` |
+| PreUpdate | Input | Turn the active mode's bindings into action components; write only what changed |
+| PreUpdate | InputCursor | On a changed `input`, apply `show_cursor` |
+
+## Use
+
+```lua
+-- bind, in your mod's client half
+player:patch({ ["input/game"] = { movement = { forward = { key = "KeyW" }, jump = { key = "Space" } } } })
+
+-- read, in Update
+world:query({ with = { "input/game/movement/forward" } })    -- held
+world:query({ added = { "input/game/movement/jump" } })      -- pressed
+world:query({ removed = { "input/game/movement/jump" } })    -- released
+world:query({ changed = { "input/game/look/zoom" } })        -- a scroll this frame
+
+-- switch a player, for example when a menu opens
+player:patch({ input = { mode = "input/ui", show_cursor = true } })
+
+-- unbind
+player:patch({ ["input/game"] = { movement = null } })
+```
+
+## Notes
+
+- Actions are delivered in `PreUpdate`, so a mod reading them in `Update` needs no ordering edge.
+- Removing `input` removes its actions, held state and every mod's bindings (`input/game`, `input/ui`): they are `input's` sub-components, and `mod_registry` removes a mod's parts with it. A mod that binds also binds on `added = { "input" }`, so its bindings come back with `input`.
+- Bindings are data components and are not synced: bind in your client half. To use an action on the server, declare sync for that action component.
+- Switching mode removes the old mode's actions, and a key held through the switch does nothing in the new mode until it is released (`input/held.through`): the Escape that opens a menu does not also close it.
+- Every key event reaches every local player. There is no per-player device routing yet (split-screen).
+- An action component removed by anything else is written again while it is still active: `input` owns it.
