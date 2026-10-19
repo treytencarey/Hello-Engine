@@ -1,0 +1,15 @@
+# Credentials and tokens written at run time (OAuth providers, core/config saves).
+**/assets/config/
+
+# Download caches and checkouts the engine keeps beside a world.
+.hello/
+
+# Generated test data.
+test_fixtures/
+
+# Per-machine Claude Code settings.
+.claude/settings.local.json
+
+# Run logs.
+out*.txt
+logs/
