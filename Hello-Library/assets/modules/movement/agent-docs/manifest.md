@@ -21,13 +21,14 @@ Walking and jumping. The owning client moves its own player from input, relative
   | `smoothing` | how fast another client's copy follows its synced Transform, per second | 10 |
 
 - `movement/grounded`: on the owner's client while it stands on something.
+- `Velocity3d`: added with `movement` when the entity has none (the server does not send one), and left in place when `movement` goes.
 - On the owner's client it binds `input/game.movement` (`forward` W, `backward` S, `left` A, `right` D, `jump` Space) and writes `Velocity3d` and the Transform's rotation. On other clients it seeds the `core/net/sync/Transform` shadow incoming Transforms land in. If `movement` is removed from an entity that stays, the keys are unbound and `movement/grounded` removed.
 
 ## Systems
 
 | Schedule | Label | Purpose |
 |----------|-------|---------|
-| First (both) | MovementInit | On an added `movement`, fill in missing fields |
+| First (both) | MovementInit | On an added `movement`, fill in missing fields, and add a `Velocity3d` if there is none |
 | First (client) | MovementBind | When the player is this client's (`core/net/local` arrives frames after the player), bind its keys; again when `input` is added back |
 | First (client) | MovementShadow | For another client's player, seed the shadow its Transform arrives in |
 | Update (client) | MovementWalk | While a key is held (`any_of`), it polls: horizontal velocity from the held keys, turned by `camera.yaw`, and a turn to face that way. Letting go of a key (its `removed` edge) stands it still, and keys still held walk on. Vertical velocity is left to gravity and jumps |

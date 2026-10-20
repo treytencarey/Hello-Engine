@@ -45,8 +45,9 @@ register_system("Update", function(world)
             RigidBody3d = "Fixed",
             Collider3d = { cuboid = { hx = 50, hy = 0.1, hz = 50 } },
         })
-        -- the local player, as `player` leaves it: a dynamic capsule standing on the floor;
-        -- its camera turned a quarter to the left, so forward is -x
+        -- the local player, as `player` leaves it: a dynamic capsule standing on the floor,
+        -- with no velocity (the server sends none); its camera turned a quarter to the left,
+        -- so forward is -x
         spawn({
             ["zz/name"] = { name = "me" },
             movement = {},
@@ -57,7 +58,6 @@ register_system("Update", function(world)
             RigidBody3d = "Dynamic",
             Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
             LockedAxes3d = "ROTATION_LOCKED",
-            Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
         })
         -- another client's player
         spawn({
@@ -84,6 +84,8 @@ register_system("Update", function(world)
         suite.assert_test("V2_the_owner_binds_its_movement_keys",
             keys ~= nil and keys.forward.key == "KeyW" and keys.jump.key == "Space", "")
         suite.assert_test("V3_standing_on_the_floor_is_grounded", me:has("movement/grounded"), "")
+        suite.assert_test("V3b_a_player_without_a_velocity_gets_one",
+            me:has("Velocity3d") and named(world, "other"):has("Velocity3d"), "")
         start = placed(world, me).translation
         key("KeyW", "Pressed")
         named(world, "other"):patch({ ["core/net/sync/Transform"] = { translation = { x = 5, y = 1, z = 4 } } })

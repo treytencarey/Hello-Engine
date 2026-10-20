@@ -13,9 +13,12 @@
 -- }
 --
 -- movement/grounded: on the owner's client while it stands on something.
+--
+-- It moves its body through `Velocity3d`, which the server does not send: one is added
+-- when it is missing, and stays when `movement` goes.
 
 register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "movement" } })) do
+    for _, e in ipairs(world:query({ added = { "movement" }, optional = { "Velocity3d" } })) do
         local m = e:get("movement")
         e:patch({
             movement = {
@@ -26,6 +29,9 @@ register_system("First", function(world)
                 smoothing = m.smoothing or 10,
             },
         })
+        if not e:has("Velocity3d") then
+            e:patch({ Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } } })
+        end
     end
 end, { label = "MovementInit" })
 
