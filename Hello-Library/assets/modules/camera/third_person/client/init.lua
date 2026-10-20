@@ -12,6 +12,9 @@
 --     max_distance = <metres>,
 -- }
 
+local Quat = require("bevy::math::Quat")
+local Vec3 = require("bevy::math::Vec3")
+
 register_system("First", function(world)
     for _, e in ipairs(world:query({ added = { "camera/third_person" } })) do
         local tp = e:get("camera/third_person")
@@ -112,15 +115,12 @@ register_system("Update", function(world)
         -- `camera` arrives as `{}` and gets its defaults when its own mod loads, which can
         -- be a frame later. Filling them is a change to `camera`, which runs this again.
         if cam.distance ~= nil then
-            local back = world:call_static_method("Quat", "mul_vec3",
-                world:call_static_method("Quat", "from_rotation_x", cam.pitch),
+            local back = Quat.mul_vec3(Quat.from_rotation_x(cam.pitch),
                 { x = 0, y = 0, z = cam.distance })
             e:patch({
                 ["camera/3d"] = {
-                    offset = world:call_static_method("Quat", "mul_vec3",
-                        world:call_static_method("Quat", "from_rotation_y", cam.yaw),
-                        world:call_static_method("Vec3", "add",
-                            world:call_static_method("Vec3", "add", back, cam.offset),
+                    offset = Quat.mul_vec3(Quat.from_rotation_y(cam.yaw),
+                        Vec3.add(Vec3.add(back, cam.offset),
                             { x = 0, y = cam.height, z = 0 })),
                 },
             })

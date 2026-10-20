@@ -9,6 +9,8 @@
 --     offset = { x = <metres>, y = <metres>, z = <metres> },
 -- }
 
+local Quat = require("bevy::math::Quat")
+
 register_system("PostUpdate", function(world)
     for _, e in ipairs(world:query({
         with = { "transform/follow", "ChildOf", "Transform" },
@@ -24,11 +26,11 @@ register_system("PostUpdate", function(world)
         })) do
             if parent:id() ~= parent_id then goto next_row end
             local parent_transform = parent:get("Transform")
-            local undo = world:call_static_method("Quat", "inverse", parent_transform.rotation)
+            local undo = Quat.inverse(parent_transform.rotation)
             e:patch({
                 Transform = {
-                    rotation = world:call_static_method("Quat", "mul_quat", undo, rotation),
-                    translation = world:call_static_method("Quat", "mul_vec3", undo, offset),
+                    rotation = Quat.mul_quat(undo, rotation),
+                    translation = Quat.mul_vec3(undo, offset),
                 },
             })
             ::next_row::

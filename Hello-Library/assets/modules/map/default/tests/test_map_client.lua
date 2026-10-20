@@ -1,4 +1,6 @@
 -- --host (windowed: a headless run has no StandardMaterial assets)
+local Quat = require("bevy::math::Quat")
+
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("MapClientSuite")
@@ -66,8 +68,7 @@ register_system("Update", function(world)
                 and near(mesh.primitive.Cuboid.half_size.x, 5) and near(mesh.primitive.Cuboid.half_size.z, 3)
                 and near(material.base_color.b, 0.9), "")
         local sun = suns(world, map)[1]
-        local down = sun and world:call_static_method("Quat", "mul_vec3",
-            world:call_component_method(sun:id(), "GlobalTransform", "compute_transform").rotation,
+        local down = sun and Quat.mul_vec3(world:call_component_method(sun:id(), "GlobalTransform", "compute_transform").rotation,
             { x = 0, y = 0, z = -1 })
         suite.assert_test("C2_the_sun_shines_down_at_its_strength",
             sun ~= nil and sun:get("DirectionalLight").illuminance == 5000 and down.y < -0.3,

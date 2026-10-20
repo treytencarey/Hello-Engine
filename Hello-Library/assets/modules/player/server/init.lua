@@ -11,6 +11,9 @@
 --     smoothing = <how fast the server's Transform follows the owner's, per second>,
 -- }
 
+local Quat = require("bevy::math::Quat")
+local Vec3 = require("bevy::math::Vec3")
+
 register_system("First", function(world)
     for _, e in ipairs(world:query({ added = { "player" }, without = { "WorldMirror" } })) do
         local p = e:get("player")
@@ -53,8 +56,8 @@ register_system("Update", function(world)
             local t = math.min(1, smoothing * dt)
             e:patch({
                 Transform = {
-                    translation = world:call_static_method("Vec3", "lerp", current.translation, target.translation, t),
-                    rotation = world:call_static_method("Quat", "slerp", current.rotation, target.rotation, t),
+                    translation = Vec3.lerp(current.translation, target.translation, t),
+                    rotation = Quat.slerp(current.rotation, target.rotation, t),
                 },
             })
         end

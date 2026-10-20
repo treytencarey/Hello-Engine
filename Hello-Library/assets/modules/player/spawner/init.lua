@@ -13,6 +13,9 @@
 --     height = <metres above the origin>,
 -- }
 
+local Quat = require("bevy::math::Quat")
+local Vec3 = require("bevy::math::Vec3")
+
 register_system("First", function(world)
     for _, e in ipairs(world:query({ added = { "player/spawner" } })) do
         local s = e:get("player/spawner")
@@ -48,8 +51,7 @@ register_system("First", function(world)
                 end
                 local at = { x = 0, y = s.height, z = 0 }
                 if index > 0 then
-                    at = world:call_static_method("Vec3", "add", at, world:call_static_method("Quat", "mul_vec3",
-                        world:call_static_method("Quat", "from_rotation_y", index / s.count * 2 * math.pi),
+                    at = Vec3.add(at, Quat.mul_vec3(Quat.from_rotation_y(index / s.count * 2 * math.pi),
                         { x = s.radius, y = 0, z = 0 }))
                 end
                 spawn({

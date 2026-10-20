@@ -16,13 +16,14 @@
 --     color = { r = <0..1>, g = <0..1>, b = <0..1> },
 -- }
 
+local Quat = require("bevy::math::Quat")
+
 register_system("First", function(world)
     for _, e in ipairs(world:query({ added = { "abilities/projectile" } })) do
         local a = e:get("abilities/projectile")
-        local look = world:call_static_method("Quat", "mul_quat",
-            world:call_static_method("Quat", "from_rotation_y", a.yaw or 0),
-            world:call_static_method("Quat", "from_rotation_x", a.pitch or 0))
-        local along = world:call_static_method("Quat", "mul_vec3", look, { x = 0, y = 0, z = -1 })
+        local look = Quat.mul_quat(Quat.from_rotation_y(a.yaw or 0),
+            Quat.from_rotation_x(a.pitch or 0))
+        local along = Quat.mul_vec3(look, { x = 0, y = 0, z = -1 })
         local at = a.at or { x = 0, y = 0, z = 0 }
         local speed = a.speed or 20
         e:patch({

@@ -1,4 +1,6 @@
 -- --host
+local Quat = require("bevy::math::Quat")
+
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("FirstPersonSuite")
@@ -46,9 +48,8 @@ register_system("Last", function(world)
         local me = carrier(world, "me")
         local cam = me:get("camera")
         local t = world:call_component_method(eye_of(world, me):id(), "GlobalTransform", "compute_transform")
-        local want = world:call_static_method("Quat", "mul_quat",
-            world:call_static_method("Quat", "from_rotation_y", cam.yaw),
-            world:call_static_method("Quat", "from_rotation_x", cam.pitch))
+        local want = Quat.mul_quat(Quat.from_rotation_y(cam.yaw),
+            Quat.from_rotation_x(cam.pitch))
         exact = {
             ok = near(cam.yaw, yaw_before - 1.3) and near(t.rotation.y, want.y) and near(t.rotation.w, want.w),
             got = string.format("yaw=%s eye y=%.3f want %.3f", tostring(cam.yaw), t.rotation.y, want.y),
@@ -97,7 +98,7 @@ register_system("Update", function(world)
 
     elseif phase == "body turned" and clock > 0.3 then
         local t = world:call_component_method(first_eye, "GlobalTransform", "compute_transform")
-        local want = world:call_static_method("Quat", "from_rotation_x", me:get("camera").pitch)
+        local want = Quat.from_rotation_x(me:get("camera").pitch)
         suite.assert_test("F4_turning_the_body_does_not_turn_the_eye",
             near(t.rotation.x, want.x) and near(t.rotation.y, 0) and near(t.rotation.w, want.w)
                 and near(t.translation.x, 2) and near(t.translation.z, 3),
@@ -108,9 +109,9 @@ register_system("Update", function(world)
     elseif phase == "looked" and clock > 0.3 then
         local cam = me:get("camera")
         local t = world:call_component_method(first_eye, "GlobalTransform", "compute_transform")
-        local want_y = world:call_static_method("Quat", "from_rotation_y", -0.25)
-        local want = world:call_static_method("Quat", "mul_quat", want_y,
-            world:call_static_method("Quat", "from_rotation_x", -1.4))
+        local want_y = Quat.from_rotation_y(-0.25)
+        local want = Quat.mul_quat(want_y,
+            Quat.from_rotation_x(-1.4))
         suite.assert_test("F5_mouse_motion_turns_the_eye_and_clamps_pitch",
             near(cam.yaw, -0.25) and near(cam.pitch, -1.4)
                 and near(t.rotation.x, want.x) and near(t.rotation.y, want.y) and near(t.rotation.w, want.w),

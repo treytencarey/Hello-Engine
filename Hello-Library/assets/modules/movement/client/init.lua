@@ -3,6 +3,9 @@
 -- component exists. The net client marks its own player `core/net/local` frames after the
 -- player arrives, so both edges count.
 
+local Quat = require("bevy::math::Quat")
+local Vec3 = require("bevy::math::Vec3")
+
 register_system("First", function(world)
     for _, e in ipairs(world:query({
         ["or"] = {
@@ -77,9 +80,8 @@ register_system("Update", function(world)
         local z = (backward and backward.value or 0) - (forward and forward.value or 0)
         -- `movement` is filled when it is added; skip until then
         if m.speed ~= nil then
-            local along = world:call_static_method("Quat", "mul_vec3",
-                world:call_static_method("Quat", "from_rotation_y", camera.yaw or 0),
-                world:call_static_method("Vec3", "normalize_or_zero", { x = x, y = 0, z = z }))
+            local along = Quat.mul_vec3(Quat.from_rotation_y(camera.yaw or 0),
+                Vec3.normalize_or_zero({ x = x, y = 0, z = z }))
             -- analog input moves slower; two keys at once no faster than one
             local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
             e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
@@ -87,8 +89,8 @@ register_system("Update", function(world)
             if x ~= 0 or z ~= 0 then
                 e:patch({
                     Transform = {
-                        rotation = world:call_static_method("Quat", "slerp", rotation,
-                            world:call_static_method("Quat", "from_rotation_arc", { x = 0, y = 0, z = 1 }, along),
+                        rotation = Quat.slerp(rotation,
+                            Quat.from_rotation_arc({ x = 0, y = 0, z = 1 }, along),
                             math.min(1, m.turn * dt)),
                     },
                 })
@@ -145,8 +147,8 @@ register_system("Update", function(world)
             local t = math.min(1, m.smoothing * dt)
             e:patch({
                 Transform = {
-                    translation = world:call_static_method("Vec3", "lerp", current.translation, target.translation, t),
-                    rotation = world:call_static_method("Quat", "slerp", current.rotation, target.rotation, t),
+                    translation = Vec3.lerp(current.translation, target.translation, t),
+                    rotation = Quat.slerp(current.rotation, target.rotation, t),
                 },
             })
         end

@@ -1,4 +1,6 @@
 -- --host
+local Quat = require("bevy::math::Quat")
+
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("Camera3dSuite")
@@ -30,9 +32,8 @@ local function near(a, b) return math.abs(a - b) < 1e-3 end
 -- The eye's world transform, against yaw, pitch and the carrier's position plus offset.
 local function placed(world, eye_id, at, yaw, pitch)
     local t = world:call_component_method(eye_id, "GlobalTransform", "compute_transform")
-    local want = world:call_static_method("Quat", "mul_quat",
-        world:call_static_method("Quat", "from_rotation_y", yaw),
-        world:call_static_method("Quat", "from_rotation_x", pitch))
+    local want = Quat.mul_quat(Quat.from_rotation_y(yaw),
+        Quat.from_rotation_x(pitch))
     local ok = near(t.translation.x, at.x) and near(t.translation.y, at.y) and near(t.translation.z, at.z)
         and near(t.rotation.x, want.x) and near(t.rotation.y, want.y)
         and near(t.rotation.z, want.z) and near(t.rotation.w, want.w)

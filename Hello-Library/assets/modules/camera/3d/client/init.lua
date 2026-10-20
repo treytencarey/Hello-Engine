@@ -14,11 +14,13 @@
 -- `camera` arrives as `{}` and its own mod may load a frame later, so a new eye can be
 -- spawned before `camera` has its defaults. It starts level; filling them is a change to
 -- `camera`, and Camera3dAim turns the eye then.
+local Quat = require("bevy::math::Quat")
+
 local function follow(world, cam, c3d)
-    local yaw = world:call_static_method("Quat", "from_rotation_y", cam.yaw or 0)
-    local pitch = world:call_static_method("Quat", "from_rotation_x", cam.pitch or 0)
+    local yaw = Quat.from_rotation_y(cam.yaw or 0)
+    local pitch = Quat.from_rotation_x(cam.pitch or 0)
     return {
-        rotation = world:call_static_method("Quat", "mul_quat", yaw, pitch),
+        rotation = Quat.mul_quat(yaw, pitch),
         offset = c3d.offset,
     }
 end

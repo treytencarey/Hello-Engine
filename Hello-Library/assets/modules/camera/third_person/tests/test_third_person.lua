@@ -1,4 +1,6 @@
 -- --host
+local Quat = require("bevy::math::Quat")
+
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ThirdPersonSuite")
@@ -40,9 +42,8 @@ end
 local function placed(world, eye_id, at, cam)
     local t = world:call_component_method(eye_id, "GlobalTransform", "compute_transform")
     local want = orbit(at, cam)
-    local turn = world:call_static_method("Quat", "mul_quat",
-        world:call_static_method("Quat", "from_rotation_y", cam.yaw),
-        world:call_static_method("Quat", "from_rotation_x", cam.pitch))
+    local turn = Quat.mul_quat(Quat.from_rotation_y(cam.yaw),
+        Quat.from_rotation_x(cam.pitch))
     local ok = near(t.translation.x, want.x) and near(t.translation.y, want.y) and near(t.translation.z, want.z)
         and near(t.rotation.x, turn.x) and near(t.rotation.y, turn.y)
         and near(t.rotation.z, turn.z) and near(t.rotation.w, turn.w)

@@ -1,6 +1,8 @@
 -- The client half: the ground's box and color, and the sun, a child light shining down at
 -- an angle. A change redraws the box and relights the same sun.
 
+local Quat = require("bevy::math::Quat")
+
 register_system("First", function(world)
     for _, e in ipairs(world:query({ changed = { "map/default" } })) do
         -- after MapGround, which has filled any missing field by now
@@ -22,9 +24,8 @@ register_system("First", function(world)
                 ["map/default/sun"] = {},
                 DirectionalLight = { illuminance = m.sun, shadows_enabled = true },
                 Transform = {
-                    rotation = world:call_static_method("Quat", "mul_quat",
-                        world:call_static_method("Quat", "from_rotation_y", 0.8),
-                        world:call_static_method("Quat", "from_rotation_x", -0.8)),
+                    rotation = Quat.mul_quat(Quat.from_rotation_y(0.8),
+                        Quat.from_rotation_x(-0.8)),
                 },
             }):with_parent(e:id())
         end

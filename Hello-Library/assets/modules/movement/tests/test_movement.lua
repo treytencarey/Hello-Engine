@@ -1,4 +1,6 @@
 -- --host (windowed: keys reach `input` through a window)
+local Quat = require("bevy::math::Quat")
+
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("MovementSuite")
@@ -95,7 +97,7 @@ register_system("Update", function(world)
         local me = named(world, "me")
         local now = placed(world, me)
         local v = me:get("Velocity3d").linvel
-        local facing = world:call_static_method("Quat", "mul_vec3", now.rotation, { x = 0, y = 0, z = 1 })
+        local facing = Quat.mul_vec3(now.rotation, { x = 0, y = 0, z = 1 })
         suite.assert_test("V4_forward_walks_where_the_camera_looks_at_speed",
             math.abs(v.x + 6) < 0.1 and math.abs(v.z) < 0.1 and now.translation.x < start.x - 2
                 and math.abs(now.translation.z - start.z) < 0.2,
@@ -116,7 +118,7 @@ register_system("Update", function(world)
         step("pushed")
 
     elseif phase == "pushed" and clock > 0.3 then
-        local facing = world:call_static_method("Quat", "mul_vec3", placed(world, named(world, "me")).rotation,
+        local facing = Quat.mul_vec3(placed(world, named(world, "me")).rotation,
             { x = 0, y = 0, z = 1 })
         suite.assert_test("V5b_a_push_without_keys_does_not_turn_it", facing.x < -0.9, string.format("facing.x=%.2f", facing.x))
         key("KeyW", "Pressed")
@@ -140,7 +142,7 @@ register_system("Update", function(world)
     elseif phase == "opposite" and clock > 0.4 then
         local me = named(world, "me")
         local v = me:get("Velocity3d").linvel
-        local facing = world:call_static_method("Quat", "mul_vec3", placed(world, me).rotation, { x = 0, y = 0, z = 1 })
+        local facing = Quat.mul_vec3(placed(world, me).rotation, { x = 0, y = 0, z = 1 })
         suite.assert_test("V7c_opposite_keys_stand_still_facing_as_before",
             math.abs(v.x) < 0.05 and math.abs(v.z) < 0.05 and facing.z == facing.z and math.abs(facing.z + 1) < 0.1,
             string.format("v=%.2f,%.2f facing.z=%s", v.x, v.z, tostring(facing.z)))
