@@ -22,7 +22,7 @@ local function players(world, client_id)
     local out = {}
     for _, p in ipairs(world:query({
         with = { "player", "core/net/owner" },
-        optional = { "abilities/fireball", "abilities/grenade", "Transform", "core/player/attest", "camera/third_person", "movement", "core/net/sync/Transform", "RigidBody3d" },
+        optional = { "abilities/fireball", "abilities/grenade", "Transform", "core/player/attest", "camera/third_person", "movement", "animation", "core/net/sync/Transform", "RigidBody3d" },
     })) do
         if p:get("core/net/owner").client_id == client_id then
             out[#out + 1] = p
@@ -66,7 +66,7 @@ register_system("Update", function(world)
             #eight == 1 and eight[1]:get("player").spawn_index == 2, "")
         suite.assert_test("S4_a_client_only_watching_gets_no_player", #players(world, 9) == 0, "")
         suite.assert_test("S5_every_player_gets_identity_a_camera_movement_and_its_abilities",
-            p:has("core/player/attest") and p:has("camera/third_person") and p:has("movement") and p:has("abilities/fireball")
+            p:has("core/player/attest") and p:has("camera/third_person") and p:has("movement") and p:has("animation") and p:has("abilities/fireball")
                 and p:has("abilities/grenade")
                 and p:get("player").user_id == "" and p:get("player").smoothing == 15, "")
         -- a changed connection (the net server patches them) must not spawn a second player
@@ -103,11 +103,12 @@ register_system("Update", function(world)
         step("removed")
 
     elseif phase == "removed" and clock > 0.3 then
-        local eight = world:query({ with = { "core/net/owner" }, optional = { "core/player/attest", "camera/third_person", "movement", "abilities/fireball", "abilities/grenade" } })
+        local eight = world:query({ with = { "core/net/owner" }, optional = { "core/player/attest", "camera/third_person", "movement", "animation", "abilities/fireball", "abilities/grenade" } })
         local gone = true
         for _, e in ipairs(eight) do
             if e:get("core/net/owner").client_id == 8 then
                 gone = not e:has("core/player/attest") and not e:has("camera/third_person") and not e:has("movement")
+                    and not e:has("animation")
                     and not e:has("abilities/fireball") and not e:has("abilities/grenade")
             end
         end

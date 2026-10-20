@@ -19,6 +19,7 @@ register_system("First", function(world)
             ["core/player/attest"] = {},
             ["camera/third_person"] = {},
             movement = {},
+            animation = {},
             ["abilities/fireball"] = {},
             ["abilities/grenade"] = {},
         })
@@ -67,6 +68,7 @@ register_system("First", function(world)
             ["core/player/attest"] = null,
             ["camera/third_person"] = null,
             movement = null,
+            animation = null,
             ["abilities/fireball"] = null,
             ["abilities/grenade"] = null,
         })
