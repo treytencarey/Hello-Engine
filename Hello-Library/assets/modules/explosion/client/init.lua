@@ -3,19 +3,22 @@
 
 local app = ...
 local Assets = require("bevy::asset::Assets")
+local Mesh = require("bevy::mesh::Mesh")
 local StandardMaterial = require("bevy::pbr::StandardMaterial")
+local Sphere = require("bevy::math::primitives::Sphere")
 
--- A sphere `Mesh` has no Bevy-shaped constructor Lua can reach yet (`Assets<Mesh>` builds none
--- from a primitive), so the mesh still comes from `create_asset`.
+-- The mesh is Bevy's sphere of radius 1 (`Assets<Mesh>` takes a `Sphere`), scaled to the
+-- explosion's size.
 app:add_systems(First, {
     Query[{ added = { "explosion" } }],
+    ResMut[Assets[Mesh]],
     ResMut[Assets[StandardMaterial]],
     Commands,
-}, function(added, materials, commands)
+}, function(added, meshes, materials, commands)
     for _, e in ipairs(added:iter()) do
         local c = e:get("explosion").color
         commands:entity(e:id()):patch({
-            Mesh3d = create_asset("bevy_mesh::mesh::Mesh", { primitive = { Sphere = { radius = 1 } } }),
+            Mesh3d = meshes:add(Sphere.new(1)),
             ["MeshMaterial3d<StandardMaterial>"] = materials:add({
                 base_color = { Srgba = { red = c.r, green = c.g, blue = c.b, alpha = 1 } },
                 emissive = { red = c.r * 4, green = c.g * 4, blue = c.b * 4, alpha = 1 },

@@ -3,23 +3,19 @@ local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileClientSuite")
 local Time = require("bevy::time::Time")
+local Assets = require("bevy::asset::Assets")
+local StandardMaterial = require("bevy::pbr::StandardMaterial")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
 end)
 
--- Asset contents cannot be read back, so record each request; the real call is still made.
-local made = {}
-local real_create_asset = create_asset
-create_asset = function(type_path, fields)
-    made[#made + 1] = { type_path = type_path, fields = fields }
-    return real_create_asset(type_path, fields)
-end
-
+-- What was drawn is read back from Bevy: the mesh's bounds (`Aabb`, which Bevy computes from
+-- the mesh) and the material behind the ball's handle.
 local function shot(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/shot" },
-        optional = { "projectile", "Mesh3d", "MeshMaterial3d<StandardMaterial>", "RigidBody3d", "projectile/flying", "cooldown/left" },
+        optional = { "projectile", "Mesh3d", "MeshMaterial3d<StandardMaterial>", "Aabb", "RigidBody3d", "projectile/flying", "cooldown/left" },
     })) do
         if e:get("zz/shot").name == name then
             return e
@@ -27,12 +23,24 @@ local function shot(world, name)
     end
 end
 
-local function near(a, b) return math.abs(a - b) < 1e-3 end
+local function near(a, b) return a ~= nil and math.abs(a - b) < 1e-3 end
+-- an icosphere's vertices reach its radius at the poles, and within 1% of it around them
+local function near_radius(a, r) return a ~= nil and math.abs(a - r) <= 0.01 * r end
 
-local phase, clock, mark = "spawn", 0, 0
+--- What a shot was drawn with: its mesh's half extents and its material's colors (a `Color`
+--- reads as its variant: `{ Srgba = { <Srgba> } }`).
+local function drawn(materials, e)
+    local bounds = (e:get("Aabb") or {}).half_extents
+    local handle = e:get("MeshMaterial3d<StandardMaterial>")
+    local material = handle and materials:get(handle)
+    local base = material and ((material.base_color or {}).Srgba or {})[1]
+    return bounds, base, material and material.emissive or {}
+end
+
+local phase, clock = "spawn", 0
 
 -- The suite's clock is the mods': Bevy's `Time`.
-app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+app:add_systems(Update, { World, Res[Time], Res[Assets[StandardMaterial]], Commands }, function(world, time, materials, commands)
     clock = clock + time:delta_secs()
     local function step(next_phase) phase, clock = next_phase, 0 end
     local current = shot(world, "ball")
@@ -57,16 +65,15 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     -- stretch: wait for it to run, within the 0.6 s lifetime.
     elseif phase == "drawn" and clock > 0.3 and ((running or 1) < 0.6 or clock > 1.0) then
         local ball = shot(world, "ball")
-        local mesh, material
-        for _, m in ipairs(made) do
-            if m.type_path == "bevy_mesh::mesh::Mesh" then mesh = m.fields end
-            if m.type_path == "bevy_pbr::pbr_material::StandardMaterial" then material = m.fields end
-        end
+        local bounds, base, emissive = drawn(materials, ball)
         suite.assert_test("C1_it_is_drawn_as_a_sphere_of_its_radius",
-            ball:get("Mesh3d") ~= nil and mesh ~= nil and near(mesh.primitive.Sphere.radius, 0.7), "")
+            ball:get("Mesh3d") ~= nil and bounds ~= nil
+                and near_radius(bounds.x, 0.7) and near_radius(bounds.y, 0.7) and near_radius(bounds.z, 0.7),
+            bounds and string.format("half extents %.3f %.3f %.3f", bounds.x, bounds.y, bounds.z) or "no bounds")
         suite.assert_test("C2_it_glows_in_its_color",
-            ball:get("MeshMaterial3d<StandardMaterial>") ~= nil and material ~= nil
-                and near(material.base_color.g, 0.8) and near(material.emissive.g, 0.8), "")
+            ball:get("MeshMaterial3d<StandardMaterial>") ~= nil and base ~= nil and near(base.green, 0.8)
+                and near(emissive.green, 0.8),
+            string.format("base %s emissive %s", tostring(base and base.green), tostring(emissive.green)))
         local pos = world:get_entity(ball:id()).GlobalTransform:compute_transform().translation
         local left = ball:get("cooldown/left")
         suite.assert_test("C3_the_client_flies_it_and_runs_its_lifetime_from_its_launch_state",
@@ -90,7 +97,6 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
             ball ~= nil and not ball:has("Mesh3d") and not ball:has("MeshMaterial3d<StandardMaterial>")
                 and not ball:has("RigidBody3d") and not ball:has("projectile/flying"), "")
         -- One that comes without a radius or a color is drawn with the defaults.
-        mark = #made
         commands:spawn({
             ["zz/shot"] = { name = "bare" },
             ["core/net/sync"] = false,
@@ -101,16 +107,15 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     -- Its draw lands after the system that makes it: wait for it (at most 2 s).
     elseif phase == "bare" then
         local bare = shot(world, "bare")
-        if not (bare and bare:has("Mesh3d")) and clock < 2 then return end
-        local mesh, material
-        for i = mark + 1, #made do
-            local m = made[i]
-            if m.type_path == "bevy_mesh::mesh::Mesh" then mesh = m.fields end
-            if m.type_path == "bevy_pbr::pbr_material::StandardMaterial" then material = m.fields end
-        end
+        -- Bevy computes the mesh's bounds a schedule after the mesh lands: wait for those too
+        if not (bare and bare:has("Mesh3d") and bare:has("Aabb")) and clock < 2 then return end
+        local bounds, base = drawn(materials, bare or { get = function() end })
         suite.assert_test("C6_missing_radius_and_color_are_drawn_with_the_defaults",
-            bare ~= nil and bare:has("Mesh3d") and mesh ~= nil and near(mesh.primitive.Sphere.radius, 0.2)
-                and material ~= nil and near(material.base_color.r, 1) and near(material.base_color.g, 0.3), "")
+            bare ~= nil and bare:has("Mesh3d") and bounds ~= nil and near_radius(bounds.x, 0.2)
+                and near_radius(bounds.y, 0.2) and near_radius(bounds.z, 0.2)
+                and base ~= nil and near(base.red, 1) and near(base.green, 0.3),
+            string.format("bounds %s base %s,%s", bounds and string.format("%.3f", bounds.y) or "nil",
+                tostring(base and base.red), tostring(base and base.green)))
         phase = "done"
         suite.finish("ProjectileClientSuite")
     end

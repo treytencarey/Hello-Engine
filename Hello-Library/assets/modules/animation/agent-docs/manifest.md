@@ -63,6 +63,6 @@ commands:entity(character):patch({ ["animation/action"] = null })
 - A headless run has no AnimationPlugin, so the client half's suite runs windowed.
 - A file still downloading gives a handle that fills in when it lands (core), so a character draws and plays once its files arrive, without a rebuild.
 - `animation/graph` is written with `set`: a patch would merge into the old `nodes` and `clips`, and a clip taken out would stay listed.
-- `animation/graph` takes Bevy's exclusive `World` and builds the graph with `load_asset` and `create_asset`: an AnimationGraph with clips cannot be built through `Assets<AnimationGraph>` from Lua yet (its graph is opaque to reflection, and `add_clip` is reached only as an asset method).
+- `animation/graph` builds the graph as Bevy does: `AnimationGraph.new()`, `graph:add_clip(clip, 1.0, graph.root)` for each clip (loaded with `asset_server:load`), then `graphs:add(graph)` on a `ResMut[Assets[AnimationGraph]]` parameter.
 - Not provable by the suite: that a rebuilt graph reaches a player already linked. A created asset's handle reads back as an opaque reflect value, so no suite can tell which graph a player holds; the line stays because without it the player keeps the old graph's clips.
 - `vr/avatar` and `vr/calibration` read the old `model_entity_id` and break until their own turn.

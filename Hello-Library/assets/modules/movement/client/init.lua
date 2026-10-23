@@ -7,6 +7,7 @@ local app = ...
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")
+local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
 
 app:add_systems(First, {
     Query[{
@@ -119,22 +120,24 @@ app:add_systems(Update, {
 end):in_set("movement/walk")
 
 -- Polls: standing on something is a short ray down from the origin, past the feet, that
--- skips the player's own body. Rapier's `ReadRapierContext` is not yet a parameter a Lua
--- system can declare, so this one takes the World to cast the ray.
-app:add_systems(Update, { World }, function(world)
-    for _, e in ipairs(world:query({
+-- skips the player's own body, cast through Rapier's `ReadRapierContext`.
+app:add_systems(Update, {
+    Query[{
         with = { "movement", "core/net/local", "Transform" },
         optional = { "movement/grounded" },
-    })) do
+    }],
+    ReadRapierContext,
+    Commands,
+}, function(walkers, rapier, commands)
+    for _, e in ipairs(walkers:iter()) do
         local m = e:get("movement")
         local at = e:get("Transform").translation
         local hit = m.ground ~= nil
-            and world:call_systemparam_method("ReadRapierContext3d", "cast_ray",
-                at, { x = 0, y = -1, z = 0 }, m.ground, true, { exclude_rigid_body = e:id() }) ~= nil
+            and rapier:cast_ray(at, { x = 0, y = -1, z = 0 }, m.ground, true, { exclude_rigid_body = e:id() }) ~= nil
         if hit and not e:has("movement/grounded") then
-            e:patch({ ["movement/grounded"] = {} })
+            commands:entity(e:id()):insert({ ["movement/grounded"] = {} })
         elseif not hit and e:has("movement/grounded") then
-            e:patch({ ["movement/grounded"] = null })
+            commands:entity(e:id()):remove("movement/grounded")
         end
     end
 end):in_set("movement/ground")

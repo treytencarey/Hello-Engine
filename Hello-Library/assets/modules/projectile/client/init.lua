@@ -1,20 +1,25 @@
 -- The client half: every client draws every projectile, a glowing ball of its radius and color.
 
 local app = ...
+local Assets = require("bevy::asset::Assets")
+local Mesh = require("bevy::mesh::Mesh")
+local StandardMaterial = require("bevy::pbr::StandardMaterial")
+local Sphere = require("bevy::math::primitives::Sphere")
 
 app:add_systems(First, {
     Query[{ added = { "projectile" } }],
+    ResMut[Assets[Mesh]],
+    ResMut[Assets[StandardMaterial]],
     Commands,
-}, function(projectiles, commands)
+}, function(projectiles, meshes, materials, commands)
     for _, e in ipairs(projectiles:iter()) do
         local p = e:get("projectile")
+        local c = p.color
         commands:entity(e:id()):insert({
-            Mesh3d = create_asset("bevy_mesh::mesh::Mesh", {
-                primitive = { Sphere = { radius = p.radius } },
-            }),
-            ["MeshMaterial3d<StandardMaterial>"] = create_asset("bevy_pbr::pbr_material::StandardMaterial", {
-                base_color = { r = p.color.r, g = p.color.g, b = p.color.b, a = 1 },
-                emissive = { r = p.color.r, g = p.color.g, b = p.color.b, a = 1 },
+            Mesh3d = meshes:add(Sphere.new(p.radius)),
+            ["MeshMaterial3d<StandardMaterial>"] = materials:add({
+                base_color = { Srgba = { red = c.r, green = c.g, blue = c.b, alpha = 1 } },
+                emissive = { red = c.r, green = c.g, blue = c.b, alpha = 1 },
             }),
         })
     end

@@ -21,6 +21,8 @@
 
 local app = ...
 local AssetServer = require("bevy::asset::AssetServer")
+local Assets = require("bevy::asset::Assets")
+local AnimationGraph = require("bevy::animation::graph::AnimationGraph")
 local Time = require("bevy::time::Time")
 
 -- Its model, once its fields are filled in: spawned on add, replaced when the scene changes.
@@ -51,13 +53,17 @@ app:add_systems(First, {
     end
 end):in_set("animation/model")
 
--- Its graph, a node per clip: built on add, rebuilt when a clip changes. Every clip, the
--- first included, is added under the root from node 2, so each plays from its start.
--- An AnimationGraph with clips cannot be built through `Assets<AnimationGraph>` from Lua yet
--- (its graph is opaque to reflection, and `add_clip` is reached only as an asset method), so
--- this system takes the World and builds it as before.
-app:add_systems(First, { World }, function(world)
-    for _, e in ipairs(world:query({ changed = { "animation" }, optional = { "animation/graph" } })) do
+-- Its graph, a node per clip: built on add, rebuilt when a clip changes. Each clip is added
+-- under the root (Bevy's `AnimationGraph::new()` and `add_clip`), and the graph moves into
+-- `Assets<AnimationGraph>`, which answers its handle. A linked player is given the new one.
+app:add_systems(First, {
+    Query[{ changed = { "animation" }, optional = { "animation/graph" } }],
+    Query[{ with = { "animation/player" } }],
+    Res[AssetServer],
+    ResMut[Assets[AnimationGraph]],
+    Commands,
+}, function(changed, players, asset_server, graphs, commands)
+    for _, e in ipairs(changed:iter()) do
         local a = e:get("animation")
         if a.model and a.clips then
             local built = (e:get("animation/graph") or {}).clips or {}
@@ -69,23 +75,17 @@ app:add_systems(First, { World }, function(world)
                 same = same and a.clips[state] ~= nil
             end
             if not same or not e:has("animation/graph") then
-                local graph, nodes, clips, next_node = nil, {}, {}, 2
+                local graph, nodes, clips = AnimationGraph.new(), {}, {}
                 for state, suffix in pairs(a.clips) do
-                    local clip = load_asset(a.model .. suffix)
-                    graph = graph or create_asset("AnimationGraph", { clip = clip })
-                    world:call_asset_method(graph, "AnimationGraph", "add_clip", clip, 1.0, 0)
-                    nodes[state], clips[state] = next_node, a.model .. suffix
-                    next_node = next_node + 1
+                    nodes[state] = graph:add_clip(asset_server:load(a.model .. suffix), 1.0, graph.root)
+                    clips[state] = a.model .. suffix
                 end
-                -- `set`, not `patch`: a patch merges into the old `nodes` and `clips`, so a clip
-                -- taken out would stay listed
-                e:set({ ["animation/graph"] = { handle = graph, nodes = nodes, clips = clips } })
-                local player = world:query({
-                    with = { "animation/player" },
-                    iter_many = world:descendants(e:id()),
-                    limit = 1,
-                })[1]
-                if player then world:get_entity(player:id()):set({ AnimationGraphHandle = graph }) end
+                local handle = graphs:add(graph)
+                -- `insert`, not `patch`: a patch merges into the old `nodes` and `clips`, so a
+                -- clip taken out would stay listed
+                commands:entity(e:id()):insert({ ["animation/graph"] = { handle = handle, nodes = nodes, clips = clips } })
+                local player = players:iter_many(players:iter_descendants(e:id()))[1]
+                if player then commands:entity(player:id()):insert({ AnimationGraphHandle = handle }) end
             end
         end
     end
