@@ -3,6 +3,10 @@
 
 local app = ...
 local Quat = require("bevy::math::Quat")
+local Assets = require("bevy::asset::Assets")
+local Mesh = require("bevy::mesh::Mesh")
+local StandardMaterial = require("bevy::pbr::StandardMaterial")
+local Cuboid = require("bevy::math::primitives::Cuboid")
 
 app:add_systems(First, {
     Query[{
@@ -12,17 +16,17 @@ app:add_systems(First, {
     Query[{
         with = { "map/default/sun", Mut["DirectionalLight"] },
     }],
+    ResMut[Assets[Mesh]],
+    ResMut[Assets[StandardMaterial]],
     Commands,
-}, function(maps, suns, commands)
+}, function(maps, suns, meshes, materials, commands)
     for _, e in ipairs(maps:iter()) do
         -- after map/default/ground, which has filled any missing field by now
         local m = e:get("map/default")
         commands:entity(e:id()):patch({
-            Mesh3d = create_asset("bevy_mesh::mesh::Mesh", {
-                primitive = { Cuboid = { half_size = { x = m.size.x / 2, y = m.size.y / 2, z = m.size.z / 2 } } },
-            }),
-            ["MeshMaterial3d<StandardMaterial>"] = create_asset("bevy_pbr::pbr_material::StandardMaterial", {
-                base_color = { r = m.color.r, g = m.color.g, b = m.color.b, a = 1 },
+            Mesh3d = meshes:add(Cuboid.new(m.size.x, m.size.y, m.size.z)),
+            ["MeshMaterial3d<StandardMaterial>"] = materials:add({
+                base_color = { Srgba = { red = m.color.r, green = m.color.g, blue = m.color.b, alpha = 1 } },
                 perceptual_roughness = 0.9,
             }),
         })

@@ -1,5 +1,7 @@
 -- --host (windowed: a headless run has no StandardMaterial assets)
 local Quat = require("bevy::math::Quat")
+local Assets = require("bevy::asset::Assets")
+local StandardMaterial = require("bevy::pbr::StandardMaterial")
 
 local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
@@ -9,18 +11,19 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
 end)
 
--- Asset contents cannot be read back, so record each request; the real call is still made.
-local made = {}
-local real_create_asset = create_asset
-create_asset = function(type_path, fields)
-    made[#made + 1] = { type_path = type_path, fields = fields }
-    return real_create_asset(type_path, fields)
+-- What was drawn is read back from Bevy: the box's bounds (`Aabb`, which Bevy computes from the
+-- mesh) and the color of the material behind the map's handle (a `Color` reads as its variant).
+local function drawn(materials, e)
+    local bounds = (e:get("Aabb") or {}).half_extents
+    local handle = e:get("MeshMaterial3d<StandardMaterial>")
+    local material = handle and materials:get(handle)
+    return bounds, material and ((material.base_color or {}).Srgba or {})[1]
 end
 
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/name" },
-        optional = { "map/default", "RigidBody3d", "Mesh3d", "MeshMaterial3d<StandardMaterial>" },
+        optional = { "map/default", "RigidBody3d", "Mesh3d", "MeshMaterial3d<StandardMaterial>", "Aabb" },
     })) do
         if e:get("zz/name").name == name then
             return e
@@ -32,11 +35,11 @@ local function suns(world, map)
     return world:query({ entities = { map:id() }, with = { "map/default/sun", "DirectionalLight" } })
 end
 
-local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-3) end
+local function near(a, b, tolerance) return a ~= nil and math.abs(a - b) < (tolerance or 1e-3) end
 
 local phase, clock = "spawn", 0
 
-app:add_systems(Update, { World, Commands }, function(world, commands)
+app:add_systems(Update, { World, Res[Assets[StandardMaterial]], Commands }, function(world, materials, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
@@ -59,16 +62,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "drawn" and clock > 2.0 then
         local map = named(world, "map")
-        local mesh, material
-        for _, m in ipairs(made) do
-            -- the first map's, not the second's (default size and color)
-            if m.type_path == "bevy_mesh::mesh::Mesh" and m.fields.primitive.Cuboid.half_size.x ~= 50 then mesh = m.fields end
-            if m.type_path == "bevy_pbr::pbr_material::StandardMaterial" and m.fields.base_color.b ~= 0.3 then material = m.fields end
-        end
+        local bounds, color = drawn(materials, map)
         suite.assert_test("C1_the_ground_is_drawn_as_a_box_of_its_size_in_its_color",
-            map:has("Mesh3d") and map:has("MeshMaterial3d<StandardMaterial>") and mesh ~= nil and material ~= nil
-                and near(mesh.primitive.Cuboid.half_size.x, 5) and near(mesh.primitive.Cuboid.half_size.z, 3)
-                and near(material.base_color.b, 0.9), "")
+            bounds ~= nil and color ~= nil and near(bounds.x, 5) and near(bounds.y, 0.5) and near(bounds.z, 3)
+                and near(color.blue, 0.9),
+            string.format("half=%s,%s color.blue=%s", tostring(bounds and bounds.x), tostring(bounds and bounds.z),
+                tostring(color and color.blue)))
         local sun = suns(world, map)[1]
         local down = sun and Quat.mul_vec3(world:get_entity(sun:id()).GlobalTransform:compute_transform().rotation,
             { x = 0, y = 0, z = -1 })
@@ -77,20 +76,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("down.y=%s", tostring(down and down.y)))
         local y = world:get_entity(named(world, "ball"):id()).GlobalTransform:compute_transform().translation.y
         suite.assert_test("C3_the_client_builds_the_ground_too", near(y, 1.0, 0.05), string.format("y=%.3f", y))
-        made = {}
         map:patch({ ["map/default"] = { sun = 2000, color = { r = 0.9, g = 0.1, b = 0.1 } } })
         step("changed")
 
     elseif phase == "changed" and clock > 0.3 then
         local map = named(world, "map")
         local list = suns(world, map)
-        local material
-        for _, m in ipairs(made) do
-            if m.type_path == "bevy_pbr::pbr_material::StandardMaterial" then material = m.fields end
-        end
+        local _, color = drawn(materials, map)
         suite.assert_test("C5_a_change_relights_the_same_sun_and_redraws_the_box",
             #list == 1 and list[1]:get("DirectionalLight").illuminance == 2000
-                and material ~= nil and near(material.base_color.r, 0.9), "suns=" .. #list)
+                and color ~= nil and near(color.red, 0.9), "suns=" .. #list .. " red=" .. tostring(color and color.red))
         map:remove("map/default")
         step("undrawn")
 
