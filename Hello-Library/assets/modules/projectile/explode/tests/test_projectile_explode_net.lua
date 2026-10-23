@@ -60,7 +60,7 @@ require_async("modules/core/net/server/init.lua", function()
         -- Its own explosions: the ball that hit is despawned in the same frame.
         ts.srv_ends = ts.srv_ends + #world:query({ added = { "explosion" } })
     end, { label = "_ExplodeNetServer" })
-end, { instanced = true, parallel = true, isolated_world = true })
+end, { parallel = true, isolated_world = true })
 
 -- ═══ The client: this VM ════════════════════════════════════════════════
 require("modules/core/net/client/init.lua")

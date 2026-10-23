@@ -6,11 +6,9 @@ local suite = require("modules/core/test_helpers.lua").create_suite("Notificatio
 spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
 spawn({ Camera2d = {}, Camera = { order = 0 } })
 
--- In production this runs in a world VM, where spawns are stamped with their mod: an
--- instance id stands in for one. Another mod spawns a notification; moved under the
--- overlay, it becomes the notification mod's. The stamp stands in for that other mod.
+-- What a script spawns is linked to its file. Another mod spawns a notification; moved
+-- under the overlay, it becomes the notification mod's. The link names that other mod's file.
 local Instances = require("modules/core/instances.lua")
-_exec_ctx.instance = Instances.allocate(0)
 local NOTICE = "modules/zz_notice/init.lua"
 Instances.mark_mod_script(NOTICE)
 local function notice(name, config)

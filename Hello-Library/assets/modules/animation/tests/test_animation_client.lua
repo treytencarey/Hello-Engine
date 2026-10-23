@@ -25,8 +25,7 @@ require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AnimationClientSuite")
 local watcher = require("modules/core/hot_reload/watcher.lua")
 
--- As in a world VM: spawns carry their mod's stamp. And an immediate watcher, for AN9's edit.
-_exec_ctx.instance = require("modules/core/instances.lua").allocate(0)
+-- An immediate watcher, for AN9's edit.
 local fw = define_resource("_FileWatcherState", {})
 fw.poll_interval = 0
 fw.debounce = 0

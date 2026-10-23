@@ -6,11 +6,9 @@ local suite = require("modules/core/test_helpers.lua").create_suite("SidebarSuit
 spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
 spawn({ Camera2d = {}, Camera = { order = 0 } })
 
--- In production this runs in a world VM, where spawns are stamped with their mod: an
--- instance id stands in for one. The panel stand-in below spawns its buttons as a panel
--- mod would, stamped as that mod's.
+-- What a script spawns is linked to its file. The panel stand-in below spawns its buttons
+-- as a panel mod would, linked to that mod's file.
 local Instances = require("modules/core/instances.lua")
-_exec_ctx.instance = Instances.allocate(0)
 local PANEL = "modules/zz_panel/init.lua"
 Instances.mark_mod_script(PANEL)
 
@@ -98,12 +96,15 @@ end
 
 local function shown(c) return c:get("Node").display.Flex ~= nil end
 
-local phase, clock = "spawn", 0
+-- Frames as well as seconds: the frame the bar first appears can take over half a second
+-- (the UI's first draw), and the panel's buttons are styled two frames after it.
+local phase, clock, frames = "spawn", 0, 0
 local old_bar
 
 register_system("Update", function(world)
     clock = clock + (world:delta_time() or 0)
-    local function step(next_phase) phase, clock = next_phase, 0 end
+    frames = frames + 1
+    local function step(next_phase) phase, clock, frames = next_phase, 0, 0 end
     local me = player(world, "me")
 
     if phase == "spawn" then
@@ -122,7 +123,7 @@ register_system("Update", function(world)
         })
         step("built")
 
-    elseif phase == "built" and me and container(world) and clock > 0.5 then
+    elseif phase == "built" and me and container(world) and clock > 0.5 and frames > 5 then
         local list = icons(world)
         local beta = button(world, "Beta")
         suite.assert_test("R1_the_local_player_gets_a_hidden_sidebar_with_its_panels_buttons_as_icons_in_order",
