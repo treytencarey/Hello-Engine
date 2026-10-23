@@ -96,6 +96,9 @@ return {
 - Tunable numbers (sensitivity, limits, distances) are configuration fields on the mod's own component, with defaults filled in for missing fields when it is added. Not module constants.
 - Defaults are filled by one system per mod, `<Mod>Init`, on the mod's component's `added` edge, in `First`: the missing fields of its own component, and any engine component the mod needs that the entity has none of (`MovementInit` adds `Velocity3d`, with the value it starts from). What a mod takes off when its component goes is `<Mod>Removed`.
 - No `define_resource`, no globals, and no state in a module that another mod requires.
+- State that belongs to no entity is a Bevy resource the mod declares with `commands:init_resource("<mod>/<name>", defaults)` in a system on its component's `added` edge, used through `Res["<mod>/<name>"]` or `ResMut[...]`. It survives a hot reload and goes when the mod unloads.
+- A data file (colours, key bindings) is an asset: a Lua asset type the mod declares (`app:init_asset`, `app:register_asset_loader`), read through `Assets[...]`, refilled in place when the file changes.
+- A mod may `require` its own stateless function file from its halves. Never another mod's file, and never one that holds state.
 - Mods never read the environment (`get_env`, `os.getenv`). Configuration arrives as component data: `core/config` gives a mod its own `<mod>/config` from the host's files.
 - Nothing a hot reload would empty: no module-level locals that hold state between runs.
 
@@ -118,7 +121,7 @@ return {
 - Halves are for a world's game state: `client/` and `server/` for code that differs by side, `shared/` for code that runs on both sides, whether or not it syncs (`cooldown`, `collision_trigger`). A root `init.lua` is for mods whose components never cross the network: infrastructure (`transform/follow`) and local UI the client adds for itself (`ui/style`, `notification`, `sidebar`, a panel with no server work). It runs wherever its component exists, and never declares sync.
 - A mod whose component the server adds needs a `server/init.lua`, even one that only declares sync: the server learns a mod's sync only by loading one of its halves, and without it the client never receives the component. Its UI goes in `client/init.lua` (a panel with server work). If the server has no reason to decide, let the client add the component and make the mod a root `init.lua`.
 - A child entity a mod spawns despawns with its parent entity. When the mod's component is removed from a parent that stays, `mod_registry` despawns the parent's descendants marked with one of the mod's sub-components (`map/default/sun`, `camera/3d/eye`) and removes the mod's sub-components on the parent, even when the mod stops with its last carrier. So mark every child you spawn for an entity with your own sub-component, and write no cleanup for them; remove engine components you added to the entity (`Node`, `Mesh3d`) yourself.
-- An entity a mod spawns that must outlive the entity spawning it (an explosion spawned from the projectile it ends) is spawned with `ScriptOwned = false`. Otherwise it is reaped with the mod when that projectile, the mod's last carrier, despawns. It then despawns itself (its own timer).
+- An entity a mod spawns that must outlive the entity spawning it (an explosion spawned from the projectile it ends) is spawned with `["core/script/owner"] = false`. Otherwise it is reaped with the mod when that projectile, the mod's last carrier, despawns. It then despawns itself (its own timer).
 - An entity spawned without a parent (a UI root such as `sidebar/container`) lives until something despawns it, so the mod names that moment: its own `removed` edge (`SidebarRemoved`), or, for one entity that serves every carrier (`notification/overlay`), the mod unloading with its last carrier. A root nobody despawns stays for the life of the world, and an invisible UI root keeps taking the pointer. A UI root that only holds other nodes lets the pointer through (`Pickable = { should_block_lower = false, is_hoverable = false }`).
 
 ## Queries and writes
@@ -173,7 +176,10 @@ return {
 - A query's table spans lines, one filter per line, unless it names a single component.
 - No long comment blocks, no em dashes, no emoji or decorative characters.
 - No dates in comments, such as `(owner, <date>)` or `measured <date>`: a comment says why, not when or who decided.
+- A comment explains what the code cannot: a reason, a constraint, an engine fact, a non-obvious consequence. Never what the next line does, history, or section banners. What the mod is and how to use it is in `agent-docs/manifest.md`.
 - Extend another mod with `return { base = "<mod>" }`.
+- A provider tells a consumer about lasting state with a sub-component it adds and removes, `<provider>/<name>`, named from the consumer's entry; the consumer reacts to its `added` and `removed` edges. A moment is an entity event the consumer observes with `On[...]`.
+- A sub-mod is a path with its own module folder (`init.lua` or halves). Any other `<mod>/<x>` is a sub-component of `<mod>`, removed with it.
 
 ## Docs
 
@@ -190,7 +196,7 @@ return {
 - An engine effect Lua cannot read back (an asset's contents) is tested by recording the call that causes it, with the real call still made.
 - To prove a value is written once, count `added` and `changed` edges in a consumer system in the suite.
 - To prove where something is, read its world transform after propagation (`call_component_method(id, "GlobalTransform", "compute_transform")`), not its local `Transform`.
-- A suite about ownership (a reload or stop, an entity moved between mods) stands in for a world VM, where spawns carry their mod's stamp: `_exec_ctx.instance = Instances.allocate(0)`. An entity another mod would spawn carries `ScriptOwned = { module = "<path>" }`, with that path marked by `Instances.mark_mod_script`. A real reload rewrites the mod's file with the same bytes (`write_file_bytes(path, read_file_bytes(path))`) under an immediate watcher.
+- A suite about ownership (a reload or stop, an entity moved between mods) stands in for a world VM: `_exec_ctx.instance = Instances.allocate(0)`. An entity another mod would spawn is linked to that mod's file, `["core/script/owner"] = Instances.script_entity("<path>")`, with that path marked by `Instances.mark_mod_script`. A real reload rewrites the mod's file with the same bytes (`write_file_bytes(path, read_file_bytes(path))`) under an immediate watcher.
 - A mod's suite tests its hot reload when the mod builds on what its earlier run left behind, because a reload re-runs its file while the world keeps everything the old run built. That is a mod that spawns or adds components on an edge, loads assets, or keeps its own markers or derived data (`animation/loading`).
   - Edit the mod's own file (a real reload, as above) and check that what it built still works, exactly once: nothing lost, nothing doubled.
   - A mod that loads assets also changes one asset file, and checks that only what used that file is rebuilt.
@@ -260,7 +266,7 @@ Before a design is shown, check it against every item, and list the earlier ruli
 19. Nothing is shared through Lua memory, and no component holds a function.
 20. No mod names its children or filters on another mod's marker, and each mod does one job.
 21. The mod has its `agent-docs/manifest.md`, matching the code.
-22. Entities the mod spawns are children of what they belong to and carry the mod's own marker; no stored ids. An entity inside another mod's UI is spawned there on that UI's `added` edge, and again for a new one. A body that moves on its own is a root, never a child of something that moves. An entity that must outlive the entity spawning it is `ScriptOwned = false`.
+22. Entities the mod spawns are children of what they belong to and carry the mod's own marker; no stored ids. An entity inside another mod's UI is spawned there on that UI's `added` edge, and again for a new one. A body that moves on its own is a root, never a child of something that moves. An entity that must outlive the entity spawning it is `["core/script/owner"] = false`.
 23. Tunable numbers are configuration on the mod's component, and query columns are read into locals first.
 24. A child reading its base's fields allows for them being missing until the base fills them.
 25. Every system whose writes a system needs in the same frame is named in its `after`.
@@ -272,10 +278,3 @@ Before a design is shown, check it against every item, and list the earlier ruli
 31. Hierarchy lookups use Bevy's walks and `iter_many`; no hand walk through `ChildOf`, and no new `entities = { ... }`.
 32. Defaults are filled in `<Mod>Init`, including any engine component the mod needs that is missing, and what goes with the component in `<Mod>Removed`.
 
-## Open questions
-
-- How state that belongs to no entity survives a hot reload.
-- Pure data files (colours, key bindings) and a mod's own `shared/` code between its halves.
-- How the registry tells a sub-component from a sub-mod.
-- Comment content beyond the header, and the header style options.
-- The general shape for a provider marking `<mod>/<name>` for a consumer.

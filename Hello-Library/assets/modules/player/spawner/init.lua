@@ -70,7 +70,7 @@ register_system("First", function(world)
                         LockedAxes3d = { authority = "server" },
                     },
                     -- Not reaped with this mod: a player lives until its client leaves.
-                    ScriptOwned = false,
+                    ["core/script/owner"] = false,
                 })
                 taken[index] = true
             end

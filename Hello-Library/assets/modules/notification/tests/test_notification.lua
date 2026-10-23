@@ -14,7 +14,7 @@ _exec_ctx.instance = Instances.allocate(0)
 local NOTICE = "modules/zz_notice/init.lua"
 Instances.mark_mod_script(NOTICE)
 local function notice(name, config)
-    return spawn({ ["zz/note"] = { name = name }, notification = config, ScriptOwned = { module = NOTICE } })
+    return spawn({ ["zz/note"] = { name = name }, notification = config, ["core/script/owner"] = Instances.script_entity(NOTICE) })
 end
 
 local function note(world, name)

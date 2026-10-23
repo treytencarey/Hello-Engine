@@ -39,7 +39,7 @@ register_system("Update", function(world)
                 explosion = { at = { x = at.x, y = at.y, z = at.z },
                               radius = x.radius, duration = x.duration, color = x.color },
                 -- Not reaped with this mod: the ball that spawned it is its last carrier.
-                ScriptOwned = false,
+                ["core/script/owner"] = false,
             })
             -- A client's copy is the server's to end: hidden here, despawned by the server.
             e:patch({ ["projectile/explode/hit"] = {}, Visibility = "Hidden" })

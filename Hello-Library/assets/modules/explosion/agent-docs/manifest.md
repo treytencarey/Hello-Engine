@@ -39,10 +39,10 @@ A glowing ball at a point that grows to its radius and is gone after its duratio
 
 ```lua
 -- on each side, from what that side saw
-spawn({ explosion = { at = { x = 0, y = 1, z = 0 }, radius = 2 }, ScriptOwned = false })
+spawn({ explosion = { at = { x = 0, y = 1, z = 0 }, radius = 2 }, ["core/script/owner"] = false })
 ```
 
 ## Notes
 
 - Timed work polls: `ExplosionGrow` runs every frame, but only over explosions still burning.
-- A mod that spawns one from an entity about to despawn (a projectile) spawns it with `ScriptOwned = false`, or it is reaped when that mod's last carrier goes.
+- A mod that spawns one from an entity about to despawn (a projectile) spawns it with `["core/script/owner"] = false`, or it is reaped when that mod's last carrier goes.

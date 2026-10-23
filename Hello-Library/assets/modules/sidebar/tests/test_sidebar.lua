@@ -25,9 +25,9 @@ fw.debounce = 0
 register_system("Update", function(world)
     for _, bar in ipairs(world:query({ added = { "sidebar/bar" } })) do
         for _, _ in ipairs(world:query({ with = { "zz/panel", "core/net/local" }, limit = 1 })) do
-            spawn({ ["sidebar/button"] = { title = "Alpha", order = 2 }, ScriptOwned = { module = PANEL } })
+            spawn({ ["sidebar/button"] = { title = "Alpha", order = 2 }, ["core/script/owner"] = Instances.script_entity(PANEL) })
                 :with_parent(bar:id())
-            spawn({ ["sidebar/button"] = { title = "Beta", order = 1 }, ScriptOwned = { module = PANEL } })
+            spawn({ ["sidebar/button"] = { title = "Beta", order = 1 }, ["core/script/owner"] = Instances.script_entity(PANEL) })
                 :with_parent(bar:id())
         end
     end
@@ -224,7 +224,7 @@ register_system("Update", function(world)
         local list = icons(world)
         suite.assert_test("R9_a_removed_button_leaves_the_bar",
             #list == 1 and list[1]:id() == button(world, "Beta"):id(), "icons=" .. #list)
-        spawn({ ["sidebar/button"] = { title = "Gamma", order = 0 }, ScriptOwned = { module = PANEL } })
+        spawn({ ["sidebar/button"] = { title = "Gamma", order = 0 }, ["core/script/owner"] = Instances.script_entity(PANEL) })
             :with_parent(bar(world):id())
         step("gamma")
 
