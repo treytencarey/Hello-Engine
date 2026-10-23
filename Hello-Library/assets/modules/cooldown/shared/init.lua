@@ -11,51 +11,67 @@
 --     <component> = <seconds still to run>,
 -- }
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+local app = ...
+local Time = require("bevy::time::Time")
+
+app:add_systems(First, {
+    Query[{
         changed = { "cooldown" },
         optional = { "cooldown/left" },
-    })) do
+    }],
+    Commands,
+}, function(timed, commands)
+    for _, e in ipairs(timed:iter()) do
         local timers = e:get("cooldown") or {}
         local left = e:get("cooldown/left") or {}
         for name, timer in pairs(timers) do
             local secs = timer.remaining
             if secs and left[name] == nil then
-                e:patch({
+                commands:entity(e:id()):patch({
                     [name] = {},
                     ["cooldown/left"] = { [name] = secs },
                 })
             end
         end
     end
-end, { label = "CooldownStart" })
+end):in_set("cooldown/start")
 
 -- Timed work polls, but only entities with a timer running.
-register_system("First", function(world)
-    local dt = world:delta_time() or 0
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Res[Time],
+    Query[{
         with = { "cooldown/left" },
         optional = { "cooldown" },
-    })) do
+    }],
+    Commands,
+}, function(time, running_timers, commands)
+    local dt = time:delta_secs()
+    for _, e in ipairs(running_timers:iter()) do
         local running = e:get("cooldown") or {}
         local before = e:get("cooldown/left")
-        local left = {}
+        local entity = commands:entity(e:id())
+        -- Key by key: `cooldown/start` may add an entry this frame, which this run cannot see yet.
+        local still = false
         for name, secs in pairs(before) do
             if running[name] == nil then
-                e:patch({ [name] = null })
+                entity:remove(name)
+                entity:patch({ ["cooldown/left"] = { [name] = null } })
             elseif secs - dt > 0 then
-                left[name] = secs - dt
+                still = true
+                entity:patch({ ["cooldown/left"] = { [name] = secs - dt } })
             else
-                e:patch({
-                    [name] = null,
+                entity:remove(name)
+                entity:patch({
                     cooldown = { [name] = null },
+                    ["cooldown/left"] = { [name] = null },
                 })
             end
         end
-        if next(left) then
-            e:set({ ["cooldown/left"] = left })
-        else
-            e:patch({ ["cooldown/left"] = null })
+        for name in pairs(running) do
+            if before[name] == nil then still = true end
+        end
+        if not still then
+            entity:remove("cooldown/left")
         end
     end
-end, { label = "CooldownTick" })
+end):in_set("cooldown/tick")

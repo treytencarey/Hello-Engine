@@ -1,12 +1,17 @@
 -- A dark theme: dark panels, light text, blue accents. Add `ui/theme/dark = {}` to an entity
 -- to give its world this theme.
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+local app = ...
+
+app:add_systems(First, {
+    Query[{
         added = { "ui/theme" },
         with = { "ui/theme/dark" },
-    })) do
-        e:patch({
+    }],
+    Commands,
+}, function(themes, commands)
+    for _, e in ipairs(themes:iter()) do
+        commands:entity(e:id()):patch({
             ["ui/theme"] = {
                 bg = { r = 0.12, g = 0.12, b = 0.14, a = 1 },
                 header_bg = { r = 0.15, g = 0.15, b = 0.18, a = 1 },
@@ -37,6 +42,6 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "ThemeDark" })
+end):in_set("ui/theme/dark")
 
 return { base = "ui/theme" }

@@ -15,8 +15,8 @@ The colors UI roles stand for, one theme per world. A theme mod extends it with 
 ## Use
 
 ```lua
-spawn({ ["ui/theme/dark"] = {} })                                       -- give this world the dark theme
-theme:patch({ ["ui/theme"] = { accent = { r = 1, g = 0.5, b = 0, a = 1 } } })   -- adjust it live
+commands:spawn({ ["ui/theme/dark"] = {} })   -- give this world the dark theme
+commands:entity(theme):patch({ ["ui/theme"] = { accent = { r = 1, g = 0.5, b = 0, a = 1 } } })   -- adjust it live
 ```
 
 ## Notes

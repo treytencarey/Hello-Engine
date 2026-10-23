@@ -8,7 +8,7 @@
 -- Per shot it prints, on the client, when its copy appeared, when its sensor was ready, when
 -- `collision_trigger` first fired, when explode reacted and when the server's despawn arrived
 -- (seconds after the copy appeared), with the copy's z then. The wall's face is z = -9.5.
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local suite = helpers.create_suite("ProjectileExplodeNetSuite")
@@ -20,35 +20,38 @@ local SHOTS = 6
 local DEFAULTS = { srv_ready = false, srv_fired = 0, srv_ends = 0, go_fire = false }
 local ts = helpers.shared_state("ProjectileExplodeNetState", DEFAULTS)
 
-local function wall()
-    spawn({
-        Transform = { translation = { x = 0, y = 50, z = -10 } },
-        RigidBody3d = "Fixed",
-        Collider3d = { cuboid = { hx = 5, hy = 5, hz = 0.5 } },
-        ["core/net/sync"] = false,
-    })
-end
+-- The wall, as each side spawns it.
+local WALL = {
+    Transform = { translation = { x = 0, y = 50, z = -10 } },
+    RigidBody3d = "Fixed",
+    Collider3d = { cuboid = { hx = 5, hy = 5, hz = 0.5 } },
+    ["core/net/sync"] = false,
+}
 
 -- ═══ The server: an isolated world that fires ═══════════════════════════
 require_async("modules/core/net/server/init.lua", function()
+    local app = require("bevy::app::App")
     require("modules/core/mod_registry/init.lua")
     local ts = require("modules/core/test_helpers.lua").shared_state("ProjectileExplodeNetState", DEFAULTS)
-    spawn({
-        ["core/world/net"] = { mode = "server", name = "zzpen", port = PORT },
-        ["core/net"] = { mode = "server", name = "zzpen", port = PORT },
-        ["core/net/sync"] = false,
-    })
-    wall()
-    local shooter = spawn({ ["zz/shooter"] = { v = 1 }, Transform = { translation = { x = 0, y = 49, z = 0 } },
-                            ["core/net/sync"] = { ["zz/shooter"] = {} } }):id()
+    local shooter
+    app:add_systems(Startup, { Commands }, function(commands)
+        commands:spawn({
+            ["core/world/net"] = { mode = "server", name = "zzpen", port = PORT },
+            ["core/net"] = { mode = "server", name = "zzpen", port = PORT },
+            ["core/net/sync"] = false,
+        })
+        commands:spawn(WALL)
+        shooter = commands:spawn({ ["zz/shooter"] = { v = 1 }, Transform = { translation = { x = 0, y = 49, z = 0 } },
+                                   ["core/net/sync"] = { ["zz/shooter"] = {} } }):id()
+    end)
     local clock, last = 0, -10
-    register_system("Update", function(world)
+    app:add_systems(Update, { World, Commands }, function(world, commands)
         clock = clock + world:delta_time()
         if not ts.srv_ready then ts.srv_ready = true end
         if ts.go_fire and ts.srv_fired < SHOTS and clock - last >= 1.0 then
             last = clock
             ts.srv_fired = ts.srv_fired + 1
-            spawn({
+            commands:spawn({
                 ["abilities/projectile"] = { at = { x = 0, y = 50, z = 0 }, yaw = 0, pitch = 0, speed = 25,
                                              radius = 0.25, gravity = 0, lifetime = 5,
                                              color = { r = 1, g = 0.3, b = 0.1 } },
@@ -59,12 +62,14 @@ require_async("modules/core/net/server/init.lua", function()
         end
         -- Its own explosions: the ball that hit is despawned in the same frame.
         ts.srv_ends = ts.srv_ends + #world:query({ added = { "explosion" } })
-    end, { label = "_ExplodeNetServer" })
+    end):in_set("zz/explode_net_server")
 end, { parallel = true, isolated_world = true })
 
 -- ═══ The client: this VM ════════════════════════════════════════════════
 require("modules/core/net/client/init.lua")
-wall()
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn(WALL)
+end)
 
 local t, frame = 0, 0
 local shots = {}          -- the client's copies, in the order they appeared
@@ -74,12 +79,12 @@ local phase, mark = "wait_srv", 0
 
 local function z_of(world, e)
     local ok, tr = pcall(function()
-        return world:call_component_method(e, "GlobalTransform", "compute_transform").translation
+        return world:get_entity(e).GlobalTransform:compute_transform().translation
     end)
     return ok and tr and tr.z or nil
 end
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     t = t + world:delta_time()
     frame = frame + 1
 
@@ -116,7 +121,7 @@ register_system("Update", function(world)
 
     if phase == "wait_srv" then
         if not ts.srv_ready and t < 15 then return end
-        spawn({
+        commands:spawn({
             ["core/world/net"] = { mode = "client", name = "zzpen_c", ip = "127.0.0.1", port = PORT },
             ["core/net"] = { mode = "client", name = "zzpen_c", ip = "127.0.0.1", port = PORT },
             ["core/net/sync"] = false,
@@ -153,4 +158,4 @@ register_system("Update", function(world)
         suite.finish("PROJECTILE_EXPLODE_NET")
         phase = "done"
     end
-end, { label = "_ExplodeNetClient" })
+end):in_set("zz/explode_net_client")

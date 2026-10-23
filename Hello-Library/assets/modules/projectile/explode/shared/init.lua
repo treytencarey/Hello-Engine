@@ -11,12 +11,20 @@
 -- }
 --
 -- projectile/explode/hit = {}: on each side, once its copy has hit (never synced).
+--
+-- Writes are `try_` commands: they land after the system, and a client's copy may be despawned
+-- by then (the server ended it).
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "projectile/explode" } })) do
-        e:patch({ collision_trigger = {} })
+local app = ...
+
+app:add_systems(First, {
+    Query[{ added = { "projectile/explode" } }],
+    Commands,
+}, function(balls, commands)
+    for _, e in ipairs(balls:iter()) do
+        commands:entity(e:id()):try_insert_if_new({ collision_trigger = {} })
     end
-end, { label = "ProjectileExplodeSensor" })
+end):in_set("projectile/explode/sensor")
 
 local function hits_other_than(entered, caster)
     for _, id in ipairs(entered or {}) do
@@ -25,43 +33,49 @@ local function hits_other_than(entered, caster)
     return false
 end
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         changed = { "collision_trigger" },
-        with = { "projectile/explode" },
+        with = { "projectile/explode", "GlobalTransform" },
         without = { "projectile/explode/hit" },
         optional = { "projectile/caster" },
-    })) do
+    }],
+    Commands,
+}, function(balls, commands)
+    for _, e in ipairs(balls:iter()) do
         if hits_other_than(e:get("collision_trigger").entered, e:get("projectile/caster")) then
             local x = e:get("projectile/explode")
-            local at = world:call_component_method(e:id(), "GlobalTransform", "compute_transform").translation
-            spawn({
+            local at = e.GlobalTransform:compute_transform().translation
+            commands:spawn({
                 explosion = { at = { x = at.x, y = at.y, z = at.z },
                               radius = x.radius, duration = x.duration, color = x.color },
                 -- Not reaped with this mod: the ball that spawned it is its last carrier.
                 ["core/script/owner"] = false,
             })
             -- A client's copy is the server's to end: hidden here, despawned by the server.
-            e:patch({ ["projectile/explode/hit"] = {}, Visibility = "Hidden" })
+            commands:entity(e:id()):try_insert({ ["projectile/explode/hit"] = {}, Visibility = "Hidden" })
         end
     end
-end, { label = "ProjectileExplode" })
+end):in_set("projectile/explode")
 
 -- `projectile/explode` was taken off an entity that stays: it is no longer a sensor, and a
 -- ball it hid shows again.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "projectile/explode" } })) do
-        local live = world:get_entity(e:id())
-        if live then
-            local undo = { collision_trigger = null }
-            if live:get("projectile/explode/hit") ~= nil then
-                undo["projectile/explode/hit"] = null
-                undo.Visibility = "Inherited"
-            end
-            live:patch(undo)
+app:add_systems(First, {
+    Query[{
+        removed = { "projectile/explode" },
+        optional = { "projectile/explode/hit" },
+    }],
+    Commands,
+}, function(removed, commands)
+    for _, e in ipairs(removed:iter()) do
+        local entity = commands:entity(e:id())
+        entity:try_remove("collision_trigger")
+        if e:has("projectile/explode/hit") then
+            entity:try_remove("projectile/explode/hit")
+            entity:try_insert({ Visibility = "Inherited" })
         end
     end
-end, { label = "ProjectileExplodeRemoved" })
+end):in_set("projectile/explode/removed")
 
 return {
     ["core/net/sync"] = {

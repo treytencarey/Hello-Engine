@@ -15,11 +15,16 @@
 -- animation/action = { state = <a clip's name>, speed = <playback speed> }: written by
 -- another mod; while present it is played instead of the motion's state.
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "animation" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ added = { "animation" } }],
+    Commands,
+}, function(added, commands)
+    for _, e in ipairs(added:iter()) do
         local a = e:get("animation")
         if a.model == nil or a.scene == nil or a.clips == nil or a.walk_speed == nil or a.offset == nil then
-            e:patch({
+            commands:entity(e:id()):patch({
                 animation = {
                     model = a.model or "Placeholder-Character/Model",
                     scene = a.scene or "-Idle.glb#Scene0",
@@ -35,4 +40,4 @@ register_system("First", function(world)
             })
         end
     end
-end, { label = "AnimationInit" })
+end):in_set("animation/init")

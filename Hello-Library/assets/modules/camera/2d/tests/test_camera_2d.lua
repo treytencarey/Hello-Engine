@@ -1,9 +1,11 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("Camera2dSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local QUARTER_Z = { x = 0, y = 0, z = 0.70710678, w = 0.70710678 }
 
@@ -22,14 +24,22 @@ local function eyes_of(world, e)
     return world:query({
         entities = { e:id() },
         with = { "camera/2d/eye", "Camera" },
+        optional = { "Transform" },
     })
+end
+
+-- An eye is spawned with an identity Transform; `transform/follow` has placed it once it is not.
+-- That mod loads when the first eye appears, and its first run can come frames after its load.
+local function followed(eye)
+    local t = eye:get("Transform").translation
+    return not (t.x == 0 and t.y == 0 and t.z == 0)
 end
 
 local function near(a, b) return math.abs(a - b) < 1e-3 end
 
 -- The eye's world transform: `z` above the carrier, level, scaled by `scale`.
 local function placed(world, eye_id, at, z, scale)
-    local t = world:call_component_method(eye_id, "GlobalTransform", "compute_transform")
+    local t = world:get_entity(eye_id).GlobalTransform:compute_transform()
     local ok = near(t.translation.x, at.x) and near(t.translation.y, at.y) and near(t.translation.z, at.z + z)
         and near(t.rotation.z, 0) and near(t.rotation.w, 1)
         and near(t.scale.x, scale) and near(t.scale.y, scale)
@@ -43,37 +53,40 @@ local first_eye, nearest, zoomed_exact, exact
 
 -- A zoom injected before Update must scale the eye in the same frame: read after
 -- transforms propagate, in Last.
-register_system("PreUpdate", function(world)
+app:add_systems(PreUpdate, { World }, function(world)
     if phase == "exact" and not zoomed_exact then
         zoomed_exact = true
         carrier(world, "me"):patch({ ["input/game/camera_2d/zoom"] = { dx = 0, dy = -5 } })
     end
-end, { label = "Camera2dSuiteZoom" })
+end):in_set("zz/camera2d_suite_zoom")
 
-register_system("Last", function(world)
+app:add_systems(Last, { World }, function(world)
     if zoomed_exact and exact == nil then
         local me = carrier(world, "me")
         local ok, got = placed(world, eyes_of(world, me)[1]:id(), AT, 500, 1.5)
         exact = { ok = ok and near(me:get("camera").distance, 1.5), got = got }
     end
-end, { label = "Camera2dSuiteExact" })
+end):in_set("zz/camera2d_suite_exact")
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local me, other = carrier(world, "me"), carrier(world, "other")
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        -- `input` with no mode: no binding is active, so a mouse moved or scrolled while the test
+        -- window has focus does not move the camera. The suite writes the zoom itself; the camera
+        -- mods bind into `input/game` whatever the mode.
+        commands:spawn({
             ["zz/carrier"] = { name = "me" },
             ["core/net/local"] = {},
-            input = { mode = "input/game" },
+            input = {},
             ["core/net/sync"] = false,
             Transform = { translation = AT },
             camera = { distance = 1 },
             ["camera/2d"] = {},
         })
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "other" },
             ["core/net/sync"] = false,
             Transform = {},
@@ -81,7 +94,7 @@ register_system("Update", function(world)
         })
         step("spawned")
 
-    elseif phase == "spawned" and me and #eyes_of(world, me) > 0 and clock > 0.3 then
+    elseif phase == "spawned" and me and #eyes_of(world, me) > 0 and followed(eyes_of(world, me)[1]) and clock > 0.3 then
         local c2d = me:get("camera/2d")
         local bindings = (me:get("input/game") or {}).camera_2d
         suite.assert_test("C1_the_local_carrier_gets_a_zoom_binding_and_default_config",
@@ -148,7 +161,7 @@ register_system("Update", function(world)
         step("other zoomed")
 
     elseif phase == "other zoomed" and clock > 0.3 then
-        other:patch({ ["core/net/local"] = {}, input = { mode = "input/game" } })
+        other:patch({ ["core/net/local"] = {}, input = {} })
         step("other local")
 
     elseif phase == "other local" and #eyes_of(world, other) > 0 and clock > 0.3 then
@@ -167,18 +180,18 @@ register_system("Update", function(world)
         suite.assert_test("C12_switching_to_third_person_removes_the_2d_camera_eye_and_binding",
             me:get("camera/2d") == nil and #eyes_of(world, me) == 0 and bindings.camera_2d == nil
                 and #eyes_3d == 1, "3d eyes=" .. #eyes_3d)
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "late" },
             ["core/net/local"] = {},
-            input = { mode = "input/game" },
+            input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = -5, y = 0, z = 0 } },
             camera = { yaw = 0, pitch = 0, distance = 16, height = 0, offset = { x = 0, y = 0, z = 0 } },
         })
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "plain" },
             ["core/net/local"] = {},
-            input = { mode = "input/game" },
+            input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = 0, y = 7, z = 0 } },
             camera = { yaw = 0, pitch = 0, distance = 16, height = 0, offset = { x = 0, y = 0, z = 0 } },
@@ -240,7 +253,7 @@ register_system("Update", function(world)
     elseif phase == "no input" and clock > 0.3 then
         local who = carrier(world, "other")
         suite.assert_test("C16a_removing_input_takes_the_bindings", (world:get_entity(who:id()):get("input/game") or {}).camera_2d == nil, "")
-        who:patch({ input = { mode = "input/game" } })
+        who:patch({ input = {} })
         step("input back")
 
     elseif phase == "input back" and clock > 0.3 then
@@ -255,4 +268,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("Camera2dSuite")
     end
-end, { label = "Camera2dSuite" })
+end):in_set("zz/camera2d_suite")

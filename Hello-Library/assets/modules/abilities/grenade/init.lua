@@ -15,11 +15,16 @@
 --     color = { r = <0..1>, g = <0..1>, b = <0..1> },
 -- }
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ changed = { "abilities/grenade" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ changed = { "abilities/grenade" } }],
+    Commands,
+}, function(players, commands)
+    for _, e in ipairs(players:iter()) do
         local g = e:get("abilities/grenade")
         if g.key == nil or g.cooldown == nil or g.speed == nil or g.radius == nil or g.color == nil then
-            e:patch({
+            commands:entity(e:id()):patch({
                 ["abilities/grenade"] = {
                     key = g.key or "KeyG",
                     cooldown = g.cooldown or 1,
@@ -29,23 +34,26 @@ register_system("First", function(world)
                 },
             })
         else
-            e:patch({ abilities = { grenade = { key = g.key, cooldown = g.cooldown } } })
+            commands:entity(e:id()):patch({ abilities = { grenade = { key = g.key, cooldown = g.cooldown } } })
         end
     end
-end, { label = "AbilitiesGrenade" })
+end):in_set("abilities/grenade")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         added = { "input/game/abilities/grenade" },
         with = { "abilities/grenade", "Transform" },
         -- The cooldown `abilities` starts on this same press shows from next frame.
         without = { "abilities/grenade/cooling" },
         optional = { "camera" },
-    })) do
+    }],
+    Commands,
+}, function(pressed, commands)
+    for _, e in ipairs(pressed:iter()) do
         local g = e:get("abilities/grenade")
         local camera = e:get("camera") or {}
         local at = e:get("Transform").translation
-        spawn({
+        commands:spawn({
             ["abilities/projectile"] = {
                 at = { x = at.x, y = at.y + 1, z = at.z },
                 yaw = camera.yaw,
@@ -56,11 +64,18 @@ register_system("Update", function(world)
             },
         })
     end
-end, { label = "AbilitiesGrenadeFire" })
+end):in_set("abilities/grenade/fire")
 
--- `abilities/grenade` was taken off an entity that stays: its entry goes.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "abilities/grenade" } })) do
-        if world:get_entity(e:id()) then e:patch({ abilities = { grenade = null } }) end
+-- `abilities/grenade` was taken off an entity that stays: its entry goes. A despawned player
+-- is in the `removed` rows too.
+app:add_systems(First, {
+    Query[{ removed = { "abilities/grenade" } }],
+    Query[{ with = { "abilities" } }],
+    Commands,
+}, function(removed, players, commands)
+    for _, e in ipairs(removed:iter()) do
+        if players:contains(e:id()) then
+            commands:entity(e:id()):patch({ abilities = { grenade = null } })
+        end
     end
-end, { label = "AbilitiesGrenadeRemoved" })
+end):in_set("abilities/grenade/removed")

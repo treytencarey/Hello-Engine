@@ -24,23 +24,24 @@ A third-person orbit camera. Extends `camera/3d` (`base = "camera/3d"`), which o
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | CameraThirdPersonInit | On an added `camera/third_person`, fill in missing config fields |
-| First | CameraThirdPersonBind | On the local carrier, bind mouse look and zoom (again when `input` is added back) |
-| First | CameraThirdPersonUnbind | When `camera/third_person` is removed, unbind them |
-| Update | Camera | Turn yaw and pitch from mouse motion by `sensitivity`; pitch is clamped to `min_pitch`..`max_pitch` |
-| Update | CameraZoom | Change `camera.distance` by scroll times `zoom_step`, clamped to `min_distance`..`max_distance` |
-| Update, after `Camera` and `CameraZoom` | CameraAim | Put the eye on the orbit through `camera/3d.offset` |
+| First | `camera/third_person/init` | On an added `camera/third_person`, fill in missing config fields |
+| First | `camera/third_person/bind` | On the local carrier, bind mouse look and zoom (again when `input` is added back) |
+| First | `camera/third_person/unbind` | When `camera/third_person` is removed, unbind them |
+| Update, before `camera/3d/camera3d_aim` | `camera/third_person` | Turn yaw and pitch from mouse motion by `sensitivity`; pitch is clamped to `min_pitch`..`max_pitch` |
+| Update | `camera/third_person/zoom` | Change `camera.distance` by scroll times `zoom_step`, clamped to `min_distance`..`max_distance` |
+| Update, after `camera/third_person` and `camera/third_person/zoom`, before `camera/3d/camera3d_aim` | `camera/third_person/aim` | Put the eye on the orbit through `camera/3d.offset` |
 
 ## Use
 
 ```lua
-player:patch({ ["camera/third_person"] = {} })
-player:patch({ camera = { distance = 12, offset = { x = 0.8, y = 0, z = 0 } } })   -- farther, over the right shoulder
+commands:entity(player):patch({ ["camera/third_person"] = {} })
+commands:entity(player):patch({ camera = { distance = 12, offset = { x = 0.8, y = 0, z = 0 } } })   -- farther, over the right shoulder
 ```
 
 ## Notes
 
 - The eye's rotation comes from `camera/3d` (yaw, then pitch), which looks straight at the orbit's centre; this mod only places it.
 - Adding another `camera/3d` mod replaces this one, and the eye is kept.
+- A suite run in a window gives its carrier `input = {}` (no mode): no binding is active (`input`), so a real mouse moved while the window has focus does not turn the camera. The suite writes the look itself; this mod binds into `input/game` whatever the mode.

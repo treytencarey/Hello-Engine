@@ -1,9 +1,12 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileServerSuite")
+local Time = require("bevy::time::Time")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local function shot(world, name)
     for _, e in ipairs(world:query({
@@ -17,7 +20,7 @@ local function shot(world, name)
 end
 
 local function at(world, e)
-    return world:call_component_method(e:id(), "GlobalTransform", "compute_transform").translation
+    return world:get_entity(e:id()).GlobalTransform:compute_transform().translation
 end
 
 local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-3) end
@@ -25,35 +28,36 @@ local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-3
 local phase, clock = "spawn", 0
 local flown
 
-register_system("Update", function(world)
-    clock = clock + (world:delta_time() or 0)
+-- The suite's clock is the mods': Bevy's `Time`.
+app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+    clock = clock + time:delta_secs()
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/shot"] = { name = "level" },
             ["core/net/sync"] = false,
             projectile = { from = { x = 0, y = 50, z = 0 }, velocity = { x = 10, y = 0, z = 0 }, gravity = 0, lifetime = 0.8, radius = 0.5 },
         })
-        spawn({
+        commands:spawn({
             ["zz/shot"] = { name = "falling" },
             ["core/net/sync"] = false,
             projectile = { from = { x = 20, y = 50, z = 0 } },
         })
-        spawn({
+        commands:spawn({
             ["zz/shot"] = { name = "kept" },
             ["core/net/sync"] = false,
             projectile = { from = { x = -20, y = 50, z = 0 }, lifetime = 5 },
         })
         -- A fixed ball whose top is at y = 0: a projectile dropped on it rests one radius above.
-        spawn({
+        commands:spawn({
             ["zz/shot"] = { name = "floor" },
             ["core/net/sync"] = false,
             Transform = { translation = { x = 100, y = -10, z = 0 } },
             RigidBody3d = "Fixed",
             Collider3d = { ball = { radius = 10 } },
         })
-        spawn({
+        commands:spawn({
             ["zz/shot"] = { name = "resting" },
             ["core/net/sync"] = false,
             projectile = { from = { x = 100, y = 2, z = 0 }, radius = 0.5, gravity = 1, lifetime = 5 },
@@ -79,9 +83,13 @@ register_system("Update", function(world)
         shot(world, "kept"):remove("projectile")
         step("landed")
 
-    elseif phase == "landed" and clock > 0.8 then
+    -- The lifetime timer starts a frame or two after the spawn, which the first, long frames
+    -- stretch: wait for the end, well before the 3 s lifetime P6 checks.
+    elseif phase == "landed" and clock > 0.8 and (shot(world, "level") == nil or clock > 1.5) then
         suite.assert_test("P5_it_is_despawned_when_its_lifetime_ends", shot(world, "level") == nil, "")
-        suite.assert_test("P6_a_longer_lifetime_is_still_flying", shot(world, "falling") ~= nil, "")
+        local falling = shot(world, "falling")
+        suite.assert_test("P6_a_longer_lifetime_is_still_flying",
+            falling ~= nil and falling:has("projectile/flying"), "")
         local kept = shot(world, "kept")
         suite.assert_test("P7_removing_projectile_takes_off_the_body_and_does_not_despawn",
             kept ~= nil and kept:get("RigidBody3d") == nil and kept:get("Collider3d") == nil
@@ -98,4 +106,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("ProjectileServerSuite")
     end
-end, { label = "ProjectileServerSuite" })
+end):in_set("zz/projectile_server_suite")

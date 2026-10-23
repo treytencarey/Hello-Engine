@@ -6,8 +6,12 @@
 --     pitch_limit = <radians up or down from level>,
 -- }
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "camera/first_person" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ added = { Mut["camera/first_person"] } }],
+}, function(added)
+    for _, e in ipairs(added:iter_mut()) do
         local fp = e:get("camera/first_person")
         e:patch({
             ["camera/first_person"] = {
@@ -16,16 +20,19 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "CameraFirstPersonInit" })
+end):in_set("camera/first_person/init")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "camera/first_person", "core/net/local", "input" },
         },
         with = { "camera/first_person", "core/net/local" },
-    })) do
-        e:patch({
+    }],
+    Commands,
+}, function(carriers, commands)
+    for _, e in ipairs(carriers:iter()) do
+        commands:entity(e:id()):patch({
             ["input/game"] = {
                 first_person = {
                     look = { motion = true },
@@ -33,21 +40,32 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "CameraFirstPersonBind" })
+end):in_set("camera/first_person/bind")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         removed = { "camera/first_person" },
-    })) do
-        e:patch({ ["input/game"] = { first_person = null } })
+        with = { "input/game" },
+    }],
+    Commands,
+}, function(carriers, commands)
+    for _, e in ipairs(carriers:iter()) do
+        -- `removed` also fires on despawn, and a patch to an entity that is gone fails.
+        local carrier = commands:get_entity(e:id())
+        if carrier ~= nil then
+            carrier:patch({ ["input/game"] = { first_person = null } })
+        end
     end
-end, { label = "CameraFirstPersonUnbind" })
+end):in_set("camera/first_person/unbind")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+-- Before `camera/3d` aims, so the eye turns in the frame the look arrives.
+app:add_systems(Update, {
+    Query[{
         changed = { "input/game/first_person/look" },
-        with = { "camera", "camera/first_person" },
-    })) do
+        with = { Mut["camera"], "camera/first_person" },
+    }],
+}, function(carriers)
+    for _, e in ipairs(carriers:iter_mut()) do
         local cam = e:get("camera")
         local fp = e:get("camera/first_person")
         local look = e:get("input/game/first_person/look")
@@ -63,18 +81,20 @@ register_system("Update", function(world)
             })
         end
     end
-end, { label = "Camera" })
+end):in_set("camera/first_person"):before("camera/3d/camera3d_aim")
 
 -- The eye sits at the head. Written only once `camera/3d` exists: writing it earlier would
 -- put the base on the entity directly, and it would not leave with this mod.
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         ["or"] = {
             changed = { "camera" },
             added = { "camera/first_person", "camera/3d" },
         },
-        with = { "camera", "camera/3d", "camera/first_person" },
-    })) do
+        with = { "camera", Mut["camera/3d"], "camera/first_person" },
+    }],
+}, function(carriers)
+    for _, e in ipairs(carriers:iter_mut()) do
         local cam = e:get("camera")
         -- `camera` arrives as `{}` and gets its defaults when its own mod loads, which can
         -- be a frame later. Filling them is a change to `camera`, which runs this again.
@@ -82,6 +102,6 @@ register_system("Update", function(world)
             e:patch({ ["camera/3d"] = { offset = { x = 0, y = cam.height, z = 0 } } })
         end
     end
-end, { label = "CameraAim" })
+end):in_set("camera/first_person/aim"):before("camera/3d/camera3d_aim")
 
 return { base = "camera/3d" }

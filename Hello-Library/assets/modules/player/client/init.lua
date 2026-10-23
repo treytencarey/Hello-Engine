@@ -4,15 +4,20 @@
 -- collider never attaches. The net client marks its own player `core/net/local` frames
 -- after the player arrives, so both edges count.
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+local app = ...
+
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "player", "core/net/local" },
         },
         with = { "player", "core/net/local" },
-        optional = { "RigidBody3d" },
-    })) do
-        e:patch({
+        optional = { Mut["RigidBody3d"] },
+    }],
+    Commands,
+}, function(owned, commands)
+    for _, e in ipairs(owned:iter_mut()) do
+        commands:entity(e:id()):patch({
             input = { mode = "input/game" },
             sidebar = {},
         })
@@ -20,14 +25,20 @@ register_system("First", function(world)
             e:set({ RigidBody3d = "Dynamic" })
         end
     end
-end, { label = "PlayerLocal" })
+end):in_set("player/local")
 
--- `player` was taken off an entity that stays: take off what this half added.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "player" } })) do
-        e:patch({
-            input = null,
-            sidebar = null,
-        })
+-- `player` was taken off an entity that stays: take off what this half added. A despawned
+-- entity has no row in `parts`.
+app:add_systems(First, {
+    Query[{ removed = { "player" } }],
+    Query[{ any_of = { "input", "sidebar" } }],
+    Commands,
+}, function(removed, parts, commands)
+    local gone = {}
+    for _, e in ipairs(removed:iter()) do
+        gone[#gone + 1] = e:id()
     end
-end, { label = "PlayerRemoved" })
+    for _, e in ipairs(parts:iter_many(gone)) do
+        commands:entity(e:id()):remove("input", "sidebar")
+    end
+end):in_set("player/removed")

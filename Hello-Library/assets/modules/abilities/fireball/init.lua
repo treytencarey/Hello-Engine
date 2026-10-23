@@ -19,12 +19,17 @@
 --     color = { r = <0..1>, g = <0..1>, b = <0..1> },
 -- }
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ changed = { "abilities/fireball" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ changed = { "abilities/fireball" } }],
+    Commands,
+}, function(players, commands)
+    for _, e in ipairs(players:iter()) do
         local f = e:get("abilities/fireball")
         if f.key == nil or f.cooldown == nil or f.speed == nil or f.radius == nil
             or f.blast == nil or f.color == nil then
-            e:patch({
+            commands:entity(e:id()):patch({
                 ["abilities/fireball"] = {
                     key = f.key or "KeyQ",
                     cooldown = f.cooldown or 1,
@@ -35,23 +40,26 @@ register_system("First", function(world)
                 },
             })
         else
-            e:patch({ abilities = { fireball = { key = f.key, cooldown = f.cooldown } } })
+            commands:entity(e:id()):patch({ abilities = { fireball = { key = f.key, cooldown = f.cooldown } } })
         end
     end
-end, { label = "AbilitiesFireball" })
+end):in_set("abilities/fireball")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         added = { "input/game/abilities/fireball" },
         with = { "abilities/fireball", "Transform" },
         -- The cooldown `abilities` starts on this same press shows from next frame.
         without = { "abilities/fireball/cooling" },
         optional = { "camera" },
-    })) do
+    }],
+    Commands,
+}, function(pressed, commands)
+    for _, e in ipairs(pressed:iter()) do
         local f = e:get("abilities/fireball")
         local camera = e:get("camera") or {}
         local at = e:get("Transform").translation
-        spawn({
+        commands:spawn({
             ["abilities/projectile"] = {
                 at = { x = at.x, y = at.y + 1, z = at.z },
                 yaw = camera.yaw,
@@ -69,11 +77,18 @@ register_system("Update", function(world)
             ["core/net/sync"] = { ["projectile/caster"] = { authority = "server" } },
         })
     end
-end, { label = "AbilitiesFireballFire" })
+end):in_set("abilities/fireball/fire")
 
--- `abilities/fireball` was taken off an entity that stays: its entry goes.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "abilities/fireball" } })) do
-        if world:get_entity(e:id()) then e:patch({ abilities = { fireball = null } }) end
+-- `abilities/fireball` was taken off an entity that stays: its entry goes. A despawned player
+-- is in the `removed` rows too.
+app:add_systems(First, {
+    Query[{ removed = { "abilities/fireball" } }],
+    Query[{ with = { "abilities" } }],
+    Commands,
+}, function(removed, players, commands)
+    for _, e in ipairs(removed:iter()) do
+        if players:contains(e:id()) then
+            commands:entity(e:id()):patch({ abilities = { fireball = null } })
+        end
     end
-end, { label = "AbilitiesFireballRemoved" })
+end):in_set("abilities/fireball/removed")

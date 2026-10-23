@@ -14,12 +14,12 @@ A dark theme: dark panels, light text, blue accents. Extends `ui/theme`.
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | ThemeDark | When `ui/theme` arrives on its entity, write the dark colors |
+| First | `ui/theme/dark` | When `ui/theme` arrives on its entity, write the dark colors |
 
 ## Use
 
 ```lua
-spawn({ ["ui/theme/dark"] = {} })
+commands:spawn({ ["ui/theme/dark"] = {} })
 ```

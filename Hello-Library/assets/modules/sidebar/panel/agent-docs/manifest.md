@@ -19,28 +19,30 @@ The base of every sidebar panel: a column with a header holding the title, and a
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | SidebarPanelInit | On an added `sidebar/panel`, fill in missing config |
-| First, after `SidebarPanelInit` | SidebarPanelBuild | Style the panel and spawn its header, title, scroll area and loading text |
-| First, after `SidebarPanelBuild` | SidebarPanelTitle | When the config changes, from the frame the panel is built: width, header shown for a non-empty title, title text, loading text gone once there is a title |
-| First | SidebarPanelRemoved | When `sidebar/panel` is removed from an entity that stays, remove its `Node` and style (its marked parts go by `mod_registry`, even when this mod stops with its last carrier) |
+| First | `sidebar/panel/init` | On an added `sidebar/panel`, fill in missing config |
+| First, after `sidebar/panel/init` | `sidebar/panel/build` | Style the panel and spawn its header, title, scroll area and loading text |
+| First, after `sidebar/panel/build` | `sidebar/panel/title` | When the config changes, from the frame the panel is built: width, header shown for a non-empty title, title text, loading text gone once there is a title |
+| First | `sidebar/panel/removed` | When `sidebar/panel` is removed from an entity that stays, remove its `Node` and style (its marked parts go by `mod_registry`, even when this mod stops with its last carrier) |
 
 ## Use
 
 ```lua
-local panel = spawn({ ["sidebar/panel"] = { width = 320 } }):with_parent(container)
+local panel = commands:spawn({ ["sidebar/panel"] = { width = 320 }, ChildOf = container }):id()
 
--- later, when the content is ready: fill the scroll area, then set the title
-for _, scroll in ipairs(world:query({ entities = { panel_id }, with = { "sidebar/panel/scroll" } })) do
-    spawn({ Text = { text = "hello" }, ["ui/style"] = { text = "text" } }):with_parent(scroll:id())
+-- later, when the content is ready: fill the scroll area, then set the title. The scroll
+-- area is found by its marker among the panel's descendants, through a declared
+-- Query[{ with = { "sidebar/panel/scroll" } }]
+for _, scroll in ipairs(scrolls:iter_many(scrolls:iter_descendants(panel))) do
+    commands:spawn({ Text = { text = "hello" }, ["ui/style"] = { text = "text" }, ChildOf = scroll:id() })
 end
-panel:patch({ ["sidebar/panel"] = { title = "Files" } })
+commands:entity(panel):patch({ ["sidebar/panel"] = { title = "Files" } })
 ```
 
 ## Notes
 
-- The wheel scrolls in a `Pointer<Scroll>` observer on the scroll area, keeping the offset between the top and the end of the content. A suite scrolls with `scroll:invoke_observer("Pointer<Scroll>", { event = { y = <steps> } })`.
+- The wheel scrolls in a `Pointer<Scroll>` observer on the scroll area, keeping the offset between the top and the end of the content. A suite scrolls with `scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = <steps> } })`: the observer reads the scroll area from `event.entity`.
 - When content shrinks, Bevy clamps what is drawn; the next wheel step clamps `offset` too.
-- Find the parts by their markers under the panel (`entities = { panel }`), never by a stored id.
+- Find the parts by their markers among the panel's descendants (`parts:iter_many(parts:iter_descendants(panel))`), never by a stored id.
 - Layout needs a window: a suite for a panel runs windowed.

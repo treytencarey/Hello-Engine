@@ -25,11 +25,11 @@ A grenade: a key lobs a small glowing ball along the camera's look. It falls, bo
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | AbilitiesGrenade | Fill in missing fields; then write its entry in `abilities` |
-| Update | AbilitiesGrenadeFire | On its press while not cooling, spawn its `abilities/projectile` |
-| First | AbilitiesGrenadeRemoved | When `abilities/grenade` is removed from an entity that stays, remove its entry |
+| First | `abilities/grenade` | Fill in missing fields; then write its entry in `abilities` |
+| Update | `abilities/grenade/fire` | On its press while not cooling, spawn its `abilities/projectile` |
+| First | `abilities/grenade/removed` | When `abilities/grenade` is removed from an entity that stays, remove its entry |
 
 ## Notes
 

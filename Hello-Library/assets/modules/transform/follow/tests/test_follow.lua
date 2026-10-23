@@ -1,9 +1,11 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("FollowSuite")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 -- A quarter turn about Y, as a body that turned to face sideways.
 local QUARTER = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 }
@@ -20,25 +22,31 @@ local function find(world, name)
 end
 
 local function world_transform(world, e)
-    return world:call_component_method(e:id(), "GlobalTransform", "compute_transform")
+    return world:get_entity(e:id()).GlobalTransform:compute_transform()
 end
 
 local function near(a, b) return math.abs(a - b) < 1e-3 end
 
+-- The child is spawned with an identity Transform; the mod has run once it is not.
+local function written(e)
+    local t = e:get("Transform").translation
+    return not (t.x == 0 and t.y == 0 and t.z == 0)
+end
+
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local body, child = find(world, "body"), find(world, "child")
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        local parent = spawn({
+        local parent = commands:spawn({
             ["zz/name"] = { name = "body" },
             ["core/net/sync"] = false,
             Transform = { translation = { x = 5, y = 0, z = 0 }, rotation = QUARTER },
         })
-        spawn({
+        local child_id = commands:spawn({
             ["zz/name"] = { name = "child" },
             ["core/net/sync"] = false,
             Transform = {},
@@ -46,10 +54,13 @@ register_system("Update", function(world)
                 rotation = { x = 0, y = 0, z = 0, w = 1 },
                 offset = { x = 0, y = 1.5, z = 2 },
             },
-        }):with_parent(parent:id())
+        }):id()
+        commands:entity(parent:id()):add_child(child_id)
         step("placed")
 
-    elseif phase == "placed" and child and clock > 0.3 then
+    -- The mod loads when the child appears and its first run can come frames later than its
+    -- load (its system is moved to its own place before propagation), so wait for that run.
+    elseif phase == "placed" and child and clock > 0.3 and written(child) then
         local t = world_transform(world, child)
         suite.assert_test("T1_the_child_keeps_its_own_world_rotation",
             near(t.rotation.x, 0) and near(t.rotation.y, 0) and near(t.rotation.z, 0) and near(math.abs(t.rotation.w), 1),
@@ -75,4 +86,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("FollowSuite")
     end
-end, { label = "FollowSuite" })
+end):in_set("zz/follow_suite")

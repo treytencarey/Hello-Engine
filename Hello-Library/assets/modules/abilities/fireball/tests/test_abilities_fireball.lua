@@ -12,11 +12,14 @@
 --   F6 a cooldown started by something else (a debuff) fires nothing
 --   F7 a press while it cools fires nothing
 --   F5 taken off: its entry goes, and another ability's entry stays
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesFireballSuite")
+local Time = require("bevy::time::Time")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local function the_player(world)
     return world:query({ with = { "zz/player" }, optional = { "abilities/fireball", "abilities", "abilities/fireball/cooling" } })[1]
@@ -24,23 +27,24 @@ end
 
 -- Every launch, counted as it is spawned: one that hits the wall is gone in 0.4 s.
 local launches = 0
-register_system("Update", function(world)
+app:add_systems(Update, { World }, function(world)
     launches = launches + #world:query({ added = { "abilities/projectile" } })
-end, { label = "AbilitiesFireballSuiteLaunches" })
+end):in_set("zz/abilities_fireball_suite_launches")
 
 local phase, clock = "spawn", 0
 local launches_before = 0
 local player_id
 
-register_system("Update", function(world)
-    clock = clock + (world:delta_time() or 0)
+-- The suite's clock is the mods': Bevy's `Time`.
+app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+    clock = clock + time:delta_secs()
     local function step(next_phase) phase, clock = next_phase, 0 end
     local p = player_id and the_player(world)
     local function patch(t) world:get_entity(player_id):patch(t) end
 
     if phase == "spawn" then
         -- High above the ground, facing -Z, with a wall 10 m ahead.
-        player_id = spawn({
+        player_id = commands:spawn({
             ["zz/player"] = {},
             ["abilities/fireball"] = {},
             abilities = { zzother = { key = "KeyE" } },
@@ -49,7 +53,7 @@ register_system("Update", function(world)
             ["core/net/owner"] = { client_id = 7 },
             ["core/net/sync"] = { Transform = { authority = "client" } },
         }):id()
-        spawn({
+        commands:spawn({
             ["zz/wall"] = {},
             Transform = { translation = { x = 0, y = 101, z = -10 } },
             RigidBody3d = "Fixed",
@@ -93,7 +97,8 @@ register_system("Update", function(world)
 
     elseif phase == "hit" then
         local blasts = world:query({ with = { "explosion" } })
-        if #blasts == 0 and clock < 3 then return end
+        -- The server's despawn of the ball lands a frame or so after its explosion shows.
+        if (#blasts == 0 or #world:query({ with = { "abilities/projectile" } }) > 0) and clock < 3 then return end
         local x = blasts[1] and blasts[1]:get("explosion") or {}
         local at = x.at or {}
         -- The wall's face is at z = -9.5; the ball flew level at y = 101.
@@ -103,7 +108,7 @@ register_system("Update", function(world)
             string.format("blasts=%d at=(%s,%s,%s) balls=%s", #blasts, tostring(at.x), tostring(at.y), tostring(at.z), (function()
                 local out = {}
                 for _, b in ipairs(world:query({ with = { "abilities/projectile" }, optional = { "collision_trigger", "Sensor3d", "RigidBody3d" } })) do
-                    local w = world:call_component_method(b:id(), "GlobalTransform", "compute_transform").translation
+                    local w = world:get_entity(b:id()).GlobalTransform:compute_transform().translation
                     out[#out + 1] = string.format("(%.1f,%.1f,%.1f sensor=%s trig=%s)", w.x, w.y, w.z,
                         tostring(b:has("Sensor3d")), tostring(b:has("collision_trigger")))
                 end
@@ -144,4 +149,4 @@ register_system("Update", function(world)
         suite.finish("ABILITIES_FIREBALL")
         phase = "done"
     end
-end, { label = "AbilitiesFireballSuite" })
+end):in_set("zz/abilities_fireball_suite")

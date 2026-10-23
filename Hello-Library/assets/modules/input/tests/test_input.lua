@@ -1,9 +1,11 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("InputSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local ACTIONS = {
     "input/game/movement/forward",
@@ -24,18 +26,18 @@ end
 
 -- A consumer reading the edges, as movement and a camera would.
 local pressed, changes, max_dy = 0, 0, 0
-register_system("Update", function(world)
+app:add_systems(Update, { World }, function(world)
     pressed = pressed + #world:query({ added = { "input/game/movement/forward" }, with = { "zz/player" } })
     changes = changes + #world:query({ changed = { "input/game/movement/forward" }, with = { "zz/player" } })
     for _, e in ipairs(world:query({ changed = { "input/game/look/zoom" } })) do
         max_dy = math.max(max_dy, e:get("input/game/look/zoom").dy)
     end
-end, { label = "InputSuiteConsumer" })
+end):in_set("zz/input_suite_consumer")
 
 local phase, clock = "spawn", 0
 local events = {}
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     for _, ev in ipairs(events) do world:write_event(ev[1], ev[2]) end
     events = {}
@@ -44,7 +46,7 @@ register_system("Update", function(world)
     local function key(code, state) events[#events + 1] = { "SyntheticKeyInput", { key_code = code, state = state } } end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/player"] = {},
             ["core/net/local"] = {},
             ["core/net/sync"] = false,
@@ -162,4 +164,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("InputSuite")
     end
-end, { label = "InputSuite" })
+end):in_set("zz/input_suite")

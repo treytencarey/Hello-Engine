@@ -1,8 +1,8 @@
 -- The client half: each character's model and the clip it plays, built per entity.
 --
 -- A character's model is a child (`animation/model`) holding its scene, and its clips are
--- nodes of its own graph (`animation/graph`). Both hold handles from `load_asset`, which
--- Bevy refills in place when a file changes or arrives, so a file change rebuilds nothing
+-- nodes of its own graph (`animation/graph`). Both hold asset handles, which Bevy refills in
+-- place when a file changes or arrives, so a file change rebuilds nothing
 -- here. A change to `animation` replaces only what it names anew: a new scene replaces the
 -- model, new clips rebuild the graph. The scene spawns its own AnimationPlayer, which is
 -- given its character's graph and marked `animation/player`. The clip to play comes from
@@ -19,28 +19,44 @@
 -- animation/motion = { at = { x, y, z } }: where the character was last frame.
 -- animation/playing = { state = <name>, speed = <playback speed> }: what it should play.
 
+local app = ...
+local AssetServer = require("bevy::asset::AssetServer")
+local Time = require("bevy::time::Time")
+
 -- Its model, once its fields are filled in: spawned on add, replaced when the scene changes.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ changed = { "animation" }, optional = { "Children" } })) do
+app:add_systems(First, {
+    Query[{
+        changed = { "animation" },
+        optional = { "Children" },
+    }],
+    Query[{ with = { "animation/model" } }],
+    Res[AssetServer],
+    Commands,
+}, function(changed, models, asset_server, commands)
+    for _, e in ipairs(changed:iter()) do
         local a = e:get("animation")
         if a.model and a.scene and a.offset then
             local scene = a.model .. a.scene
-            local model = world:query({ with = { "animation/model" }, iter_many = e:get("Children") or {}, limit = 1 })[1]
+            local children = e:get("Children") or {}
+            local model = models:iter_many(children)[1]
             if model == nil or model:get("animation/model").scene ~= scene then
-                if model then despawn(model:id()) end
-                spawn({
+                if model then commands:entity(model:id()):despawn() end
+                commands:spawn({
                     ["animation/model"] = { scene = scene },
-                    SceneRoot = load_asset(scene),
+                    SceneRoot = asset_server:load(scene),
                     Transform = { translation = a.offset },
-                }):with_parent(e:id())
+                }):insert({ ChildOf = e:id() })
             end
         end
     end
-end, { label = "AnimationModel" })
+end):in_set("animation/model")
 
 -- Its graph, a node per clip: built on add, rebuilt when a clip changes. Every clip, the
 -- first included, is added under the root from node 2, so each plays from its start.
-register_system("First", function(world)
+-- An AnimationGraph with clips cannot be built through `Assets<AnimationGraph>` from Lua yet
+-- (its graph is opaque to reflection, and `add_clip` is reached only as an asset method), so
+-- this system takes the World and builds it as before.
+app:add_systems(First, { World }, function(world)
     for _, e in ipairs(world:query({ changed = { "animation" }, optional = { "animation/graph" } })) do
         local a = e:get("animation")
         if a.model and a.clips then
@@ -73,37 +89,41 @@ register_system("First", function(world)
             end
         end
     end
-end, { label = "AnimationGraph" })
+end):in_set("animation/graph")
 
 -- The scene's AnimationPlayer, linked to its character's graph: the nearest ancestor that
 -- carries one.
-register_system("First", function(world)
-    for _, p in ipairs(world:query({ added = { "AnimationPlayer" } })) do
-        local carrier = world:query({
-            with = { "animation", "animation/graph" },
-            iter_many = world:ancestors(p:id()),
-            limit = 1,
-        })[1]
+app:add_systems(First, {
+    Query[{ added = { "AnimationPlayer" } }],
+    Query[{ with = { "animation", "animation/graph" } }],
+    Commands,
+}, function(players, carriers, commands)
+    for _, p in ipairs(players:iter()) do
+        local carrier = carriers:iter_many(carriers:iter_ancestors(p:id()))[1]
         if carrier then
-            world:get_entity(p:id()):set({
+            commands:entity(p:id()):insert({
                 AnimationTransitions = {},
                 ["animation/player"] = {},
                 AnimationGraphHandle = carrier:get("animation/graph").handle,
             })
         end
     end
-end, { label = "AnimationLink", after = { "AnimationGraph" } })
+end):in_set("animation/link"):after("animation/graph")
 
 -- What it is doing: from its body's velocity when it has one (physics moves a body in fixed
 -- steps, so most frames show no movement), else from how it moved since last frame. Motion
 -- is followed every frame.
-register_system("Update", function(world)
-    local dt = world:delta_time()
-    if dt <= 0 then return end
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Res[Time],
+    Query[{
         with = { "animation", "animation/graph", "Transform" },
         optional = { "animation/motion", "animation/playing", "animation/action", "Velocity3d" },
-    })) do
+    }],
+    Commands,
+}, function(time, characters, commands)
+    local dt = time:delta_secs()
+    if dt <= 0 then return end
+    for _, e in ipairs(characters:iter()) do
         local a = e:get("animation")
         local at = e:get("Transform").translation
         local vx, vy, vz
@@ -130,49 +150,50 @@ register_system("Update", function(world)
             end
         end
         local playing = e:get("animation/playing") or {}
-        local update = { ["animation/motion"] = { at = { x = at.x, y = at.y, z = at.z } } }
+        commands:entity(e:id()):patch({ ["animation/motion"] = { at = { x = at.x, y = at.y, z = at.z } } })
         if playing.state ~= state or playing.speed ~= speed then
-            update["animation/playing"] = { state = state, speed = speed }
+            commands:entity(e:id()):patch({ ["animation/playing"] = { state = state, speed = speed } })
         end
-        e:patch(update)
     end
-end, { label = "AnimationState" })
+end):in_set("animation/state")
 
 -- The clip its player plays, when what it should play changes (its state, its speed or its
 -- graph) or a new player appears. What a player last started is kept on it
 -- (`animation/player`): a new state or graph crossfades into its clip from the start, and the
 -- same state at a new speed only changes the running clip's speed (a restart on every speed
 -- change kept a clip from ever reaching its end). A new player has started nothing.
-register_system("Update", function(world)
+app:add_systems(Update, {
+    Query[{
+        ["or"] = { changed = { "animation/playing", "animation/graph" } },
+        with = { "animation" },
+    }],
+    Query[{ added = { "animation/player" } }],
+    Query[{ with = { "animation" } }],
+    Query[{ with = { "animation", "animation/playing", "animation/graph" } }],
+    Query[{ with = { Mut["animation/player"], Mut["AnimationTransitions"], Mut["AnimationPlayer"] } }],
+}, function(changed, new_players, owners, characters, players)
     local carriers = {}
-    for _, e in ipairs(world:query({ ["or"] = { changed = { "animation/playing", "animation/graph" } }, with = { "animation" } })) do
+    for _, e in ipairs(changed:iter()) do
         carriers[#carriers + 1] = e:id()
     end
-    for _, p in ipairs(world:query({ added = { "animation/player" } })) do
-        local carrier = world:query({ with = { "animation" }, iter_many = world:ancestors(p:id()), limit = 1 })[1]
+    for _, p in ipairs(new_players:iter()) do
+        local carrier = owners:iter_many(owners:iter_ancestors(p:id()))[1]
         if carrier then carriers[#carriers + 1] = carrier:id() end
     end
-    for _, e in ipairs(world:query({
-        with = { "animation", "animation/playing", "animation/graph" },
-        iter_many = carriers,
-    })) do
+    for _, e in ipairs(characters:iter_many(carriers)) do
         local playing = e:get("animation/playing")
         local graph = e:get("animation/graph")
         local node = graph.nodes[playing.state] or graph.nodes.idle
-        local player = world:query({
-            with = { "animation/player", "AnimationTransitions" },
-            iter_many = world:descendants(e:id()),
-            limit = 1,
-        })[1]
+        local player = players:iter_many_mut(players:iter_descendants(e:id()))[1]
         if player and node then
             local started = player:get("animation/player")
             local options = { speed = playing.speed or 1, ["repeat"] = true }
             if started.state == playing.state and started.graph == graph.handle then
-                world:call_component_method(player:id(), "AnimationPlayer", "play", node, options)
+                player.AnimationPlayer:play(node, options)
             else
-                world:call_component_method(player:id(), "AnimationTransitions", "play", node, 0.2, options)
-                world:get_entity(player:id()):set({ ["animation/player"] = { state = playing.state, graph = graph.handle } })
+                player.AnimationTransitions:play(node, 0.2, options)
+                player:set({ ["animation/player"] = { state = playing.state, graph = graph.handle } })
             end
         end
     end
-end, { label = "AnimationPlay", after = { "AnimationState" } })
+end):in_set("animation/play"):after("animation/state")

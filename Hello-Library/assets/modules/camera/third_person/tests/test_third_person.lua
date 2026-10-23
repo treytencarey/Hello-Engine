@@ -1,11 +1,13 @@
 -- --host
 local Quat = require("bevy::math::Quat")
 
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ThirdPersonSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local function carrier(world, name)
     for _, e in ipairs(world:query({
@@ -22,7 +24,15 @@ local function eyes_of(world, e)
     return world:query({
         entities = { e:id() },
         with = { "camera/3d/eye", "Camera" },
+        optional = { "Transform" },
     })
+end
+
+-- An eye is spawned with an identity Transform; `transform/follow` has placed it once it is not.
+-- That mod loads when the first eye appears, and its first run can come frames after its load.
+local function followed(eye)
+    local t = eye:get("Transform").translation
+    return not (t.x == 0 and t.y == 0 and t.z == 0)
 end
 
 local function near(a, b) return math.abs(a - b) < 1e-3 end
@@ -40,7 +50,7 @@ local function orbit(at, cam)
 end
 
 local function placed(world, eye_id, at, cam)
-    local t = world:call_component_method(eye_id, "GlobalTransform", "compute_transform")
+    local t = world:get_entity(eye_id).GlobalTransform:compute_transform()
     local want = orbit(at, cam)
     local turn = Quat.mul_quat(Quat.from_rotation_y(cam.yaw),
         Quat.from_rotation_x(cam.pitch))
@@ -62,7 +72,7 @@ end
 
 -- A look and a zoom injected before Update must move the eye in the same frame: read
 -- after transforms propagate, in Last.
-register_system("PreUpdate", function(world)
+app:add_systems(PreUpdate, { World }, function(world)
     if phase == "exact" and not looked_exact then
         looked_exact = true
         yaw_before = carrier(world, "me"):get("camera").yaw
@@ -71,9 +81,9 @@ register_system("PreUpdate", function(world)
             ["input/game/third_person/zoom"] = { dx = 0, dy = 1 },
         })
     end
-end, { label = "ThirdPersonSuiteLook" })
+end):in_set("zz/third_person_suite_look")
 
-register_system("Last", function(world)
+app:add_systems(Last, { World }, function(world)
     if looked_exact and exact == nil then
         local me = carrier(world, "me")
         local cam = me:get("camera")
@@ -83,30 +93,33 @@ register_system("Last", function(world)
             got = string.format("distance=%s yaw=%s %s", tostring(cam.distance), tostring(cam.yaw), got),
         }
     end
-end, { label = "ThirdPersonSuiteExact" })
+end):in_set("zz/third_person_suite_exact")
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local me, other = carrier(world, "me"), carrier(world, "other")
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        -- `input` with no mode: no binding is active, so a mouse moved while the test window has
+        -- focus does not turn or zoom the camera. The suite writes the look and the zoom itself;
+        -- the camera mod binds into `input/game` whatever the mode.
+        commands:spawn({
             ["zz/carrier"] = { name = "me" },
             ["core/net/local"] = {},
-            input = { mode = "input/game" },
+            input = {},
             ["core/net/sync"] = false,
             Transform = { translation = AT },
             ["camera/third_person"] = {},
         })
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "other" },
             ["core/net/sync"] = false,
             Transform = {},
             ["camera/third_person"] = {},
         })
         -- keeps camera/first_person loaded, so switching to it is not its first run
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "bystander" },
             ["core/net/sync"] = false,
             Transform = {},
@@ -114,7 +127,7 @@ register_system("Update", function(world)
         })
         step("spawned")
 
-    elseif phase == "spawned" and me and #eyes_of(world, me) > 0 and clock > 0.3 then
+    elseif phase == "spawned" and me and #eyes_of(world, me) > 0 and followed(eyes_of(world, me)[1]) and clock > 0.3 then
         local bindings = (me:get("input/game") or {}).third_person
         local tp = me:get("camera/third_person")
         suite.assert_test("T1_the_local_carrier_gets_look_and_zoom_bindings_and_default_config",
@@ -166,7 +179,7 @@ register_system("Update", function(world)
 
     elseif phase == "switched" and clock > 0.5 then
         local eyes = eyes_of(world, me)
-        local t = #eyes == 1 and world:call_component_method(eyes[1]:id(), "GlobalTransform", "compute_transform")
+        local t = #eyes == 1 and world:get_entity(eyes[1]:id()).GlobalTransform:compute_transform()
         local bindings = me:get("input/game") or {}
         suite.assert_test("T8_switching_to_first_person_keeps_the_eye_and_moves_it_to_the_head",
             #eyes == 1 and eyes[1]:id() == first_eye and me:get("camera/third_person") == nil
@@ -229,10 +242,10 @@ register_system("Update", function(world)
 
     elseif phase == "exact" and exact ~= nil then
         suite.assert_test("T12_look_and_zoom_move_the_eye_in_the_same_frame", exact.ok, exact.got)
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "late" },
             ["core/net/local"] = {},
-            input = { mode = "input/game" },
+            input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = -5, y = 0, z = 0 } },
             camera = { yaw = 0.4, pitch = -0.5, distance = 4, height = 2.5, offset = { x = 0.5, y = 0, z = 0 } },
@@ -254,7 +267,7 @@ register_system("Update", function(world)
     elseif phase == "no input" and clock > 0.3 then
         local who = carrier(world, "me")
         suite.assert_test("T14a_removing_input_takes_the_bindings", (world:get_entity(who:id()):get("input/game") or {}).third_person == nil, "")
-        who:patch({ input = { mode = "input/game" } })
+        who:patch({ input = {} })
         step("input back")
 
     elseif phase == "input back" and clock > 0.3 then
@@ -269,4 +282,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("ThirdPersonSuite")
     end
-end, { label = "ThirdPersonSuite" })
+end):in_set("zz/third_person_suite")

@@ -5,11 +5,13 @@
 --   P2 its own fields reach the projectile
 --   P3 the pitch aims it: a look straight up launches straight up
 --   P4 taken off an entity that stays: the `projectile` goes
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesProjectileSuite")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local function near(a, b) return math.abs((a or 0/0) - b) < 1e-3 end
 
@@ -21,17 +23,17 @@ end
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/shot"] = { name = "level" },
             ["abilities/projectile"] = { at = { x = 0, y = 51, z = 0 }, yaw = math.pi / 2, pitch = 0,
                                          speed = 10, radius = 0.4, gravity = 0, lifetime = 30 },
         })
-        spawn({
+        commands:spawn({
             ["zz/shot"] = { name = "up" },
             ["abilities/projectile"] = { at = { x = 50, y = 51, z = 0 }, yaw = 0, pitch = math.pi / 2,
                                          speed = 10, gravity = 0, lifetime = 30 },
@@ -64,4 +66,4 @@ register_system("Update", function(world)
         suite.finish("ABILITIES_PROJECTILE")
         phase = "done"
     end
-end, { label = "AbilitiesProjectileSuite" })
+end):in_set("zz/abilities_projectile_suite")

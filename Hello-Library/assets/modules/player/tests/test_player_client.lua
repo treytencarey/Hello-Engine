@@ -1,14 +1,16 @@
 -- --host (windowed: input and the sidebar act on a window)
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerClientSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-spawn({ Camera2d = {}, Camera = { order = 0 } })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
+end)
 
 -- A player as the server sends it: kinematic, with its collider.
-local function arrive(name)
-    spawn({
+local function arrive(commands, name)
+    commands:spawn({
         ["zz/name"] = { name = name },
         player = { client_id = name == "me" and 1 or 2, spawn_index = 1 },
         Transform = { translation = { x = 0, y = 3, z = 0 } },
@@ -30,18 +32,18 @@ local function named(world, name)
 end
 
 local function y_of(world, e)
-    return world:call_component_method(e:id(), "GlobalTransform", "compute_transform").translation.y
+    return world:get_entity(e:id()).GlobalTransform:compute_transform().translation.y
 end
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        arrive("me")
-        arrive("other")
+        arrive(commands, "me")
+        arrive(commands, "other")
         step("arrived")
 
     -- The net client marks its own player local frames after it arrives.
@@ -77,4 +79,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("PlayerClientSuite")
     end
-end, { label = "PlayerClientSuite" })
+end):in_set("zz/player_client_suite")

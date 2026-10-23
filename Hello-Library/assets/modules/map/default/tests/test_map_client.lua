@@ -1,11 +1,13 @@
 -- --host (windowed: a headless run has no StandardMaterial assets)
 local Quat = require("bevy::math::Quat")
 
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("MapClientSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 -- Asset contents cannot be read back, so record each request; the real call is still made.
 local made = {}
@@ -34,20 +36,20 @@ local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-3
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/name"] = { name = "map" },
             ["map/default"] = { size = { x = 10, y = 1, z = 6 }, color = { r = 0.1, g = 0.2, b = 0.9 }, sun = 5000 },
             ["core/net/sync"] = false,
         })
         -- A second map keeps the mod loaded when the first loses its component, so the
         -- first's sun has to go by this mod's removal, not by the mod unloading.
-        spawn({ ["zz/name"] = { name = "other" }, ["map/default"] = {}, ["core/net/sync"] = false })
-        spawn({
+        commands:spawn({ ["zz/name"] = { name = "other" }, ["map/default"] = {}, ["core/net/sync"] = false })
+        commands:spawn({
             ["zz/name"] = { name = "ball" },
             Transform = { translation = { x = 0, y = 2, z = 0 } },
             RigidBody3d = "Dynamic",
@@ -68,12 +70,12 @@ register_system("Update", function(world)
                 and near(mesh.primitive.Cuboid.half_size.x, 5) and near(mesh.primitive.Cuboid.half_size.z, 3)
                 and near(material.base_color.b, 0.9), "")
         local sun = suns(world, map)[1]
-        local down = sun and Quat.mul_vec3(world:call_component_method(sun:id(), "GlobalTransform", "compute_transform").rotation,
+        local down = sun and Quat.mul_vec3(world:get_entity(sun:id()).GlobalTransform:compute_transform().rotation,
             { x = 0, y = 0, z = -1 })
         suite.assert_test("C2_the_sun_shines_down_at_its_strength",
             sun ~= nil and sun:get("DirectionalLight").illuminance == 5000 and down.y < -0.3,
             string.format("down.y=%s", tostring(down and down.y)))
-        local y = world:call_component_method(named(world, "ball"):id(), "GlobalTransform", "compute_transform").translation.y
+        local y = world:get_entity(named(world, "ball"):id()).GlobalTransform:compute_transform().translation.y
         suite.assert_test("C3_the_client_builds_the_ground_too", near(y, 1.0, 0.05), string.format("y=%.3f", y))
         made = {}
         map:patch({ ["map/default"] = { sun = 2000, color = { r = 0.9, g = 0.1, b = 0.1 } } })
@@ -106,4 +108,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("MapClientSuite")
     end
-end, { label = "MapClientSuite" })
+end):in_set("zz/map_client_suite")

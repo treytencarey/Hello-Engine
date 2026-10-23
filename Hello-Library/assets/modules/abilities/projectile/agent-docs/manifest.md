@@ -24,16 +24,16 @@ A projectile fired by an ability. It is launched from a point, 1 m along a look 
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | AbilitiesProjectileLaunch | On an added `abilities/projectile`, add the `projectile`: 1 m along the look from `at`, at `speed` |
-| First | AbilitiesProjectileRemoved | When `abilities/projectile` is removed from an entity that stays, remove the `projectile` |
+| First | `abilities/projectile/launch` | On an added `abilities/projectile`, add the `projectile`: 1 m along the look from `at`, at `speed` |
+| First | `abilities/projectile/removed` | When `abilities/projectile` is removed from an entity that stays, remove the `projectile` |
 
 ## Use
 
 ```lua
--- on the server, when an ability fires
-spawn({
+-- on the server, in the ability's fire system
+commands:spawn({
     ["abilities/projectile"] = { at = above_player, yaw = camera.yaw, pitch = camera.pitch, speed = 20 },
 })
 ```
@@ -41,4 +41,4 @@ spawn({
 ## Notes
 
 - The look is the same rotation `camera/3d` gives its eye, so it flies where the player is looking.
-- It is a root, not the caster's child: a child body is dragged along by a moving parent (measured 2026-10-18; Rapier treats the parent-moved pose as an edit). The link to the caster waits for an engine relationship.
+- It is a root, not the caster's child: a child body is dragged along by a moving parent (measured; Rapier treats the parent-moved pose as an edit). An ability links it to its caster with `projectile/caster` (`abilities/fireball`).

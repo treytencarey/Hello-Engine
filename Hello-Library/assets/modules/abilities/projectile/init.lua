@@ -16,17 +16,21 @@
 --     color = { r = <0..1>, g = <0..1>, b = <0..1> },
 -- }
 
+local app = ...
 local Quat = require("bevy::math::Quat")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "abilities/projectile" } })) do
+app:add_systems(First, {
+    Query[{ added = { "abilities/projectile" } }],
+    Commands,
+}, function(launches, commands)
+    for _, e in ipairs(launches:iter()) do
         local a = e:get("abilities/projectile")
         local look = Quat.mul_quat(Quat.from_rotation_y(a.yaw or 0),
             Quat.from_rotation_x(a.pitch or 0))
         local along = Quat.mul_vec3(look, { x = 0, y = 0, z = -1 })
         local at = a.at or { x = 0, y = 0, z = 0 }
         local speed = a.speed or 20
-        e:patch({
+        commands:entity(e:id()):patch({
             projectile = {
                 from = { x = at.x + along.x, y = at.y + along.y, z = at.z + along.z },
                 velocity = { x = along.x * speed, y = along.y * speed, z = along.z * speed },
@@ -37,11 +41,15 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "AbilitiesProjectileLaunch" })
+end):in_set("abilities/projectile/launch")
 
 -- `abilities/projectile` was taken off an entity that stays: the `projectile` it added goes.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "abilities/projectile" } })) do
-        if world:get_entity(e:id()) then e:patch({ projectile = null }) end
+-- A despawned launch is in the `removed` rows too, which `try_remove` passes by.
+app:add_systems(First, {
+    Query[{ removed = { "abilities/projectile" } }],
+    Commands,
+}, function(removed, commands)
+    for _, e in ipairs(removed:iter()) do
+        commands:entity(e:id()):try_remove("projectile")
     end
-end, { label = "AbilitiesProjectileRemoved" })
+end):in_set("abilities/projectile/removed")

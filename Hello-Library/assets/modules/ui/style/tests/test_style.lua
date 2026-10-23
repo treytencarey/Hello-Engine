@@ -1,12 +1,12 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("StyleSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-
--- The world's theme.
-spawn({ ["ui/theme/dark"] = {} })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    commands:spawn({ ["ui/theme/dark"] = {} })
+end)
 
 local function node(world, name)
     for _, e in ipairs(world:query({
@@ -38,17 +38,17 @@ end
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/node"] = { name = "panel" },
             Node = {},
             ["ui/style"] = { background = "bg", text = "text", border = "border", border_left = "accent" },
         })
-        spawn({
+        commands:spawn({
             ["zz/node"] = { name = "icon" },
             Node = {},
             Button = {},
@@ -132,4 +132,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("StyleSuite")
     end
-end, { label = "StyleSuite" })
+end):in_set("zz/style_suite")

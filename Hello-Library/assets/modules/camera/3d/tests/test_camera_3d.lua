@@ -1,11 +1,13 @@
 -- --host
 local Quat = require("bevy::math::Quat")
 
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("Camera3dSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local QUARTER = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 }
 
@@ -24,14 +26,22 @@ local function eyes_of(world, e)
     return world:query({
         entities = { e:id() },
         with = { "camera/3d/eye", "Camera" },
+        optional = { "Transform" },
     })
+end
+
+-- An eye is spawned with an identity Transform; `transform/follow` has placed it once it is not.
+-- That mod loads when the first eye appears, and its first run can come frames after its load.
+local function followed(eye)
+    local t = eye:get("Transform").translation
+    return not (t.x == 0 and t.y == 0 and t.z == 0)
 end
 
 local function near(a, b) return math.abs(a - b) < 1e-3 end
 
 -- The eye's world transform, against yaw, pitch and the carrier's position plus offset.
 local function placed(world, eye_id, at, yaw, pitch)
-    local t = world:call_component_method(eye_id, "GlobalTransform", "compute_transform")
+    local t = world:get_entity(eye_id).GlobalTransform:compute_transform()
     local want = Quat.mul_quat(Quat.from_rotation_y(yaw),
         Quat.from_rotation_x(pitch))
     local ok = near(t.translation.x, at.x) and near(t.translation.y, at.y) and near(t.translation.z, at.z)
@@ -44,13 +54,13 @@ end
 local phase, clock = "spawn", 0
 local first_eye
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local me, other = carrier(world, "me"), carrier(world, "other")
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "me" },
             ["core/net/local"] = {},
             input = { mode = "input/game" },
@@ -59,7 +69,7 @@ register_system("Update", function(world)
             camera = { yaw = 0.5, pitch = -0.2 },
             ["camera/3d"] = { offset = { x = 1, y = 2, z = 3 } },
         })
-        spawn({
+        commands:spawn({
             ["zz/carrier"] = { name = "other" },
             ["core/net/sync"] = false,
             Transform = {},
@@ -67,7 +77,7 @@ register_system("Update", function(world)
         })
         step("spawned")
 
-    elseif phase == "spawned" and me and #eyes_of(world, me) > 0 and clock > 0.3 then
+    elseif phase == "spawned" and me and #eyes_of(world, me) > 0 and followed(eyes_of(world, me)[1]) and clock > 0.3 then
         local eyes = eyes_of(world, me)
         local ok, got = placed(world, eyes[1]:id(), { x = 3, y = 2, z = 6 }, 0.5, -0.2)
         suite.assert_test("D1_the_local_carrier_gets_one_eye_at_the_offset_turned_to_the_camera",
@@ -136,4 +146,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("Camera3dSuite")
     end
-end, { label = "Camera3dSuite" })
+end):in_set("zz/camera3d_suite")

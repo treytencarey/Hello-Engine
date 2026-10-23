@@ -35,17 +35,39 @@
 --
 -- input/actions = { <action component> = true }
 
-register_system("First", function(world)
-    local keys = world:read_events("KeyboardInput") or {}
-    for _, ev in ipairs(world:read_events("SyntheticKeyInput") or {}) do keys[#keys + 1] = ev end
-    local buttons = world:read_events("MouseButtonInput") or {}
-    for _, ev in ipairs(world:read_events("SyntheticMouseInput") or {}) do buttons[#buttons + 1] = ev end
-    local analog = world:read_events("AnalogInput") or {}
 
-    for _, e in ipairs(world:query({
+local app = ...
+local bevy = require("bevy::prelude")
+local LuaCustomEvent = require("bevy_lua_ecs::custom_events::LuaCustomEvent")
+local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
+local MouseButtonInput = require("bevy::input::mouse::MouseButtonInput")
+local MouseMotion = require("bevy::input::mouse::MouseMotion")
+local MouseWheel = require("bevy::input::mouse::MouseWheel")
+
+app:add_systems(First, {
+    bevy.MessageReader[KeyboardInput],
+    bevy.MessageReader[MouseButtonInput],
+    bevy.MessageReader[LuaCustomEvent],
+    Query[{
         with = { "input", "core/net/local" },
         optional = { "input/held" },
-    })) do
+    }],
+    Commands,
+}, function(keyboard, mouse_buttons, lua_messages, players, commands)
+    local keys = keyboard:read()
+    local buttons = mouse_buttons:read()
+    local analog = {}
+    for _, m in ipairs(lua_messages:read()) do
+        if m.name == "SyntheticKeyInput" then
+            keys[#keys + 1] = m.data
+        elseif m.name == "SyntheticMouseInput" then
+            buttons[#buttons + 1] = m.data
+        elseif m.name == "AnalogInput" then
+            analog[#analog + 1] = m.data
+        end
+    end
+
+    for _, e in ipairs(players:iter()) do
         local held = e:get("input/held") or {}
         local before = held.keys or {}
         local held_keys, held_buttons = {}, {}
@@ -64,7 +86,7 @@ register_system("First", function(world)
             released_buttons[ev.button] = ev.state ~= "Pressed" and null or nil
         end
         if next(held_keys) or next(held_buttons) or not e:has("input/held") then
-            e:patch({
+            commands:entity(e:id()):patch({
                 ["input/held"] = {
                     keys = held_keys,
                     buttons = held_buttons,
@@ -76,42 +98,51 @@ register_system("First", function(world)
             })
         end
     end
-end, { label = "InputHeld" })
+end):in_set("input/held")
 
 -- The action components the player's mode calls for, added, updated or removed so
 -- that only what is active exists.
-register_system("PreUpdate", function(world)
+app:add_systems(PreUpdate, {
+    bevy.MessageReader[MouseMotion],
+    bevy.MessageReader[MouseWheel],
+    bevy.MessageReader[LuaCustomEvent],
+    Query[{
+        with = { "input", "core/net/local" },
+        optional = { "input/actions" },
+    }],
+    Query[{
+        with = { "input", "input/held", "core/net/local" },
+        optional = { "input/actions" },
+    }],
+    Commands,
+}, function(mouse_motion, mouse_wheel, lua_messages, players, held_players, commands)
     local motion, scroll = { x = 0, y = 0 }, { x = 0, y = 0 }
-    for _, ev in ipairs(world:read_events("MouseMotion") or {}) do
+    for _, ev in ipairs(mouse_motion:read()) do
         motion.x = motion.x + (ev.delta and ev.delta.x or 0)
         motion.y = motion.y + (ev.delta and ev.delta.y or 0)
     end
-    for _, ev in ipairs(world:read_events("MouseWheel") or {}) do
+    for _, ev in ipairs(mouse_wheel:read()) do
         scroll.x = scroll.x + (ev.x or 0)
         scroll.y = scroll.y + (ev.y or 0)
     end
-    for _, ev in ipairs(world:read_events("SyntheticMouseWheel") or {}) do
-        scroll.x = scroll.x + (ev.x or 0)
-        scroll.y = scroll.y + (ev.y or 0)
+    for _, m in ipairs(lua_messages:read()) do
+        if m.name == "SyntheticMouseWheel" then
+            scroll.x = scroll.x + (m.data.x or 0)
+            scroll.y = scroll.y + (m.data.y or 0)
+        end
     end
 
     -- The columns this pass reads come from data: each player's mode and the actions
     -- already added.
     local columns = {}
-    for _, e in ipairs(world:query({
-        with = { "input", "core/net/local" },
-        optional = { "input/actions" },
-    })) do
+    for _, e in ipairs(players:iter()) do
         local input = e:get("input")
         local added = e:get("input/actions") or {}
         columns[#columns + 1] = input.mode
         for name in pairs(added) do columns[#columns + 1] = name end
     end
 
-    for _, e in ipairs(world:query({
-        with = { "input", "input/held", "core/net/local" },
-        optional = { "input/actions", table.unpack(columns) },
-    })) do
+    for _, e in ipairs(held_players:with_columns({ optional = columns }):iter()) do
         local input = e:get("input")
         local held = e:get("input/held")
         local bindings = input.mode and e:get(input.mode) or {}
@@ -122,10 +153,11 @@ register_system("PreUpdate", function(world)
         local through = held.through or {}
         local through_keys = through.keys or {}
         local through_buttons = through.buttons or {}
+        local player = commands:entity(e:id())
         if held.mode ~= input.mode then
             -- The mode changed: what is held now waits for its release.
             through_keys, through_buttons = held_keys, held_buttons
-            e:patch({
+            player:patch({
                 ["input/held"] = {
                     mode = input.mode,
                     through = {
@@ -149,10 +181,10 @@ register_system("PreUpdate", function(world)
             end
         end
 
-        local patch, actions = {}, {}
+        local patch, actions, gone = {}, {}, {}
         for name in pairs(added) do
             if not wanted[name] then
-                patch[name] = null
+                gone[#gone + 1] = name
                 actions[name] = null
             end
         end
@@ -163,26 +195,31 @@ register_system("PreUpdate", function(world)
             end
             actions[name] = true
         end
-        if next(patch) then
+        if next(patch) or #gone > 0 then
             patch["input/actions"] = actions
-            e:patch(patch)
+            player:patch(patch)
+            if #gone > 0 then
+                player:remove(gone)
+            end
         end
     end
-end, { label = "Input" })
+end):in_set("input")
 
-register_system("PreUpdate", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(PreUpdate, {
+    Query[{
         changed = { "input" },
         with = { "core/net/local" },
-    })) do
+    }],
+    Query[{ with = { "Window", Mut["CursorOptions"] } }],
+}, function(players, windows)
+    for _, e in ipairs(players:iter()) do
         local input = e:get("input")
         local shown = input.show_cursor == true
-        for _, w in ipairs(world:query({ with = { "Window", "CursorOptions" } })) do
+        for _, w in ipairs(windows:iter_mut()) do
             w:set({
                 CursorOptions = shown and { visible = true, grab_mode = "None" }
                     or { visible = false, grab_mode = { Confined = true } },
             })
         end
     end
-end, { label = "InputCursor" })
-
+end):in_set("input/cursor")

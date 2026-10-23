@@ -12,11 +12,14 @@
 --   A7 a press after the cooldown fires again
 --   A8 one entry taken out while it cools: its action sync and its cooldown go, the others stay
 --   A9 `abilities` taken off: the action syncs and the cooldowns go
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesServerSuite")
+local Time = require("bevy::time::Time")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local BALL, SLOW = "input/game/abilities/zzball", "input/game/abilities/zzslow"
 local BALL_COOL, SLOW_COOL = "abilities/zzball/cooling", "abilities/zzslow/cooling"
@@ -33,14 +36,15 @@ end
 local phase, clock = "spawn", 0
 local player_id
 
-register_system("Update", function(world)
-    clock = clock + (world:delta_time() or 0)
+-- The suite's clock is the mods': Bevy's `Time`.
+app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+    clock = clock + time:delta_secs()
     local function step(next_phase) phase, clock = next_phase, 0 end
     local p = player_id and the_player(world)
     local function press(patch) world:get_entity(player_id):patch(patch) end
 
     if phase == "spawn" then
-        player_id = spawn({
+        player_id = commands:spawn({
             ["zz/player"] = {},
             abilities = {
                 zzball = { key = "KeyQ", cooldown = 0.5 },
@@ -131,12 +135,12 @@ register_system("Update", function(world)
         suite.finish("ABILITIES_SERVER")
         phase = "done"
     end
-end, { label = "AbilitiesServerSuite" })
+end):in_set("zz/abilities_server_suite")
 
 -- What a sub-mod reacts to: the cooldown starting.
-register_system("Update", function(world)
+app:add_systems(Update, { World }, function(world)
     for _, e in ipairs(world:query({ ["or"] = { added = { BALL_COOL, SLOW_COOL } } })) do
         if e:is_added(BALL_COOL) then fires.zzball = fires.zzball + 1 end
         if e:is_added(SLOW_COOL) then fires.zzslow = fires.zzslow + 1 end
     end
-end, { label = "AbilitiesServerFires" })
+end):in_set("zz/abilities_server_fires")

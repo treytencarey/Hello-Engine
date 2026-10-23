@@ -8,11 +8,14 @@
 --      (gravity) and does not explode on contact
 --   G4 taken off while it cools: its entry and its cooldown go
 --   G5 ...and another ability's entry stays
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesGrenadeSuite")
+local Time = require("bevy::time::Time")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local COOL = "abilities/grenade/cooling"
 
@@ -26,14 +29,15 @@ end
 local phase, clock = "spawn", 0
 local player_id
 
-register_system("Update", function(world)
-    clock = clock + (world:delta_time() or 0)
+-- The suite's clock is the mods': Bevy's `Time`.
+app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+    clock = clock + time:delta_secs()
     local function step(next_phase) phase, clock = next_phase, 0 end
     local p = player_id and the_player(world)
     local function patch(t) world:get_entity(player_id):patch(t) end
 
     if phase == "spawn" then
-        player_id = spawn({
+        player_id = commands:spawn({
             ["zz/player"] = {},
             ["abilities/grenade"] = { cooldown = 2 },
             abilities = { zzother = { key = "KeyE" } },
@@ -92,4 +96,4 @@ register_system("Update", function(world)
         suite.finish("ABILITIES_GRENADE")
         phase = "done"
     end
-end, { label = "AbilitiesGrenadeSuite" })
+end):in_set("zz/abilities_grenade_suite")

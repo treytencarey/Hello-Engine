@@ -17,10 +17,18 @@
 -- It moves its body through `Velocity3d`, which the server does not send: one is added
 -- when it is missing, and stays when `movement` goes.
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "movement" }, optional = { "Velocity3d" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{
+        added = { "movement" },
+        optional = { "Velocity3d" },
+    }],
+    Commands,
+}, function(added, commands)
+    for _, e in ipairs(added:iter()) do
         local m = e:get("movement")
-        e:patch({
+        commands:entity(e:id()):patch({
             movement = {
                 speed = m.speed or 6,
                 jump = m.jump or 5,
@@ -30,10 +38,10 @@ register_system("First", function(world)
             },
         })
         if not e:has("Velocity3d") then
-            e:patch({ Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } } })
+            commands:entity(e:id()):insert({ Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } } })
         end
     end
-end, { label = "MovementInit" })
+end):in_set("movement/init")
 
 return {
     ["core/net/sync"] = {

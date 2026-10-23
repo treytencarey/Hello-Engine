@@ -1,9 +1,11 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("MapServerSuite")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local function named(world, name)
     for _, e in ipairs(world:query({
@@ -17,11 +19,11 @@ local function named(world, name)
 end
 
 local function y_of(world, name)
-    return world:call_component_method(named(world, name):id(), "GlobalTransform", "compute_transform").translation.y
+    return world:get_entity(named(world, name):id()).GlobalTransform:compute_transform().translation.y
 end
 
-local function ball(name, x)
-    spawn({
+local function ball(commands, name, x)
+    commands:spawn({
         ["zz/name"] = { name = name },
         Transform = { translation = { x = x, y = 2, z = 0 } },
         RigidBody3d = "Dynamic",
@@ -33,26 +35,26 @@ local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-3
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({ ["zz/name"] = { name = "plain" }, ["map/default"] = {}, ["core/net/sync"] = false })
+        commands:spawn({ ["zz/name"] = { name = "plain" }, ["map/default"] = {}, ["core/net/sync"] = false })
         step("defaults")
 
     elseif phase == "defaults" and clock > 0.2 then
         local m = named(world, "plain"):get("map/default")
         suite.assert_test("M1_missing_fields_get_defaults",
             m.size.x == 100 and m.size.y == 0.2 and m.size.z == 100 and m.color.g == 0.5 and m.sun == 10000, "")
-        despawn(named(world, "plain"):id())
-        spawn({
+        commands:entity(named(world, "plain"):id()):despawn()
+        commands:spawn({
             ["zz/name"] = { name = "small" },
             ["map/default"] = { size = { x = 10, y = 1, z = 10 } },
             ["core/net/sync"] = false,
         })
-        ball("on", 3)
-        ball("off", 8)
+        ball(commands, "on", 3)
+        ball(commands, "off", 8)
         step("landed")
 
     elseif phase == "landed" and clock > 2.5 then
@@ -68,7 +70,7 @@ register_system("Update", function(world)
             string.format("y=%.3f", y_of(world, "off")))
         suite.assert_test("M5_the_server_draws_nothing", not map:has("Mesh3d"), "")
         map:patch({ ["map/default"] = { size = { x = 20, y = 1, z = 10 } } })
-        ball("later", 8)
+        ball(commands, "later", 8)
         step("grown")
 
     elseif phase == "grown" and clock > 2.0 then
@@ -91,4 +93,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("MapServerSuite")
     end
-end, { label = "MapServerSuite" })
+end):in_set("zz/map_server_suite")

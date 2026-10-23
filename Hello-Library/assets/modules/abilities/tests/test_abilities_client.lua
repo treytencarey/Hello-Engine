@@ -8,11 +8,13 @@
 --   C4 a local press starts the cooldown at once, on the client
 --   C5 `abilities` taken off: the keys are unbound
 --   C6 another player's copy is not bound
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesClientSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local function the_player(world)
     return world:query({
@@ -28,13 +30,13 @@ end
 local phase, clock = "spawn", 0
 local player_id
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
     local p = player_id and the_player(world)
 
     if phase == "spawn" then
-        player_id = spawn({
+        player_id = commands:spawn({
             ["zz/player"] = {},
             ["core/net/local"] = {},
             ["core/net/sync"] = false,
@@ -45,7 +47,7 @@ register_system("Update", function(world)
             },
         }):id()
         -- Another player's copy, here only as a replica.
-        spawn({
+        commands:spawn({
             ["zz/other"] = {},
             ["core/net/sync"] = false,
             input = { mode = "input/game" },
@@ -96,4 +98,4 @@ register_system("Update", function(world)
         suite.finish("ABILITIES_CLIENT")
         phase = "done"
     end
-end, { label = "AbilitiesClientSuite" })
+end):in_set("zz/abilities_client_suite")

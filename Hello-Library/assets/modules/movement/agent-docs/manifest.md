@@ -26,21 +26,22 @@ Walking and jumping. The owning client moves its own player from input, relative
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | MovementInit | On an added `movement`, fill in missing fields, and add a `Velocity3d` if there is none |
-| First (client) | MovementBind | When the player is this client's (`core/net/local` arrives frames after the player), bind its keys; again when `input` is added back |
-| First (client) | MovementShadow | For another client's player, seed the shadow its Transform arrives in |
-| Update (client) | MovementWalk | While a key is held (`any_of`), it polls: horizontal velocity from the held keys, turned by `camera.yaw`, and a turn to face that way. Letting go of a key (its `removed` edge) stands it still, and keys still held walk on. Vertical velocity is left to gravity and jumps |
-| Update (client) | MovementGround | Polls: a ray down from the origin, skipping the player's own body, adds or removes `movement/grounded` |
-| Update (client) | MovementJump | On a jump press while grounded, straight up at `jump` |
-| Update (client) | MovementFollow | Polls: another client's player eases toward its synced Transform |
-| First (client) | MovementRemoved | When `movement` is removed from an entity that stays, unbind; `movement/grounded` goes by `mod_registry` |
+| First (both) | `movement/init` | On an added `movement`, fill in missing fields, and add a `Velocity3d` if there is none |
+| First (client) | `movement/bind` | When the player is this client's (`core/net/local` arrives frames after the player), bind its keys; again when `input` is added back |
+| First (client) | `movement/shadow` | For another client's player, seed the shadow its Transform arrives in |
+| Update (client) | `movement/walk` | While a key is held (`any_of`), it polls: horizontal velocity from the held keys, turned by `camera.yaw`, and a turn to face that way. Letting go of a key (its `removed` edge) stands it still, and keys still held walk on. Vertical velocity is left to gravity and jumps |
+| Update (client) | `movement/ground` | Polls: a ray down from the origin, skipping the player's own body, adds or removes `movement/grounded` |
+| Update (client) | `movement/jump` | On a jump press while grounded, straight up at `jump` |
+| Update (client) | `movement/follow` | Polls: another client's player eases toward its synced Transform |
+| First (client) | `movement/removed` | When `movement` is removed from an entity that stays, unbind; `movement/grounded` goes by `mod_registry` |
 
 ## Notes
 
 - It faces where the keys point, not where it moves: a push does not turn it, and opposite keys held together stand it still without turning.
 - One press is one jump: the jump reacts to the action's `added` edge, so the old cooldown after a jump is gone.
 - The ground ray passes `{ exclude_rigid_body = <the player> }`; the old ray started inside the player's own capsule and always found it.
+- `movement/ground` takes Bevy's exclusive `World` to cast its ray: Rapier's `ReadRapierContext` is not yet a parameter a Lua system can declare.
 - Not yet carried over: facing where a VR headset looks (returns with `vr`), and server-side movement for prediction (returns with the net rewrite and the input action sync).
 - The suite runs windowed: keys reach `input` through a window.

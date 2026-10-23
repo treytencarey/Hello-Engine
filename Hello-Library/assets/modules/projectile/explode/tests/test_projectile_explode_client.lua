@@ -8,35 +8,37 @@
 --   C3 the client does not despawn the ball: the server ends it
 --   C4 it reacts once: the hidden ball flies on until the server ends it, and what it
 --      enters next shows nothing
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileExplodeClientSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
         -- A caster 2 m along +X, in the way, and a wall behind it.
-        spawn({
+        commands:spawn({
             ["zz/caster"] = {},
             Transform = { translation = { x = 2, y = 50, z = 0 } },
             RigidBody3d = "Fixed",
             Collider3d = { cuboid = { hx = 0.5, hy = 1, hz = 1 } },
             ["core/net/sync"] = false,
         })
-        spawn({
+        commands:spawn({
             Transform = { translation = { x = 6, y = 50, z = 0 } },
             RigidBody3d = "Fixed",
             Collider3d = { cuboid = { hx = 0.5, hy = 5, hz = 5 } },
             ["core/net/sync"] = false,
         })
         -- A second wall, 2 m on: the hidden ball reaches it before the server would end it.
-        spawn({
+        commands:spawn({
             Transform = { translation = { x = 8, y = 50, z = 0 } },
             RigidBody3d = "Fixed",
             Collider3d = { cuboid = { hx = 0.5, hy = 5, hz = 5 } },
@@ -47,7 +49,7 @@ register_system("Update", function(world)
     elseif phase == "fire" then
         local caster = world:query({ with = { "zz/caster" } })[1]
         if not caster then return end
-        spawn({
+        commands:spawn({
             ["zz/ball"] = {},
             projectile = { from = { x = 0, y = 50, z = 0 }, velocity = { x = 4, y = 0, z = 0 },
                            gravity = 0, lifetime = 30, radius = 0.2 },
@@ -81,4 +83,4 @@ register_system("Update", function(world)
         suite.finish("PROJECTILE_EXPLODE_CLIENT")
         phase = "done"
     end
-end, { label = "ProjectileExplodeClientSuite" })
+end):in_set("zz/projectile_explode_client_suite")

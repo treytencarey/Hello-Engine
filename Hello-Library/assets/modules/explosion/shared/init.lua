@@ -12,10 +12,15 @@
 --
 -- explosion/burning = {}: present on each side while it lasts (a `cooldown` timer).
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "explosion" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ added = { "explosion" } }],
+    Commands,
+}, function(added, commands)
+    for _, e in ipairs(added:iter()) do
         local x = e:get("explosion")
-        e:patch({
+        commands:entity(e:id()):patch({
             explosion = {
                 at = x.at or { x = 0, y = 0, z = 0 },
                 radius = x.radius or 1.5,
@@ -24,34 +29,54 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "ExplosionInit" })
+end):in_set("explosion/init")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "explosion" } })) do
+app:add_systems(First, {
+    Query[{ added = { "explosion" } }],
+    Commands,
+}, function(added, commands)
+    for _, e in ipairs(added:iter()) do
         local x = e:get("explosion")
-        e:patch({
+        commands:entity(e:id()):patch({
             Transform = { translation = x.at },
             cooldown = { ["explosion/burning"] = { remaining = x.duration } },
         })
     end
-end, { label = "ExplosionPlace", after = { "ExplosionInit" } })
+end):in_set("explosion/place"):after("explosion/init")
 
--- Its timer ended: it is gone.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+-- Its timer ended: it is gone. One already despawned has no row in `live`.
+app:add_systems(First, {
+    Query[{
         removed = { "explosion/burning" },
         with = { "explosion" },
-    })) do
-        despawn(e:id())
+    }],
+    Query[{ with = { "explosion" } }],
+    Commands,
+}, function(ended, live, commands)
+    local gone = {}
+    for _, e in ipairs(ended:iter()) do
+        gone[#gone + 1] = e:id()
     end
-end, { label = "ExplosionEnded" })
+    for _, e in ipairs(live:iter_many(gone)) do
+        commands:entity(e:id()):despawn()
+    end
+end):in_set("explosion/ended")
 
--- `explosion` was taken off an entity that stays: stop its timer.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "explosion" } })) do
-        if world:get_entity(e:id()) then e:patch({ cooldown = { ["explosion/burning"] = null } }) end
+-- `explosion` was taken off an entity that stays: stop its timer. A despawned entity has no
+-- row in `timed`.
+app:add_systems(First, {
+    Query[{ removed = { "explosion" } }],
+    Query[{ with = { "cooldown" } }],
+    Commands,
+}, function(removed, timed, commands)
+    local gone = {}
+    for _, e in ipairs(removed:iter()) do
+        gone[#gone + 1] = e:id()
     end
-end, { label = "ExplosionRemoved" })
+    for _, e in ipairs(timed:iter_many(gone)) do
+        commands:entity(e:id()):patch({ cooldown = { ["explosion/burning"] = null } })
+    end
+end):in_set("explosion/removed")
 
 -- Local on each side: never synced.
 return {

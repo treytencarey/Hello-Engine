@@ -25,25 +25,25 @@ A ball launched from a point at a velocity, flying under scaled gravity. The ser
 - `projectile/flying`: present on every side while the lifetime runs, as a `cooldown` timer started from the synced `lifetime`, so a client has the time left (`cooldown/left`) without waiting for the server. Added and removed through `cooldown`. Only the server despawns the projectile when it ends.
 - `projectile/caster = { entity = <the caster> }`: who fired it, put on the projectile by whatever fires it (`abilities/fireball`). A relationship, declared in this mod's return value: `relationships = { ["projectile/caster"] = { target = "projectile/casts" } }`. When the caster despawns, the projectile loses `projectile/caster` and flies on. Synced by whatever spawns it with one, in the spawn itself, so a client has it from the first frame (`abilities/fireball`).
 - `projectile/casts = { <projectile>, ... }`: on a caster, kept by the engine: what it has in flight, in the order fired. Added with the first, removed with the last; read only.
-- On both sides it sets `Transform` to `from` and adds `RigidBody3d`, `Collider3d`, `GravityScale3d`, `Velocity3d` and a `cooldown` entry; on a client also `Mesh3d` and `MeshMaterial3d`. If `projectile` is removed from an entity that stays, it removes what it added; the `Transform` stays.
+- On both sides it sets `Transform` to `from` and adds `RigidBody3d`, `Collider3d`, `GravityScale3d`, `Velocity3d` and a `cooldown` entry; on a client also `Mesh3d` and `MeshMaterial3d<StandardMaterial>`. If `projectile` is removed from an entity that stays, it removes what it added; the `Transform` stays.
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | ProjectileInit | On an added `projectile`, fill in missing fields |
-| First (both), after `ProjectileInit` | ProjectileLaunch | Place it at `from` and add the body with its collider and velocity |
-| First (both), after `ProjectileInit` | ProjectileFlying | Start the lifetime timer |
-| First (both) | ProjectileRemoved | When `projectile` is removed from an entity that stays, remove the body and stop the timer |
-| First (server) | ProjectileLanded | When the lifetime timer ends, despawn the projectile |
-| First (client), after `ProjectileInit` | ProjectileDraw | Add a glowing sphere of its radius and color |
-| First (client) | ProjectileUndraw | When `projectile` is removed from an entity that stays, remove the mesh and material |
+| First (both) | `projectile/init` | On an added `projectile`, fill in missing fields |
+| First (both), after `projectile/init` | `projectile/launch` | Place it at `from` and add the body with its collider and velocity |
+| First (both), after `projectile/init` | `projectile/flying` | Start the lifetime timer |
+| First (both) | `projectile/removed` | When `projectile` is removed from an entity that stays, remove the body and stop the timer |
+| First (server) | `projectile/landed` | When the lifetime timer ends, despawn the projectile |
+| First (client), after `projectile/init` | `projectile/draw` | Add a glowing sphere of its radius and color |
+| First (client) | `projectile/undraw` | When `projectile` is removed from an entity that stays, remove the mesh and material |
 
 ## Use
 
 ```lua
 -- on the server
-spawn({
+commands:spawn({
     projectile = { from = muzzle, velocity = { x = 0, y = 0, z = -20 }, lifetime = 2 },
 })
 ```

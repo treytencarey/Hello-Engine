@@ -11,13 +11,21 @@
 --     smoothing = <how fast the server's Transform follows the owner's, per second>,
 -- }
 
+local app = ...
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
+local Time = require("bevy::time::Time")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "player" }, without = { "WorldMirror" } })) do
+app:add_systems(First, {
+    Query[{
+        added = { "player" },
+        without = { "WorldMirror" },
+    }],
+    Commands,
+}, function(added, commands)
+    for _, e in ipairs(added:iter()) do
         local p = e:get("player")
-        e:patch({
+        commands:entity(e:id()):patch({
             player = { user_id = p.user_id or "", smoothing = p.smoothing or 15 },
             ["core/player/attest"] = {},
             ["camera/third_person"] = {},
@@ -27,27 +35,33 @@ register_system("First", function(world)
             ["abilities/grenade"] = {},
         })
     end
-end, { label = "PlayerSetup" })
+end):in_set("player/setup")
 
 -- Who the player is, from the join ticket its client presented (`core/player/attest`).
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         changed = { "core/player/attest" },
         with = { "player" },
         without = { "WorldMirror" },
-    })) do
+    }],
+    Commands,
+}, function(attested, commands)
+    for _, e in ipairs(attested:iter()) do
         local a = e:get("core/player/attest")
-        e:patch({ player = { user_id = a.state == "attested" and a.user or "" } })
+        commands:entity(e:id()):patch({ player = { user_id = a.state == "attested" and a.user or "" } })
     end
-end, { label = "PlayerIdentity" })
+end):in_set("player/identity")
 
 -- Follows, so it polls: the server's Transform eases toward the owner's.
-register_system("Update", function(world)
-    local dt = world:delta_time() or 0
-    for _, e in ipairs(world:query({
-        with = { "player", "core/net/sync/Transform", "Transform" },
+app:add_systems(Update, {
+    Res[Time],
+    Query[{
+        with = { "player", "core/net/sync/Transform", Mut["Transform"] },
         without = { "WorldMirror" },
-    })) do
+    }],
+}, function(time, players)
+    local dt = time:delta_secs()
+    for _, e in ipairs(players:iter_mut()) do
         local target = e:get("core/net/sync/Transform")
         local current = e:get("Transform")
         -- `smoothing` is filled when the player is added; skip until then
@@ -62,21 +76,38 @@ register_system("Update", function(world)
             })
         end
     end
-end, { label = "PlayerFollow" })
+end):in_set("player/follow")
 
--- `player` was taken off an entity that stays: take off what this half added.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "player" } })) do
-        e:patch({
-            ["core/player/attest"] = null,
-            ["camera/third_person"] = null,
-            movement = null,
-            animation = null,
-            ["abilities/fireball"] = null,
-            ["abilities/grenade"] = null,
-        })
+-- `player` was taken off an entity that stays: take off what this half added. A despawned
+-- entity has no row in `parts`.
+app:add_systems(First, {
+    Query[{ removed = { "player" } }],
+    Query[{
+        any_of = {
+            "core/player/attest",
+            "camera/third_person",
+            "movement",
+            "animation",
+            "abilities/fireball",
+            "abilities/grenade",
+        },
+    }],
+    Commands,
+}, function(removed, parts, commands)
+    local gone = {}
+    for _, e in ipairs(removed:iter()) do
+        gone[#gone + 1] = e:id()
     end
-end, { label = "PlayerRemoved" })
+    for _, e in ipairs(parts:iter_many(gone)) do
+        commands:entity(e:id()):remove(
+            "core/player/attest",
+            "camera/third_person",
+            "movement",
+            "animation",
+            "abilities/fireball",
+            "abilities/grenade")
+    end
+end):in_set("player/removed")
 
 return {
     ["core/net/sync"] = {

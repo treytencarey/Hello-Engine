@@ -1,12 +1,10 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("CollisionTriggerSuite")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
-
-local function zone(x, name)
-    spawn({
+local function zone(commands, x, name)
+    commands:spawn({
         Transform = { translation = { x = x, y = 0, z = 0 } },
         RigidBody3d = "Fixed",
         Collider3d = { ball = { radius = 1.0 } },
@@ -15,11 +13,9 @@ local function zone(x, name)
         ["core/net/sync"] = false,
     })
 end
-zone(0, "main")
-zone(100, "spare")
 
-local function body(x, marker, data)
-    spawn({
+local function body(commands, x, marker, data)
+    commands:spawn({
         Transform = { translation = { x = x, y = 0, z = 0 } },
         RigidBody3d = "Dynamic",
         Collider3d = { ball = { radius = 0.15 } },
@@ -28,14 +24,20 @@ local function body(x, marker, data)
         ["core/net/sync"] = false,
     })
 end
-for i, name in ipairs({ "one", "two", "three", "four" }) do
-    body(10 * i, "zz/probe", { name = name })
-end
-body(-10, "core/net/peer/mirror", { stable_id = "zz", source_peer = "zz", via = "zz" })
+
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    zone(commands, 0, "main")
+    zone(commands, 100, "spare")
+    for i, name in ipairs({ "one", "two", "three", "four" }) do
+        body(commands, 10 * i, "zz/probe", { name = name })
+    end
+    body(commands, -10, "core/net/peer/mirror", { stable_id = "zz", source_peer = "zz", via = "zz" })
+end)
 
 -- A portal-shaped consumer: it reads in Update what the trigger wrote in First.
 local log = {}
-register_system("Update", function(world)
+app:add_systems(Update, { World }, function(world)
     for _, z in ipairs(world:query({
         changed = { "collision_trigger" },
         with = { "zz/zone" },
@@ -54,7 +56,7 @@ register_system("Update", function(world)
             end
         end
     end
-end, { label = "CollisionTriggerSuiteConsumer" })
+end):in_set("zz/collision_trigger_suite_consumer")
 
 local function zones(world)
     local found = {}
@@ -85,7 +87,7 @@ end
 
 local phase, clock, burst = "setup", 0, 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local z = zones(world)
     local function step(next_phase)
@@ -128,7 +130,7 @@ register_system("Update", function(world)
     elseif phase == "removed" and not z.main:has("Sensor3d") and not z.main:has("CollidingEntities3d")
         and not z.main:has("ActiveEvents3d") then
         suite.assert_test("T4_removing_the_trigger_removes_what_it_added", true, "")
-        despawn(z.spare:id())
+        commands:entity(z.spare:id()):despawn()
         step("despawned")
 
     elseif phase == "despawned" and clock > 0.5 and not z.spare then
@@ -142,4 +144,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("CollisionTriggerSuite")
     end
-end, { label = "CollisionTriggerSuite" })
+end):in_set("zz/collision_trigger_suite")

@@ -9,11 +9,16 @@
 --     sun = <lux of the sunlight>,
 -- }
 
+local app = ...
+
 -- A new or changed map: missing fields are filled in (which is itself a change, so the box
 -- is built on the next run), or the entity becomes a fixed box of its size. `changed` also
 -- fires when it is added.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ changed = { "map/default" } })) do
+app:add_systems(First, {
+    Query[{ changed = { Mut["map/default"] } }],
+    Commands,
+}, function(maps, commands)
+    for _, e in ipairs(maps:iter_mut()) do
         local m = e:get("map/default")
         if m.size == nil or m.color == nil or m.sun == nil then
             e:patch({
@@ -24,23 +29,24 @@ register_system("First", function(world)
                 },
             })
         else
-            e:patch({
+            commands:entity(e:id()):patch({
                 RigidBody3d = "Fixed",
                 Collider3d = { cuboid = { hx = m.size.x / 2, hy = m.size.y / 2, hz = m.size.z / 2 } },
             })
         end
     end
-end, { label = "MapGround" })
+end):in_set("map/default/ground")
 
 -- `map/default` was taken off an entity that stays: take off the body this mod added.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "map/default" } })) do
-        e:patch({
-            RigidBody3d = null,
-            Collider3d = null,
-        })
+-- `removed` also fires on despawn, so the removal must not fail on an entity that is gone.
+app:add_systems(First, {
+    Query[{ removed = { "map/default" } }],
+    Commands,
+}, function(maps, commands)
+    for _, e in ipairs(maps:iter()) do
+        commands:entity(e:id()):try_remove("RigidBody3d", "Collider3d")
     end
-end, { label = "MapRemoved" })
+end):in_set("map/default/removed")
 
 return {
     ["core/net/sync"] = {

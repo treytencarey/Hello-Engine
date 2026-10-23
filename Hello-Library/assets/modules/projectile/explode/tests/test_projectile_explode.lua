@@ -8,11 +8,13 @@
 --   E7 its explosion is local: it carries no sync
 --   E5 it flies through its caster (`projectile/caster`) and ends on the next thing
 --   E6 the caster lists it in `projectile/casts` while it flies, and not once it is gone
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileExplodeSuite")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local function named(world, name)
     for _, e in ipairs(world:query({
@@ -27,39 +29,39 @@ local phase, clock = "spawn", 0
 local ts_flying = nil
 
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
         -- A wall 6 m along +X.
-        spawn({
+        commands:spawn({
             Transform = { translation = { x = 6, y = 50, z = 0 } },
             RigidBody3d = "Fixed",
             Collider3d = { cuboid = { hx = 0.5, hy = 5, hz = 5 } },
             ["core/net/sync"] = false,
         })
-        spawn({
+        commands:spawn({
             ["zz/ball"] = { name = "fired" },
             projectile = { from = { x = 0, y = 50, z = 0 }, velocity = { x = 4, y = 0, z = 0 },
                            gravity = 0, lifetime = 30, radius = 0.2 },
             ["projectile/explode"] = { radius = 2.5, duration = 3, color = { r = 0, g = 0, b = 1 } },
         })
-        spawn({
+        commands:spawn({
             ["zz/ball"] = { name = "kept" },
             Transform = { translation = { x = -50, y = 50, z = 0 } },
             projectile = { from = { x = -50, y = 50, z = 0 }, gravity = 0, lifetime = 30 },
             ["projectile/explode"] = {},
         })
         -- E5's lane, 20 m up: a caster 2 m along +X, in the way, and a wall behind it.
-        spawn({
+        commands:spawn({
             ["zz/caster"] = {},
             Transform = { translation = { x = 2, y = 70, z = 0 } },
             RigidBody3d = "Fixed",
             Collider3d = { cuboid = { hx = 0.5, hy = 1, hz = 1 } },
             ["core/net/sync"] = false,
         })
-        spawn({
+        commands:spawn({
             Transform = { translation = { x = 6, y = 70, z = 0 } },
             RigidBody3d = "Fixed",
             Collider3d = { cuboid = { hx = 0.5, hy = 5, hz = 5 } },
@@ -68,8 +70,10 @@ register_system("Update", function(world)
         step("inside")
 
     elseif phase == "inside" then
-        if clock < 0.3 then return end
         local fired = named(world, "fired")
+        -- The sensor lands a frame or two after the spawn, which the first, long frames stretch:
+        -- wait for it, while the ball is still in open air (the wall is 1.4 s away).
+        if clock < 0.3 or (clock < 1.0 and not (fired and fired:has("Sensor3d"))) then return end
         suite.assert_test("E1_it_makes_the_projectile_a_sensor",
             fired ~= nil and fired:has("collision_trigger") and fired:has("Sensor3d"), "")
         -- About 1.2 m out, in open air.
@@ -79,7 +83,8 @@ register_system("Update", function(world)
 
     elseif phase == "hit" then
         local blasts = world:query({ with = { "explosion" } })
-        if #blasts == 0 and clock < 3 then return end
+        -- The server's despawn of the ball lands a frame or so after its explosion shows.
+        if (#blasts == 0 or named(world, "fired") ~= nil) and clock < 3 then return end
         local x = blasts[1] and blasts[1]:get("explosion") or {}
         local at = x.at or {}
         -- The wall's face is at x = 5.5.
@@ -100,7 +105,7 @@ register_system("Update", function(world)
         suite.assert_test("E4_taken_off_it_is_no_longer_a_sensor",
             kept ~= nil and not kept:has("collision_trigger") and not kept:has("Sensor3d"), "")
         local caster = world:query({ with = { "zz/caster" } })[1]
-        spawn({
+        commands:spawn({
             ["zz/ball"] = { name = "cast" },
             projectile = { from = { x = 0, y = 70, z = 0 }, velocity = { x = 4, y = 0, z = 0 },
                            gravity = 0, lifetime = 30, radius = 0.2 },
@@ -141,4 +146,4 @@ register_system("Update", function(world)
         suite.finish("PROJECTILE_EXPLODE")
         phase = "done"
     end
-end, { label = "ProjectileExplodeSuite" })
+end):in_set("zz/projectile_explode_suite")

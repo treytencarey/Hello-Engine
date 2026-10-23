@@ -20,29 +20,35 @@ Keys, mouse buttons, motion and scroll, turned into one component per bound acti
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | InputHeld | Fold key, button and analog events into `input/held` |
-| PreUpdate | Input | Turn the active mode's bindings into action components; write only what changed |
-| PreUpdate | InputCursor | On a changed `input`, apply `show_cursor` |
+| First | `input/held` | Fold key, button and analog events into `input/held` |
+| PreUpdate | `input` | Turn the active mode's bindings into action components; write only what changed |
+| PreUpdate | `input/cursor` | On a changed `input`, apply `show_cursor` |
 
 ## Use
 
 ```lua
 -- bind, in your mod's client half
-player:patch({ ["input/game"] = { movement = { forward = { key = "KeyW" }, jump = { key = "Space" } } } })
+commands:entity(player):patch({ ["input/game"] = { movement = { forward = { key = "KeyW" }, jump = { key = "Space" } } } })
 
--- read, in Update
-world:query({ with = { "input/game/movement/forward" } })    -- held
-world:query({ added = { "input/game/movement/jump" } })      -- pressed
-world:query({ removed = { "input/game/movement/jump" } })    -- released
-world:query({ changed = { "input/game/look/zoom" } })        -- a scroll this frame
+-- read, in Update, through declared queries
+app:add_systems(Update, {
+    Query[{ with = { "input/game/movement/forward" } }],    -- held
+    Query[{ added = { "input/game/movement/jump" } }],      -- pressed
+    Query[{ removed = { "input/game/movement/jump" } }],    -- released
+    Query[{ changed = { "input/game/look/zoom" } }],        -- a scroll this frame
+}, function(held, pressed, released, scrolled)
+    for _, e in ipairs(pressed:iter()) do
+        -- jump
+    end
+end)
 
 -- switch a player, for example when a menu opens
-player:patch({ input = { mode = "input/ui", show_cursor = true } })
+commands:entity(player):patch({ input = { mode = "input/ui", show_cursor = true } })
 
 -- unbind
-player:patch({ ["input/game"] = { movement = null } })
+commands:entity(player):patch({ ["input/game"] = { movement = null } })
 ```
 
 ## Notes

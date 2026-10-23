@@ -18,21 +18,21 @@ Players for a world's server: one for each connected client, at a free spawn poi
   | `radius` | metres from the origin | 3 |
   | `height` | metres above the origin | 5 |
 
-- Each player it spawns is a root with `player`, `Transform`, a kinematic capsule body (`RigidBody3d`, `Collider3d`, `LockedAxes3d`, `Velocity3d`), `core/net/owner = { client_id }`, the `core/net/sync/Transform` shadow the owner's Transform arrives in, and `core/net/sync` (Transform from the owning client, unreliable; the body from the server). `ScriptOwned = false`: a player is not reaped with this mod, and lives until its client leaves.
+- Each player it spawns is a root with `player`, `Transform`, a kinematic capsule body (`RigidBody3d`, `Collider3d`, `LockedAxes3d`, `Velocity3d`), `core/net/owner = { client_id }`, the `core/net/sync/Transform` shadow the owner's Transform arrives in, and `core/net/sync` (Transform from the owning client, unreliable; the body from the server). `["core/script/owner"] = false`: a player is not reaped with this mod, and lives until its client leaves.
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | PlayerSpawnerInit | On an added `player/spawner`, fill in missing fields |
-| First, after `PlayerSpawnerInit` | PlayerSpawn | On a changed connection, a client that is not only watching and has no player gets one, at the lowest free point (point 0, the centre, when all are taken) |
-| PreUpdate | PlayerLeft | When a connection goes, or turns to only watching, its client's player is despawned |
+| First | `player/spawner/init` | On an added `player/spawner`, fill in missing fields |
+| First, after `player/spawner/init` | `player/spawner/spawn` | On a changed connection, a client that is not only watching and has no player gets one, at the lowest free point (point 0, the centre, when all are taken) |
+| PreUpdate | `player/spawner/left` | When a connection goes, or turns to only watching, its client's player is despawned |
 
 ## Use
 
 ```lua
 -- in a world's boot, on the server
-spawn({ ["player/spawner"] = { count = 4, radius = 6 } }):with_parent(boot:id())
+commands:spawn({ ["player/spawner"] = { count = 4, radius = 6 }, ChildOf = boot:id() })
 ```
 
 ## Notes

@@ -26,11 +26,11 @@ A fireball: a key fires a glowing ball straight along the camera's look. It does
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | AbilitiesFireball | Fill in missing fields; then write its entry in `abilities` |
-| Update | AbilitiesFireballFire | On its press while not cooling, spawn its exploding projectile |
-| First | AbilitiesFireballRemoved | When `abilities/fireball` is removed from an entity that stays, remove its entry |
+| First | `abilities/fireball` | Fill in missing fields; then write its entry in `abilities` |
+| Update | `abilities/fireball/fire` | On its press while not cooling, spawn its exploding projectile |
+| First | `abilities/fireball/removed` | When `abilities/fireball` is removed from an entity that stays, remove its entry |
 
 ## Notes
 

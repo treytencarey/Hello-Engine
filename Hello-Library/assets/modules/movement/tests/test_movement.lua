@@ -1,19 +1,21 @@
 -- --host (windowed: keys reach `input` through a window)
 local Quat = require("bevy::math::Quat")
 
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("MovementSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-spawn({ Camera2d = {}, Camera = { order = 0 } })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
+end)
 
 -- Keys go through `input` as the real ones do.
 local key_frames = {}
-register_system("First", function(world)
+app:add_systems(First, { World }, function(world)
     local ev = table.remove(key_frames, 1)
     if ev ~= nil and ev.key_code ~= nil then world:write_event("SyntheticKeyInput", ev) end
-end, { label = "MovementSuiteKeys" })
+end):in_set("zz/movement_suite_keys")
 local function key(code, state)
     key_frames[#key_frames + 1] = { key_code = code, state = state }
 end
@@ -30,18 +32,18 @@ local function named(world, name)
 end
 
 local function placed(world, e)
-    return world:call_component_method(e:id(), "GlobalTransform", "compute_transform")
+    return world:get_entity(e:id()).GlobalTransform:compute_transform()
 end
 
 local phase, clock = "spawn", 0
 local start, vy_before
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/name"] = { name = "floor" },
             Transform = { translation = { x = 0, y = 0, z = 0 } },
             RigidBody3d = "Fixed",
@@ -50,7 +52,7 @@ register_system("Update", function(world)
         -- the local player, as `player` leaves it: a dynamic capsule standing on the floor,
         -- with no velocity (the server sends none); its camera turned a quarter to the left,
         -- so forward is -x
-        spawn({
+        commands:spawn({
             ["zz/name"] = { name = "me" },
             movement = {},
             camera = { yaw = math.pi / 2 },
@@ -62,7 +64,7 @@ register_system("Update", function(world)
             LockedAxes3d = "ROTATION_LOCKED",
         })
         -- another client's player
-        spawn({
+        commands:spawn({
             ["zz/name"] = { name = "other" },
             movement = {},
             ["core/net/sync"] = false,
@@ -210,4 +212,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("MovementSuite")
     end
-end, { label = "MovementSuite" })
+end):in_set("zz/movement_suite")

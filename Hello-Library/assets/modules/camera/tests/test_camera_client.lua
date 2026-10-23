@@ -1,9 +1,11 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("CameraClientSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local function subject(world, name)
     for _, e in ipairs(world:query({
@@ -17,13 +19,13 @@ end
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local fresh, carried, partial = subject(world, "fresh"), subject(world, "carried"), subject(world, "partial")
 
     if phase == "spawn" then
-        spawn({ ["zz/subject"] = { name = "fresh" }, camera = {}, ["core/net/sync"] = false })
-        spawn({
+        commands:spawn({ ["zz/subject"] = { name = "fresh" }, camera = {}, ["core/net/sync"] = false })
+        commands:spawn({
             ["zz/subject"] = { name = "carried" },
             camera = {
                 yaw = 1.25,
@@ -34,7 +36,7 @@ register_system("Update", function(world)
             },
             ["core/net/sync"] = false,
         })
-        spawn({ ["zz/subject"] = { name = "partial" }, camera = { distance = 12 }, ["core/net/sync"] = false })
+        commands:spawn({ ["zz/subject"] = { name = "partial" }, camera = { distance = 12 }, ["core/net/sync"] = false })
         phase, clock = "check", 0
 
     elseif phase == "check" and fresh and fresh:get("camera").yaw ~= nil
@@ -60,4 +62,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("CameraClientSuite")
     end
-end, { label = "CameraClientSuite" })
+end):in_set("zz/camera_client_suite")

@@ -14,19 +14,23 @@ A camera's view state on an entity. Camera mods extend it and drive it: `camera/
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (client) | CameraInit | On an added `camera`, fill in missing fields |
+| First (client) | `camera/init` | On an added `camera`, fill in missing fields |
 
 ## Use
 
 ```lua
-player:patch({ camera = { distance = 12 } })   -- the rest get defaults
+commands:entity(player):patch({ camera = { distance = 12 } })   -- the rest get defaults
 
 -- a camera mod that orders itself after the defaults
-register_system("First", function(world)
-    -- read `camera`, move your Camera3d
-end, { after = { "CameraInit" } })
+app:add_systems(First, {
+    Query[{ changed = { "camera" } }],
+}, function(cameras)
+    for _, e in ipairs(cameras:iter()) do
+        -- read `camera`, move your Camera3d
+    end
+end):in_set("my/camera"):after("camera/init")
 ```
 
 ## Notes

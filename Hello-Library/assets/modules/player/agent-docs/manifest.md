@@ -29,18 +29,18 @@ The owning client drives its player's Transform until prediction returns with th
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | PlayerSetup | On an added `player`, fill in missing fields and add identity, the camera, movement and the abilities |
-| Update (server) | PlayerIdentity | When the join ticket is verified, set `player.user_id` |
-| Update (server) | PlayerFollow | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`) |
-| First (server) | PlayerRemoved | When `player` is removed from an entity that stays, remove identity, the camera, movement and the abilities |
-| First (client) | PlayerLocal | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input and the sidebar, and make its body dynamic |
-| First (client) | PlayerRemoved | When `player` is removed from an entity that stays, remove input and the sidebar |
+| First (server) | `player/setup` | On an added `player`, fill in missing fields and add identity, the camera, movement and the abilities |
+| Update (server) | `player/identity` | When the join ticket is verified, set `player.user_id` |
+| Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`) |
+| First (server) | `player/removed` | When `player` is removed from an entity that stays, remove identity, the camera, movement and the abilities |
+| First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input and the sidebar, and make its body dynamic |
+| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input and the sidebar |
 
 ## Notes
 
 - Mirrored players from another world (`WorldMirror`) are not set up here.
 - The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches.
-- Not yet carried over from the old `player`: `vr`, `animation`, `abilities`, the `ai` perception marks, the streaming panels and the account providers. Each returns when its mod is rewritten. Crossing between worlds (promotion, demotion, transfer) returns with the net rewrite.
+- Not yet carried over from the old `player`: `vr`, the `ai` perception marks, the streaming panels and the account providers. Each returns when its mod is rewritten. Crossing between worlds (promotion, demotion, transfer) returns with the net rewrite.
 - Suites: a server one (headless) and a client one (windowed: input and the sidebar act on a window).

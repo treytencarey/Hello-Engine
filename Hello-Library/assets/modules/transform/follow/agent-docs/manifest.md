@@ -18,20 +18,21 @@ A child that follows its parent's position but keeps its own world rotation. Use
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| PostUpdate, before `TransformSystems::Propagate` | TransformFollow | Set each follower's local transform so that, after Bevy propagates transforms, it sits at `offset` from its parent with world rotation `rotation` |
+| PostUpdate, before `TransformSystems::Propagate` | `transform/follow` | Set each follower's local transform so that, after Bevy propagates transforms, it sits at `offset` from its parent with world rotation `rotation` |
 
 ## Use
 
 ```lua
-spawn({
+commands:spawn({
     Transform = {},
     ["transform/follow"] = {
         rotation = { x = 0, y = 0, z = 0, w = 1 },
         offset = { x = 0, y = 2, z = 0 },
     },
-}):with_parent(player:id())
+    ChildOf = player:id(),
+})
 ```
 
 ## Notes

@@ -2,31 +2,43 @@
 -- `abilities` (client data, never synced). Rebound when `input` arrives, and when the
 -- abilities change; an ability that went is unbound.
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+local app = ...
+
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "abilities", "core/net/local", "input" },
             changed = { "abilities" },
         },
         with = { "abilities", "core/net/local" },
         optional = { "input/game" },
-    })) do
+    }],
+    Commands,
+}, function(players, commands)
+    for _, e in ipairs(players:iter()) do
         local bound = (e:get("input/game") or {}).abilities or {}
         local group = {}
         for name in pairs(bound) do group[name] = null end
         for name, a in pairs(e:get("abilities")) do
             if a.key then group[name] = { key = a.key } end
         end
-        e:patch({ ["input/game"] = { abilities = group } })
+        commands:entity(e:id()):patch({ ["input/game"] = { abilities = group } })
     end
-end, { label = "AbilitiesBind" })
+end):in_set("abilities/bind")
 
--- `abilities` was taken off an entity that stays: its keys are unbound.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+-- `abilities` was taken off an entity that stays: its keys are unbound. A despawned player is
+-- in the `removed` rows too.
+app:add_systems(First, {
+    Query[{
         ["or"] = { removed = { "abilities" } },
         with = { "core/net/local" },
-    })) do
-        e:patch({ ["input/game"] = { abilities = null } })
+    }],
+    Query[{ with = { "input/game" } }],
+    Commands,
+}, function(removed, bound, commands)
+    for _, e in ipairs(removed:iter()) do
+        if bound:contains(e:id()) then
+            commands:entity(e:id()):patch({ ["input/game"] = { abilities = null } })
+        end
     end
-end, { label = "AbilitiesUnbind" })
+end):in_set("abilities/unbind")

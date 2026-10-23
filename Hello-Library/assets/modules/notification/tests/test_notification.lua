@@ -1,18 +1,20 @@
 -- --host (windowed: UI layout needs a window)
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("NotificationSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-spawn({ Camera2d = {}, Camera = { order = 0 } })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
+end)
 
 -- What a script spawns is linked to its file. Another mod spawns a notification; moved
 -- under the overlay, it becomes the notification mod's. The link names that other mod's file.
 local Instances = require("modules/core/instances.lua")
 local NOTICE = "modules/zz_notice/init.lua"
 Instances.mark_mod_script(NOTICE)
-local function notice(name, config)
-    return spawn({ ["zz/note"] = { name = name }, notification = config, ["core/script/owner"] = Instances.script_entity(NOTICE) })
+local function notice(commands, name, config)
+    return commands:spawn({ ["zz/note"] = { name = name }, notification = config, ["core/script/owner"] = Instances.script_entity(NOTICE) })
 end
 
 local function note(world, name)
@@ -42,7 +44,7 @@ local min_alpha, mid_alpha, mid_samples = 1, 0, 0
 
 -- Watch the fade as it happens: the lowest alpha the slow card's text reaches, and the
 -- highest alpha seen in the middle of the fade (an ease-out is already low there).
-register_system("Last", function(world)
+app:add_systems(Last, { World }, function(world)
     local t = line(world, "slow")
     local style = t and t:get("ui/style")
     local slow = note(world, "slow")
@@ -54,16 +56,16 @@ register_system("Last", function(world)
             mid_samples = mid_samples + 1
         end
     end
-end, { label = "NotificationSuiteWatch" })
+end):in_set("zz/notification_suite_watch")
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        notice("quick", { timeout = 1.0 })
-        notice("kept", { width = 320, accent = "text_good" })
-        notice("slow", { fade = 0.5 })
+        notice(commands, "quick", { timeout = 1.0 })
+        notice(commands, "kept", { width = 320, accent = "text_good" })
+        notice(commands, "slow", { fade = 0.5 })
         step("shown")
 
     elseif phase == "shown" and clock > 0.3 then
@@ -85,19 +87,20 @@ register_system("Update", function(world)
                 and note(world, "slow"):get("ChildOf") == overlay_id(world), "overlays=" .. overlays(world))
         suite.assert_test("N4_a_timeout_runs_as_a_cooldown", quick:has("notification/alive")
             and not kept:has("notification/alive"), "")
-        spawn({
+        local text = commands:spawn({
             ["zz/line"] = { name = "slow" },
             Text = { text = "hello" },
             ["ui/style"] = { text = "text" },
-        }):with_parent(note(world, "slow"):id())
-        notice("late", {})
+        }):id()
+        commands:entity(note(world, "slow"):id()):add_child(text)
+        notice(commands, "late", {})
         step("late")
 
     elseif phase == "late" and clock > 0.3 then
         suite.assert_test("N3b_a_later_notification_joins_the_same_overlay",
             overlays(world) == 1 and note(world, "late"):get("ChildOf") == overlay_id(world),
             "overlays=" .. overlays(world))
-        despawn(note(world, "late"):id())
+        commands:entity(note(world, "late"):id()):despawn()
         step("timing out")
 
     elseif phase == "timing out" and clock > 1.0 then
@@ -124,14 +127,14 @@ register_system("Update", function(world)
             note(world, "slow") == nil and line(world, "slow") == nil, "")
         local kept = note(world, "kept")
         suite.assert_test("N8_without_a_timeout_it_stays", kept ~= nil and kept:has("Node"), "")
-        despawn(kept:id())
+        commands:entity(kept:id()):despawn()
         step("despawned")
 
     elseif phase == "despawned" and clock > 0.3 then
         suite.assert_test("N9_despawning_the_last_notification_removes_the_overlay",
             #world:query({ with = { "notification" } }) == 0 and overlays(world) == 0, "overlays=" .. overlays(world))
-        notice("again", { timeout = 5 })
-        notice("other", {})
+        notice(commands, "again", { timeout = 5 })
+        notice(commands, "other", {})
         step("again")
 
     elseif phase == "again" and clock > 0.3 then
@@ -144,7 +147,7 @@ register_system("Update", function(world)
         suite.assert_test("N11_removing_notification_removes_the_card",
             note(world, "again") == nil and note(world, "other") ~= nil and overlays(world) == 1,
             "overlays=" .. overlays(world))
-        despawn(note(world, "other"):id())
+        commands:entity(note(world, "other"):id()):despawn()
         step("last gone")
 
     elseif phase == "last gone" and clock > 0.3 then
@@ -159,4 +162,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("NotificationSuite")
     end
-end, { label = "NotificationSuite" })
+end):in_set("zz/notification_suite")

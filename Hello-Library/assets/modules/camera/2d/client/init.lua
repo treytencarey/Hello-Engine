@@ -13,8 +13,12 @@
 --
 -- camera/2d/eye = {}
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "camera/2d" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ added = { Mut["camera/2d"] } }],
+}, function(added)
+    for _, e in ipairs(added:iter_mut()) do
         local c2d = e:get("camera/2d")
         e:patch({
             ["camera/2d"] = {
@@ -25,21 +29,25 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "Camera2dInit" })
+end):in_set("camera/2d/camera2d_init")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "camera/2d", "camera", "core/net/local" },
         },
         with = { "camera/2d", "camera", "core/net/local" },
-    })) do
+        optional = { "Children" },
+    }],
+    Query[{
+        with = { "camera/2d/eye", Mut["Camera"] },
+    }],
+    Commands,
+}, function(carriers, all_eyes, commands)
+    for _, e in ipairs(carriers:iter()) do
         local cam = e:get("camera")
         local c2d = e:get("camera/2d")
-        local eyes = world:query({
-            entities = { e:id() },
-            with = { "camera/2d/eye", "Camera" },
-        })
+        local eyes = all_eyes:iter_many_mut(e:get("Children") or {})
         for _, eye in ipairs(eyes) do
             eye:patch({ Camera = { is_active = true } })
         end
@@ -47,7 +55,7 @@ register_system("First", function(world)
             -- `camera` arrives as `{}` and gets its defaults when its own mod loads, which
             -- can be a frame later; the eye starts 1:1 and is scaled when they arrive.
             local scale = cam.distance or 1
-            spawn({
+            local eye = commands:spawn({
                 Camera2d = {},
                 Camera = { order = 0, is_active = true },
                 Transform = { scale = { x = scale, y = scale, z = 1 } },
@@ -57,19 +65,23 @@ register_system("First", function(world)
                     offset = { x = 0, y = 0, z = c2d.z },
                 },
                 ["camera/2d/eye"] = {},
-            }):with_parent(e:id())
+            }):id()
+            commands:entity(e:id()):add_child(eye)
         end
     end
-end, { label = "CameraSpawn" })
+end):in_set("camera/2d/spawn")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "camera/2d", "core/net/local", "input" },
         },
         with = { "camera/2d", "core/net/local" },
-    })) do
-        e:patch({
+    }],
+    Commands,
+}, function(carriers, commands)
+    for _, e in ipairs(carriers:iter()) do
+        commands:entity(e:id()):patch({
             ["input/game"] = {
                 camera_2d = {
                     zoom = { scroll = true },
@@ -77,36 +89,49 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "Camera2dBind" })
+end):in_set("camera/2d/camera2d_bind")
 
 -- The player left for another world: its eye stops rendering this one.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         removed = { "core/net/local" },
         with = { "camera/2d" },
-    })) do
-        for _, eye in ipairs(world:query({
-            entities = { e:id() },
-            with = { "camera/2d/eye", "Camera" },
-        })) do
+        optional = { "Children" },
+    }],
+    Query[{
+        with = { "camera/2d/eye", Mut["Camera"] },
+    }],
+}, function(carriers, all_eyes)
+    for _, e in ipairs(carriers:iter()) do
+        for _, eye in ipairs(all_eyes:iter_many_mut(e:get("Children") or {})) do
             eye:patch({ Camera = { is_active = false } })
         end
     end
-end, { label = "CameraTeardown" })
+end):in_set("camera/2d/teardown")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         removed = { "camera/2d" },
-    })) do
-        e:patch({ ["input/game"] = { camera_2d = null } })
+        with = { "input/game" },
+    }],
+    Commands,
+}, function(carriers, commands)
+    for _, e in ipairs(carriers:iter()) do
+        -- `removed` also fires on despawn, and a patch to an entity that is gone fails.
+        local carrier = commands:get_entity(e:id())
+        if carrier ~= nil then
+            carrier:patch({ ["input/game"] = { camera_2d = null } })
+        end
     end
-end, { label = "CameraRemove" })
+end):in_set("camera/2d/remove")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         changed = { "input/game/camera_2d/zoom" },
-        with = { "camera", "camera/2d" },
-    })) do
+        with = { Mut["camera"], "camera/2d" },
+    }],
+}, function(carriers)
+    for _, e in ipairs(carriers:iter_mut()) do
         local cam = e:get("camera")
         local c2d = e:get("camera/2d")
         local zoom = e:get("input/game/camera_2d/zoom")
@@ -121,22 +146,25 @@ register_system("Update", function(world)
             })
         end
     end
-end, { label = "CameraZoom" })
+end):in_set("camera/2d/zoom")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         ["or"] = {
             changed = { "camera", "camera/2d" },
         },
         with = { "camera", "camera/2d" },
-    })) do
+        optional = { "Children" },
+    }],
+    Query[{
+        with = { "camera/2d/eye", Mut["Transform"], Mut["transform/follow"] },
+    }],
+}, function(carriers, all_eyes)
+    for _, e in ipairs(carriers:iter()) do
         local cam = e:get("camera")
         local c2d = e:get("camera/2d")
         if cam.distance ~= nil then
-            for _, eye in ipairs(world:query({
-                entities = { e:id() },
-                with = { "camera/2d/eye" },
-            })) do
+            for _, eye in ipairs(all_eyes:iter_many_mut(e:get("Children") or {})) do
                 eye:patch({
                     Transform = { scale = { x = cam.distance, y = cam.distance, z = 1 } },
                     ["transform/follow"] = {
@@ -147,6 +175,6 @@ register_system("Update", function(world)
             end
         end
     end
-end, { label = "CameraAim", after = { "CameraZoom" } })
+end):in_set("camera/2d/aim"):after("camera/2d/zoom")
 
 return { base = "camera" }

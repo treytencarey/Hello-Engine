@@ -20,22 +20,22 @@ A flat ground to stand on, lit by a sun. The map entity itself becomes the groun
 
   Synced from the server.
 - `map/default/sun`: on a client, a child of the map entity with the `DirectionalLight`, shining down at an angle.
-- On both sides it adds `RigidBody3d = "Fixed"` and `Collider3d` to the map entity; on a client also `Mesh3d` and `MeshMaterial3d`. If `map/default` is removed from an entity that stays, each half removes what it added, and the client despawns the sun.
+- On both sides it adds `RigidBody3d = "Fixed"` and `Collider3d` to the map entity; on a client also `Mesh3d` and `MeshMaterial3d<StandardMaterial>`. If `map/default` is removed from an entity that stays, each half removes what it added, and the client despawns the sun.
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | MapGround | On a new or changed `map/default`: fill in missing fields (itself a change, so the box follows on the next run), or make the entity a fixed box of its size, with its collider |
-| First (both) | MapRemoved | When `map/default` is removed from an entity that stays, remove the body |
-| First (client), after `MapGround` | MapDraw | On a new or changed `map/default`, draw the box's mesh and material, and spawn the sun or relight it |
-| First (client) | MapUndraw | When `map/default` is removed from an entity that stays, remove the mesh and material; the sun, marked `map/default/sun`, goes by `mod_registry` |
+| First (both) | `map/default/ground` | On a new or changed `map/default`: fill in missing fields (itself a change, so the box follows on the next run), or make the entity a fixed box of its size, with its collider |
+| First (both) | `map/default/removed` | When `map/default` is removed from an entity that stays, remove the body |
+| First (client), after `map/default/ground` | `map/default/draw` | On a new or changed `map/default`, draw the box's mesh and material, and spawn the sun or relight it |
+| First (client) | `map/default/undraw` | When `map/default` is removed from an entity that stays, remove the mesh and material; the sun, marked `map/default/sun`, goes by `mod_registry` |
 
 ## Use
 
 ```lua
 -- in a world's boot, on the server
-spawn({ ["map/default"] = { size = { x = 60, y = 0.2, z = 60 } } }):with_parent(boot:id())
+commands:spawn({ ["map/default"] = { size = { x = 60, y = 0.2, z = 60 } }, ChildOf = boot:id() })
 ```
 
 ## Notes

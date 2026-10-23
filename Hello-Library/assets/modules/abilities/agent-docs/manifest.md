@@ -25,31 +25,36 @@ A player's abilities, generically: each has a key and a cooldown, and what it do
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | AbilitiesInit | Fill in a missing `cooldown`; stop the cooldown of an entry that went |
-| Update (both) | AbilitiesCool | On a press, start that ability's cooldown: the ability fires |
-| First (both) | AbilitiesRemoved | When `abilities` is removed from an entity that stays, stop its cooldowns |
-| First (server) | AbilitiesSync | Declare each ability's action for sync; drop entries for abilities that went |
-| First (server) | AbilitiesUnsync | When `abilities` is removed from an entity that stays, take off the action sync entries |
-| First (client) | AbilitiesBind | Bind each ability's key into `input/game.abilities` on the local player; again when `input` is added, and when the abilities change |
-| First (client) | AbilitiesUnbind | When `abilities` is removed from an entity that stays, remove the bindings |
+| First (both) | `abilities/init` | Fill in a missing `cooldown`; stop the cooldown of an entry that went |
+| Update (both) | `abilities/cool` | On a press, start that ability's cooldown: the ability fires |
+| First (both) | `abilities/removed` | When `abilities` is removed from an entity that stays, stop its cooldowns |
+| First (server) | `abilities/sync` | Declare each ability's action for sync; drop entries for abilities that went |
+| First (server) | `abilities/unsync` | When `abilities` is removed from an entity that stays, take off the action sync entries |
+| First (client) | `abilities/bind` | Bind each ability's key into `input/game.abilities` on the local player; again when `input` is added, and when the abilities change |
+| First (client) | `abilities/unbind` | When `abilities` is removed from an entity that stays, remove the bindings |
 
 ## Use
 
 ```lua
 -- an ability mod registers itself on the player...
-e:patch({ abilities = { fireball = { key = "KeyQ", cooldown = 1 } } })
+commands:entity(player):patch({ abilities = { fireball = { key = "KeyQ", cooldown = 1 } } })
 
 -- ...and fires on its own press while it is not cooling (the cooldown that same press
 -- starts shows from the next frame)
-for _, e in ipairs(world:query({
-    added = { "input/game/abilities/fireball" },
-    with = { "abilities/fireball" },
-    without = { "abilities/fireball/cooling" },
-})) do
-    -- fire
-end
+app:add_systems(Update, {
+    Query[{
+        added = { "input/game/abilities/fireball" },
+        with = { "abilities/fireball" },
+        without = { "abilities/fireball/cooling" },
+    }],
+    Commands,
+}, function(pressed, commands)
+    for _, e in ipairs(pressed:iter()) do
+        -- fire
+    end
+end):in_set("abilities/fireball/fire")
 ```
 
 ## Notes

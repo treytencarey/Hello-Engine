@@ -23,24 +23,24 @@ A top-down 2D camera. Extends `camera` (`base = "camera"`). The local player's c
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | Camera2dInit | On an added `camera/2d`, fill in missing config fields |
-| First | CameraSpawn | On the local carrier, spawn the eye already placed and scaled, or turn the existing eye back on |
-| First | Camera2dBind | On the local carrier, bind the scroll wheel (again when `input` is added back) |
-| First | CameraTeardown | When the player leaves for another world (`core/net/local` removed), turn the eye off |
-| First | CameraRemove | When `camera/2d` is removed, unbind; the eye, marked `camera/2d/eye`, goes by `mod_registry` |
-| Update | CameraZoom | Change `camera.distance` by scroll times `zoom_step`, clamped to `min_distance`..`max_distance` |
-| Update, after `CameraZoom` | CameraAim | When `camera` or `camera/2d` changes, set the eye's scale and height |
+| First | `camera/2d/camera2d_init` | On an added `camera/2d`, fill in missing config fields |
+| First | `camera/2d/spawn` | On the local carrier, spawn the eye already placed and scaled, or turn the existing eye back on |
+| First | `camera/2d/camera2d_bind` | On the local carrier, bind the scroll wheel (again when `input` is added back) |
+| First | `camera/2d/teardown` | When the player leaves for another world (`core/net/local` removed), turn the eye off |
+| First | `camera/2d/remove` | When `camera/2d` is removed, unbind; the eye, marked `camera/2d/eye`, goes by `mod_registry` |
+| Update | `camera/2d/zoom` | Change `camera.distance` by scroll times `zoom_step`, clamped to `min_distance`..`max_distance` |
+| Update, after `camera/2d/zoom` | `camera/2d/aim` | When `camera` or `camera/2d` changes, set the eye's scale and height |
 
 ## Use
 
 ```lua
-spawn({ camera = { distance = 1 }, ["camera/2d"] = {} })   -- start at 1:1; camera's own default distance is 8
-player:patch({ ["camera/2d"] = { z = 500, max_distance = 2 } })   -- lower, and at most 2x
+commands:spawn({ camera = { distance = 1 }, ["camera/2d"] = {} })   -- start at 1:1; camera's own default distance is 8
+commands:entity(player):patch({ ["camera/2d"] = { z = 500, max_distance = 2 } })   -- lower, and at most 2x
 
 -- switch to a 3D camera: camera/2d and its eye are removed for you
-player:patch({ ["camera/third_person"] = {} })
+commands:entity(player):patch({ ["camera/third_person"] = {} })
 ```
 
 ## Notes
@@ -48,3 +48,4 @@ player:patch({ ["camera/third_person"] = {} })
 - Zoom is `camera.distance`, so it is kept between worlds with the rest of `camera`. Set the starting zoom with `camera.distance`; `camera` defaults it to 8, a 3D distance.
 - The eye's scale is set on its own `Transform`; `transform/follow` sets only its position and rotation.
 - The eye is a child, so it despawns with its carrier.
+- A suite run in a window gives its carrier `input = {}` (no mode): no binding is active (`input`), so a real mouse scrolled while the window has focus does not zoom the camera. The suite writes the zoom itself; this mod binds into `input/game` whatever the mode.

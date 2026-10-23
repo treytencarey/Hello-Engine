@@ -1,9 +1,13 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("CooldownSuite")
+local World = require("bevy::ecs::world::World")
+local Time = require("bevy::time::Time")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local function subject(world, name)
     for _, e in ipairs(world:query({
@@ -26,18 +30,18 @@ end
 
 -- A consumer listening for a timer to end, as a portal or an ability would.
 local ended = {}
-register_system("Update", function(world)
+app:add_systems(Update, { World }, function(world)
     for _, e in ipairs(world:query({
         ["or"] = { removed = { "cooldown/test_a", "cooldown/test_e" } },
         optional = { "cooldown/test_a", "cooldown/test_e", "cooldown/subject" },
     })) do
         ended[#ended + 1] = tostring((e:get("cooldown/subject") or {}).name)
     end
-end, { label = "CooldownSuiteEnded" })
+end):in_set("zz/cooldown_suite_ended")
 
 -- Counts how often the shared component of "short" is written.
 local writes = 0
-register_system("Update", function(world)
+app:add_systems(Update, { World }, function(world)
     for _, e in ipairs(world:query({
         changed = { "cooldown" },
         with = { "cooldown/subject" },
@@ -46,19 +50,20 @@ register_system("Update", function(world)
             writes = writes + 1
         end
     end
-end, { label = "CooldownSuiteWrites" })
+end):in_set("zz/cooldown_suite_writes")
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
-    clock = clock + (world:delta_time() or 0)
+-- The suite's clock is the mod's: Bevy's `Time`.
+app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+    clock = clock + time:delta_secs()
     local short, long = subject(world, "short"), subject(world, "long")
     local function step(next_phase)
         phase, clock = next_phase, 0
     end
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["cooldown/subject"] = { name = "short" },
             cooldown = {
                 ["cooldown/test_a"] = { remaining = 0.3 },
@@ -66,14 +71,14 @@ register_system("Update", function(world)
             },
             ["core/net/sync"] = false,
         })
-        spawn({
+        commands:spawn({
             ["cooldown/subject"] = { name = "doomed" },
             cooldown = {
                 ["cooldown/test_e"] = { remaining = 0.5 },
             },
             ["core/net/sync"] = false,
         })
-        spawn({
+        commands:spawn({
             ["cooldown/subject"] = { name = "long" },
             cooldown = {
                 ["cooldown/test_c"] = { remaining = 30 },
@@ -85,7 +90,7 @@ register_system("Update", function(world)
     elseif phase == "started" and short and long and short:get("cooldown/left") and long:get("cooldown/left") then
         local doomed = subject(world, "doomed")
         if doomed then
-            despawn(doomed:id())
+            commands:entity(doomed:id()):despawn()
         end
         suite.assert_test("C1_a_running_timer_carries_its_component",
             short:has("cooldown/test_a") and short:has("cooldown/test_b") and long:has("cooldown/test_c"),
@@ -128,4 +133,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("CooldownSuite")
     end
-end, { label = "CooldownSuite" })
+end):in_set("zz/cooldown_suite")

@@ -12,11 +12,14 @@
 --     max_distance = <metres>,
 -- }
 
+local app = ...
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "camera/third_person" } })) do
+app:add_systems(First, {
+    Query[{ added = { Mut["camera/third_person"] } }],
+}, function(added)
+    for _, e in ipairs(added:iter_mut()) do
         local tp = e:get("camera/third_person")
         e:patch({
             ["camera/third_person"] = {
@@ -29,16 +32,19 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "CameraThirdPersonInit" })
+end):in_set("camera/third_person/init")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "camera/third_person", "core/net/local", "input" },
         },
         with = { "camera/third_person", "core/net/local" },
-    })) do
-        e:patch({
+    }],
+    Commands,
+}, function(carriers, commands)
+    for _, e in ipairs(carriers:iter()) do
+        commands:entity(e:id()):patch({
             ["input/game"] = {
                 third_person = {
                     look = { motion = true },
@@ -47,21 +53,32 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "CameraThirdPersonBind" })
+end):in_set("camera/third_person/bind")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         removed = { "camera/third_person" },
-    })) do
-        e:patch({ ["input/game"] = { third_person = null } })
+        with = { "input/game" },
+    }],
+    Commands,
+}, function(carriers, commands)
+    for _, e in ipairs(carriers:iter()) do
+        -- `removed` also fires on despawn, and a patch to an entity that is gone fails.
+        local carrier = commands:get_entity(e:id())
+        if carrier ~= nil then
+            carrier:patch({ ["input/game"] = { third_person = null } })
+        end
     end
-end, { label = "CameraThirdPersonUnbind" })
+end):in_set("camera/third_person/unbind")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+-- Look and zoom patch different fields of `camera`, so a look and a zoom in one frame both land.
+app:add_systems(Update, {
+    Query[{
         changed = { "input/game/third_person/look" },
-        with = { "camera", "camera/third_person" },
-    })) do
+        with = { Mut["camera"], "camera/third_person" },
+    }],
+}, function(carriers)
+    for _, e in ipairs(carriers:iter_mut()) do
         local cam = e:get("camera")
         local tp = e:get("camera/third_person")
         local look = e:get("input/game/third_person/look")
@@ -77,13 +94,15 @@ register_system("Update", function(world)
             })
         end
     end
-end, { label = "Camera" })
+end):in_set("camera/third_person"):before("camera/3d/camera3d_aim")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         changed = { "input/game/third_person/zoom" },
-        with = { "camera", "camera/third_person" },
-    })) do
+        with = { Mut["camera"], "camera/third_person" },
+    }],
+}, function(carriers)
+    for _, e in ipairs(carriers:iter_mut()) do
         local cam = e:get("camera")
         local tp = e:get("camera/third_person")
         local zoom = e:get("input/game/third_person/zoom")
@@ -98,19 +117,21 @@ register_system("Update", function(world)
             })
         end
     end
-end, { label = "CameraZoom" })
+end):in_set("camera/third_person/zoom")
 
 -- The eye orbits the carrier: `distance` back along the pitched look, then `height` up and
 -- `offset` to the side, all turned by the yaw. Written only once `camera/3d` exists: writing it earlier would put
 -- the base on the entity directly, and it would not leave with this mod.
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         ["or"] = {
             changed = { "camera" },
             added = { "camera/third_person", "camera/3d" },
         },
-        with = { "camera", "camera/3d", "camera/third_person" },
-    })) do
+        with = { "camera", Mut["camera/3d"], "camera/third_person" },
+    }],
+}, function(carriers)
+    for _, e in ipairs(carriers:iter_mut()) do
         local cam = e:get("camera")
         -- `camera` arrives as `{}` and gets its defaults when its own mod loads, which can
         -- be a frame later. Filling them is a change to `camera`, which runs this again.
@@ -126,6 +147,9 @@ register_system("Update", function(world)
             })
         end
     end
-end, { label = "CameraAim", after = { "Camera", "CameraZoom" } })
+end):in_set("camera/third_person/aim")
+    :after("camera/third_person")
+    :after("camera/third_person/zoom")
+    :before("camera/3d/camera3d_aim")
 
 return { base = "camera/3d" }

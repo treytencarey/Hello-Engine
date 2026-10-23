@@ -1,10 +1,12 @@
 -- --host (windowed: UI layout and Interaction need a window)
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("SidebarSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-spawn({ Camera2d = {}, Camera = { order = 0 } })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
+end)
 
 -- What a script spawns is linked to its file. The panel stand-in below spawns its buttons
 -- as a panel mod would, linked to that mod's file.
@@ -20,24 +22,23 @@ fw.debounce = 0
 
 -- The panel stand-in: when a bar appears, a local player with `zz/panel` gets its two
 -- buttons in it.
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     for _, bar in ipairs(world:query({ added = { "sidebar/bar" } })) do
         for _, _ in ipairs(world:query({ with = { "zz/panel", "core/net/local" }, limit = 1 })) do
-            spawn({ ["sidebar/button"] = { title = "Alpha", order = 2 }, ["core/script/owner"] = Instances.script_entity(PANEL) })
-                :with_parent(bar:id())
-            spawn({ ["sidebar/button"] = { title = "Beta", order = 1 }, ["core/script/owner"] = Instances.script_entity(PANEL) })
-                :with_parent(bar:id())
+            commands:entity(bar:id())
+                :add_child(commands:spawn({ ["sidebar/button"] = { title = "Alpha", order = 2 }, ["core/script/owner"] = Instances.script_entity(PANEL) }):id())
+                :add_child(commands:spawn({ ["sidebar/button"] = { title = "Beta", order = 1 }, ["core/script/owner"] = Instances.script_entity(PANEL) }):id())
         end
     end
-end, { label = "SidebarSuitePanel" })
+end):in_set("zz/sidebar_suite_panel")
 
 -- Keys go through `input` as the real ones do: pressed one frame, released two frames later.
 local key_frames = {}
 
-register_system("First", function(world)
+app:add_systems(First, { World }, function(world)
     local ev = table.remove(key_frames, 1)
     if ev ~= nil and ev.key_code ~= nil then world:write_event("SyntheticKeyInput", ev) end
-end, { label = "SidebarSuiteKeys" })
+end):in_set("zz/sidebar_suite_keys")
 
 local function escape()
     key_frames[#key_frames + 1] = { key_code = "Escape", state = "Pressed" }
@@ -90,8 +91,10 @@ local function letters(world, b)
     return world:query({ entities = { b:id() }, with = { "Text" } })
 end
 
+-- A real click names the entity it lands on.
 local function click(world, title)
-    button(world, title):invoke_observer("Pointer<Click>", {})
+    local b = button(world, title)
+    b:invoke_observer("Pointer<Click>", { entity = b:id() })
 end
 
 local function shown(c) return c:get("Node").display.Flex ~= nil end
@@ -101,14 +104,14 @@ local function shown(c) return c:get("Node").display.Flex ~= nil end
 local phase, clock, frames = "spawn", 0, 0
 local old_bar
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     frames = frames + 1
     local function step(next_phase) phase, clock, frames = next_phase, 0, 0 end
     local me = player(world, "me")
 
     if phase == "spawn" then
-        spawn({
+        commands:spawn({
             ["zz/player"] = { name = "me" },
             ["core/net/local"] = {},
             ["core/net/sync"] = false,
@@ -116,7 +119,7 @@ register_system("Update", function(world)
             sidebar = {},
             ["zz/panel"] = {},
         })
-        spawn({
+        commands:spawn({
             ["zz/player"] = { name = "remote" },
             ["core/net/sync"] = false,
             sidebar = {},
@@ -218,15 +221,15 @@ register_system("Update", function(world)
     elseif phase == "closed with panel" and clock > 0.3 then
         suite.assert_test("R8_closing_the_sidebar_closes_its_panels",
             not button(world, "Beta"):has("sidebar/button/open"), "")
-        despawn(button(world, "Alpha"):id())
+        commands:entity(button(world, "Alpha"):id()):despawn()
         step("button gone")
 
     elseif phase == "button gone" and clock > 0.3 then
         local list = icons(world)
         suite.assert_test("R9_a_removed_button_leaves_the_bar",
             #list == 1 and list[1]:id() == button(world, "Beta"):id(), "icons=" .. #list)
-        spawn({ ["sidebar/button"] = { title = "Gamma", order = 0 }, ["core/script/owner"] = Instances.script_entity(PANEL) })
-            :with_parent(bar(world):id())
+        commands:entity(bar(world):id())
+            :add_child(commands:spawn({ ["sidebar/button"] = { title = "Gamma", order = 0 }, ["core/script/owner"] = Instances.script_entity(PANEL) }):id())
         step("gamma")
 
     elseif phase == "gamma" and clock > 0.3 then
@@ -235,7 +238,7 @@ register_system("Update", function(world)
             #list == 2 and list[1]:id() == button(world, "Gamma"):id() and list[2]:id() == button(world, "Beta"):id()
                 and #letters(world, button(world, "Beta")) == 1 and #letters(world, button(world, "Gamma")) == 1,
             "icons=" .. #list)
-        despawn(button(world, "Gamma"):id())
+        commands:entity(button(world, "Gamma"):id()):despawn()
         escape()
         step("open before leaving")
 
@@ -315,4 +318,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("SidebarSuite")
     end
-end, { label = "SidebarSuite" })
+end):in_set("zz/sidebar_suite")

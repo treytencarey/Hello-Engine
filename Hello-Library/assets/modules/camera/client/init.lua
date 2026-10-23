@@ -10,8 +10,12 @@
 --     offset = { x = <metres>, y = <metres>, z = <metres> },
 -- }
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "camera" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ added = { Mut["camera"] } }],
+}, function(cameras)
+    for _, e in ipairs(cameras:iter_mut()) do
         local c = e:get("camera")
         e:patch({
             camera = {
@@ -23,4 +27,4 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "CameraInit" })
+end):in_set("camera/init")

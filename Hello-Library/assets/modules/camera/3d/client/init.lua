@@ -14,9 +14,10 @@
 -- `camera` arrives as `{}` and its own mod may load a frame later, so a new eye can be
 -- spawned before `camera` has its defaults. It starts level; filling them is a change to
 -- `camera`, and Camera3dAim turns the eye then.
+local app = ...
 local Quat = require("bevy::math::Quat")
 
-local function follow(world, cam, c3d)
+local function follow(cam, c3d)
     local yaw = Quat.from_rotation_y(cam.yaw or 0)
     local pitch = Quat.from_rotation_x(cam.pitch or 0)
     return {
@@ -25,8 +26,10 @@ local function follow(world, cam, c3d)
     }
 end
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "camera/3d" } })) do
+app:add_systems(First, {
+    Query[{ added = { Mut["camera/3d"] } }],
+}, function(added)
+    for _, e in ipairs(added:iter_mut()) do
         local c3d = e:get("camera/3d")
         e:patch({
             ["camera/3d"] = {
@@ -34,68 +37,81 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "Camera3dInit" })
+end):in_set("camera/3d/camera3d_init")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "camera/3d", "camera", "core/net/local" },
         },
         with = { "camera/3d", "camera", "core/net/local" },
-    })) do
+        optional = { "Children" },
+    }],
+    Query[{
+        with = { "camera/3d/eye", Mut["Camera"] },
+    }],
+    Commands,
+}, function(carriers, all_eyes, commands)
+    for _, e in ipairs(carriers:iter()) do
         local cam = e:get("camera")
         local c3d = e:get("camera/3d")
-        local eyes = world:query({
-            entities = { e:id() },
-            with = { "camera/3d/eye", "Camera" },
-        })
+        local eyes = all_eyes:iter_many_mut(e:get("Children") or {})
         for _, eye in ipairs(eyes) do
             eye:patch({ Camera = { is_active = true } })
         end
         if #eyes == 0 then
-            spawn({
+            local eye = commands:spawn({
                 Camera3d = {},
                 Camera = { order = 0, is_active = true },
                 Transform = {},
                 IsDefaultUiCamera = true,
-                ["transform/follow"] = follow(world, cam, c3d),
+                ["transform/follow"] = follow(cam, c3d),
                 ["camera/3d/eye"] = {},
-            }):with_parent(e:id())
+            }):id()
+            commands:entity(e:id()):add_child(eye)
         end
     end
-end, { label = "CameraSpawn" })
+end):in_set("camera/3d/spawn")
 
 -- The player left for another world: its eye stops rendering this one.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         removed = { "core/net/local" },
         with = { "camera/3d" },
-    })) do
-        for _, eye in ipairs(world:query({
-            entities = { e:id() },
-            with = { "camera/3d/eye", "Camera" },
-        })) do
+        optional = { "Children" },
+    }],
+    Query[{
+        with = { "camera/3d/eye", Mut["Camera"] },
+    }],
+}, function(carriers, all_eyes)
+    for _, e in ipairs(carriers:iter()) do
+        for _, eye in ipairs(all_eyes:iter_many_mut(e:get("Children") or {})) do
             eye:patch({ Camera = { is_active = false } })
         end
     end
-end, { label = "CameraTeardown" })
+end):in_set("camera/3d/teardown")
 
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+-- The camera mods extending this one order their writes of `camera` and `camera/3d` before
+-- this system, so the eye turns and moves in the frame they change.
+app:add_systems(Update, {
+    Query[{
         ["or"] = {
             changed = { "camera", "camera/3d" },
         },
         with = { "camera", "camera/3d" },
-    })) do
+        optional = { "Children" },
+    }],
+    Query[{
+        with = { "camera/3d/eye", Mut["transform/follow"] },
+    }],
+}, function(carriers, all_eyes)
+    for _, e in ipairs(carriers:iter()) do
         local cam = e:get("camera")
         local c3d = e:get("camera/3d")
-        for _, eye in ipairs(world:query({
-            entities = { e:id() },
-            with = { "camera/3d/eye" },
-        })) do
-            eye:patch({ ["transform/follow"] = follow(world, cam, c3d) })
+        for _, eye in ipairs(all_eyes:iter_many_mut(e:get("Children") or {})) do
+            eye:patch({ ["transform/follow"] = follow(cam, c3d) })
         end
     end
-end, { label = "Camera3dAim", after = { "Camera", "CameraAim" } })
+end):in_set("camera/3d/camera3d_aim")
 
 return { base = "camera" }

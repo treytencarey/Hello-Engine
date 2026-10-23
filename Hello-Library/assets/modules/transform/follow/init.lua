@@ -9,31 +9,29 @@
 --     offset = { x = <metres>, y = <metres>, z = <metres> },
 -- }
 
+local app = ...
 local Quat = require("bevy::math::Quat")
+local TransformSystems = require("bevy::transform::TransformSystems")
 
-register_system("PostUpdate", function(world)
-    for _, e in ipairs(world:query({
-        with = { "transform/follow", "ChildOf", "Transform" },
-    })) do
+app:add_systems(PostUpdate, {
+    Query[{
+        with = { "transform/follow", "ChildOf", Mut["Transform"] },
+    }],
+    Query[{ with = { "Transform" } }],
+}, function(followers, parents)
+    for _, e in ipairs(followers:iter_mut()) do
         local follow = e:get("transform/follow")
-        local parent_id = e:get("ChildOf")
         local rotation = follow.rotation or { x = 0, y = 0, z = 0, w = 1 }
         local offset = follow.offset or { x = 0, y = 0, z = 0 }
-        -- `entities` also matches descendants, so keep only the parent itself.
-        for _, parent in ipairs(world:query({
-            entities = { parent_id },
-            with = { "Transform" },
-        })) do
-            if parent:id() ~= parent_id then goto next_row end
-            local parent_transform = parent:get("Transform")
-            local undo = Quat.inverse(parent_transform.rotation)
+        local parent = parents:get(e:get("ChildOf"))
+        if parent ~= nil then
+            local undo = Quat.inverse(parent:get("Transform").rotation)
             e:patch({
                 Transform = {
                     rotation = Quat.mul_quat(undo, rotation),
                     translation = Quat.mul_vec3(undo, offset),
                 },
             })
-            ::next_row::
         end
     end
-end, { label = "TransformFollow", before = { "TransformSystems::Propagate" } })
+end):in_set("transform/follow"):before(TransformSystems.Propagate)

@@ -22,13 +22,20 @@
 --
 -- notification/alive: present while the timeout runs (a `cooldown` timer).
 
+local app = ...
+local Time = require("bevy::time::Time")
+
 -- A new notification fills in its config and becomes a card under the overlay.
-register_system("First", function(world)
+app:add_systems(First, {
+    Query[{ added = { "notification" } }],
+    Query[{ with = { "notification/overlay" } }],
+    Commands,
+}, function(cards, overlays, commands)
     local overlay
-    for _, e in ipairs(world:query({ added = { "notification" } })) do
-        overlay = overlay or world:query({ with = { "notification/overlay" }, limit = 1 })[1]
+    for _, e in ipairs(cards:iter()) do
         if overlay == nil then
-            overlay = spawn({
+            local shown = overlays:iter()[1]
+            overlay = shown and shown:id() or commands:spawn({
                 ["notification/overlay"] = {},
                 Node = {
                     position_type = "Absolute",
@@ -42,11 +49,12 @@ register_system("First", function(world)
                 GlobalZIndex = { value = 600 },
                 -- only the cards take the pointer, not the gaps between them
                 Pickable = { should_block_lower = false, is_hoverable = false },
-            })
+            }):id()
         end
         local n = e:get("notification")
         local width, accent = n.width or 260, n.accent or "accent"
-        e:patch({
+        local card = commands:entity(e:id())
+        card:patch({
             notification = { width = width, accent = accent, fade = n.fade or 0.25 },
             Node = {
                 width = { Px = width },
@@ -60,24 +68,40 @@ register_system("First", function(world)
                 bottom_left = { Px = 6 }, bottom_right = { Px = 6 },
             },
             ["ui/style"] = { background = "bg", border = "border", border_left = accent },
-            ChildOf = overlay:id(),
         })
+        commands:entity(overlay):add_child(e:id())
         if n.timeout ~= nil then
-            e:patch({ cooldown = { ["notification/alive"] = { remaining = n.timeout } } })
+            card:patch({ cooldown = { ["notification/alive"] = { remaining = n.timeout } } })
         end
     end
-end, { label = "NotificationCard" })
+end):in_set("notification/card")
 
 -- The timeout ran out, or the extending mod set `dismiss`: the card starts to fade, once.
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+-- The timeout's edge also comes for a card that despawned; only a card still here fades.
+app:add_systems(Update, {
+    Query[{
         removed = { "notification/alive" },
+        with = { "notification" },
+    }],
+    Query[{
+        changed = { "notification" },
+        without = { "notification/fade" },
+        optional = { "ComputedNode" },
+    }],
+    Query[{
         with = { "notification" },
         without = { "notification/fade" },
         optional = { "ComputedNode" },
-    })) do
+    }],
+    Commands,
+}, function(timed_out, changed, cards, commands)
+    local ended = {}
+    for _, e in ipairs(timed_out:iter()) do
+        ended[#ended + 1] = e:id()
+    end
+    for _, e in ipairs(cards:iter_many(ended)) do
         local node = e:get("ComputedNode")
-        e:patch({
+        commands:entity(e:id()):patch({
             ["notification/fade"] = {
                 elapsed = 0,
                 duration = e:get("notification").fade,
@@ -85,23 +109,27 @@ register_system("Update", function(world)
             },
         })
     end
-    for _, e in ipairs(world:query({
-        changed = { "notification" },
-        without = { "notification/fade" },
-        optional = { "ComputedNode" },
-    })) do
+    for _, e in ipairs(changed:iter()) do
         local n = e:get("notification")
         if n.dismiss == true then
             local node = e:get("ComputedNode")
-            e:patch({ ["notification/fade"] = { elapsed = 0, duration = n.fade, height = node and node.size.y or 0 } })
+            commands:entity(e:id()):patch({ ["notification/fade"] = { elapsed = 0, duration = n.fade, height = node and node.size.y or 0 } })
         end
     end
-end, { label = "NotificationDismiss" })
+end):in_set("notification/dismiss")
 
 -- Animation polls: each fading card shrinks and every styled node in it fades, easing out.
-register_system("Update", function(world)
-    local dt = world:delta_time() or 0
-    for _, e in ipairs(world:query({ with = { "notification/fade", "notification" } })) do
+app:add_systems(Update, {
+    Res[Time],
+    Query[{
+        with = { Mut["notification/fade"], "notification" },
+        optional = { Mut["Node"] },
+    }],
+    Query[{ with = { Mut["ui/style"] } }],
+    Commands,
+}, function(time, fading, styled, commands)
+    local dt = time:delta_secs()
+    for _, e in ipairs(fading:iter_mut()) do
         local fade = e:get("notification/fade")
         local elapsed = fade.elapsed + dt
         local left = 1 - math.min(1, elapsed / fade.duration)
@@ -110,19 +138,25 @@ register_system("Update", function(world)
         if fade.height > 0 then
             e:patch({ Node = { height = { Px = fade.height * factor }, overflow = { x = "Hidden", y = "Hidden" } } })
         end
-        for _, node in ipairs(world:query({ entities = { e:id() }, with = { "ui/style" } })) do
+        local card = styled:iter_descendants(e:id())
+        table.insert(card, 1, e:id())
+        for _, node in ipairs(styled:iter_many_mut(card)) do
             node:patch({ ["ui/style"] = { alpha = factor } })
         end
         if elapsed >= fade.duration then
-            despawn(e:id())
+            commands:entity(e:id()):despawn()
         end
     end
-end, { label = "NotificationFade", after = { "NotificationDismiss" } })
+end):in_set("notification/fade"):after("notification/dismiss")
 
 -- `notification` removed: the card goes. The overlay needs no removing: with the last
--- notification this mod unloads, and the entities it owns go with it.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "notification" } })) do
-        despawn(e:id())
+-- notification this mod unloads, and the entities it owns go with it. The edge also comes
+-- for a card that despawned, which `try_despawn` leaves alone.
+app:add_systems(First, {
+    Query[{ removed = { "notification" } }],
+    Commands,
+}, function(removed, commands)
+    for _, e in ipairs(removed:iter()) do
+        commands:entity(e:id()):try_despawn()
     end
-end, { label = "NotificationRemoved" })
+end):in_set("notification/removed")

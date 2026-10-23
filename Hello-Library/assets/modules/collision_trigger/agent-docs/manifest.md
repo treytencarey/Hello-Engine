@@ -16,27 +16,31 @@ When `collision_trigger` is added, the mod gives it this full shape and adds `Se
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | CollisionTriggerSetup | On an added `collision_trigger`, set its shape and add the sensor components |
-| First | CollisionTriggerRemoved | On a removed `collision_trigger`, remove the sensor components |
-| First | CollisionTrigger | On a changed `CollidingEntities3d`, write `entered`, `exited` and `inside` when anything changed |
+| First | `collision_trigger/setup` | On an added `collision_trigger`, set its shape and add the sensor components |
+| First | `collision_trigger/removed` | On a removed `collision_trigger`, remove the sensor components |
+| First | `collision_trigger` | On a changed `CollidingEntities3d`, write `entered`, `exited` and `inside` when anything changed |
 
 ## Use
 
 ```lua
-door:patch({
+commands:entity(door):patch({
     collision_trigger = {},
     Collider3d = { cuboid = { hx = 1, hy = 2, hz = 0.2 } },
 })
 
 -- in Update
-for _, e in ipairs(world:query({ changed = { "collision_trigger" } })) do
-    local entered = e:get("collision_trigger").entered or {}
-    for _, id in ipairs(entered) do
-        -- something walked into the door
+app:add_systems(Update, {
+    Query[{ changed = { "collision_trigger" } }],
+}, function(triggers)
+    for _, e in ipairs(triggers:iter()) do
+        local entered = e:get("collision_trigger").entered or {}
+        for _, id in ipairs(entered) do
+            -- something walked into the door
+        end
     end
-end
+end)
 ```
 
 ## Notes

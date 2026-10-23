@@ -1,13 +1,15 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerServerSuite")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 -- Connections are what the net server spawns for each client.
-local function connect(client_id, observer)
-    spawn({ ["core/net/connection"] = { client_id = client_id, observer = observer or false }, ["core/net/sync"] = false })
+local function connect(commands, client_id, observer)
+    commands:spawn({ ["core/net/connection"] = { client_id = client_id, observer = observer or false }, ["core/net/sync"] = false })
 end
 
 local function connection(world, client_id)
@@ -32,22 +34,27 @@ local function players(world, client_id)
 end
 
 local function at(world, p)
-    return world:call_component_method(p:id(), "GlobalTransform", "compute_transform").translation
+    return world:get_entity(p:id()).GlobalTransform:compute_transform().translation
 end
 
 local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-2) end
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
-        connect(7)
-        connect(8)
-        connect(9, true)
+        commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+        connect(commands, 7)
+        connect(commands, 8)
+        connect(commands, 9, true)
+        step("joining")
+
+    -- Spawns land after the system that makes them, so the players arrive frames later and
+    -- a long first frame can pass 0.3 s before they do: wait for them, then let them settle.
+    elseif phase == "joining" and #players(world, 7) > 0 and #players(world, 8) > 0 then
         step("joined")
 
     elseif phase == "joined" and clock > 0.3 then
@@ -86,14 +93,14 @@ register_system("Update", function(world)
             near(pos.x, 0, 0.05) and near(pos.z, 4, 0.05), string.format("at %.2f %.2f", pos.x, pos.z))
         suite.assert_test("S9_identity_comes_from_the_join_ticket", p:get("player").user_id == "u7", "")
         connection(world, 9):patch({ ["core/net/connection"] = { observer = true } })
-        despawn(connection(world, 7):id())
+        commands:entity(connection(world, 7):id()):despawn()
         step("left")
 
     elseif phase == "left" and clock > 0.3 then
         suite.assert_test("S10_a_client_back_to_watching_loses_its_player", #players(world, 9) == 0, "")
         suite.assert_test("S11_a_client_that_left_loses_its_player_and_others_stay",
             #players(world, 7) == 0 and #players(world, 8) == 1, "")
-        connect(10)
+        connect(commands, 10)
         step("reused")
 
     elseif phase == "reused" and clock > 0.3 then
@@ -115,16 +122,16 @@ register_system("Update", function(world)
         suite.assert_test("S13_removing_player_takes_off_identity_camera_movement_and_abilities", gone, "")
         -- No spawner (its mod stops with it; players stay), then a client joins, then a
         -- new spawner comes: it serves the client already connected, and no one else twice.
-        despawn(world:query({ with = { "player/spawner" } })[1]:id())
+        commands:entity(world:query({ with = { "player/spawner" } })[1]:id()):despawn()
         step("no spawner")
 
     elseif phase == "no spawner" and clock > 0.3 then
-        connect(12)
+        connect(commands, 12)
         step("waiting")
 
     elseif phase == "waiting" and clock > 0.3 then
         suite.assert_test("S14_players_outlive_their_spawner", #players(world, 10) == 1 and #players(world, 12) == 0, "")
-        spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+        commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
         step("new spawner")
 
     elseif phase == "new spawner" and clock > 0.5 then
@@ -139,4 +146,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("PlayerServerSuite")
     end
-end, { label = "PlayerServerSuite" })
+end):in_set("zz/player_server_suite")

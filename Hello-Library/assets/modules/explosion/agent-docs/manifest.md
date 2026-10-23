@@ -25,24 +25,24 @@ A glowing ball at a point that grows to its radius and is gone after its duratio
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | ExplosionInit | On an added `explosion`, fill in missing fields |
-| First (both), after `ExplosionInit` | ExplosionPlace | Place it at `at` and start its timer |
-| First (both) | ExplosionRemoved | When `explosion` is removed from an entity that stays, stop the timer |
-| First (both) | ExplosionEnded | When the timer ends, despawn it |
-| First (client), after `ExplosionPlace` | ExplosionDraw | Add a glowing unit sphere of its color, scaled to nothing |
-| Update (client) | ExplosionGrow | While it burns, scale it from nothing to its radius |
-| First (client) | ExplosionUndraw | When `explosion` is removed from an entity that stays, remove the mesh and material |
+| First (both) | `explosion/init` | On an added `explosion`, fill in missing fields |
+| First (both), after `explosion/init` | `explosion/place` | Place it at `at` and start its timer |
+| First (both) | `explosion/removed` | When `explosion` is removed from an entity that stays, stop the timer |
+| First (both) | `explosion/ended` | When the timer ends, despawn it |
+| First (client), after `explosion/place` | `explosion/draw` | Add a glowing unit sphere of its color, scaled to nothing |
+| Update (client) | `explosion/grow` | While it burns, scale it from nothing to its radius |
+| First (client) | `explosion/undraw` | When `explosion` is removed from an entity that stays, remove the mesh and material |
 
 ## Use
 
 ```lua
 -- on each side, from what that side saw
-spawn({ explosion = { at = { x = 0, y = 1, z = 0 }, radius = 2 }, ["core/script/owner"] = false })
+commands:spawn({ explosion = { at = { x = 0, y = 1, z = 0 }, radius = 2 }, ["core/script/owner"] = false })
 ```
 
 ## Notes
 
-- Timed work polls: `ExplosionGrow` runs every frame, but only over explosions still burning.
+- Timed work polls: `explosion/grow` runs every frame, but only over explosions still burning.
 - A mod that spawns one from an entity about to despawn (a projectile) spawns it with `["core/script/owner"] = false`, or it is reaped when that mod's last carrier goes.

@@ -20,17 +20,20 @@
 --   AN9 the mod itself is edited (hot reload): each character still has one model, a graph
 --       and a linked player, and plays
 --   AN7 taken off an entity that stays: its model and its parts go
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AnimationClientSuite")
 local watcher = require("modules/core/hot_reload/watcher.lua")
+local Time = require("bevy::time::Time")
 
 -- An immediate watcher, for AN9's edit.
 local fw = define_resource("_FileWatcherState", {})
 fw.poll_interval = 0
 fw.debounce = 0
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+end)
 
 local function named(world, name)
     for _, e in ipairs(world:query({
@@ -62,8 +65,10 @@ local phase, clock = "spawn", 0
 local moving = nil   -- { name, velocity } moved every frame
 local before = {}
 
-register_system("Update", function(world)
-    local dt = world:delta_time() or 0
+-- The suite's clock is the mod's: Bevy's `Time`, so what it moves in a frame is what
+-- `animation/state` measures over that frame.
+app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+    local dt = time:delta_secs()
     clock = clock + dt
     local function step(next_phase) phase, clock = next_phase, 0 end
 
@@ -79,8 +84,8 @@ register_system("Update", function(world)
     end
 
     if phase == "spawn" then
-        spawn({ ["zz/char"] = { name = "a" }, animation = {}, Transform = { translation = { x = 0, y = 1, z = 0 } } })
-        spawn({ ["zz/char"] = { name = "b" }, animation = {}, Transform = { translation = { x = 5, y = 1, z = 0 } } })
+        commands:spawn({ ["zz/char"] = { name = "a" }, animation = {}, Transform = { translation = { x = 0, y = 1, z = 0 } } })
+        commands:spawn({ ["zz/char"] = { name = "b" }, animation = {}, Transform = { translation = { x = 5, y = 1, z = 0 } } })
         step("loaded")
 
     elseif phase == "loaded" then
@@ -121,8 +126,9 @@ register_system("Update", function(world)
         before.walk, before.walk_speed = p.state, p.speed
         -- The player itself plays the walk node, not only the state saying so.
         local player = parts(world, a:id(), "animation/player")[1]
-        local ok_p, on = pcall(world.call_component_method, world, player:id(), "AnimationPlayer",
-            "is_playing_animation", a:get("animation/graph").nodes.walk)
+        local ok_p, on = pcall(function()
+            return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(a:get("animation/graph").nodes.walk)
+        end)
         before.walk_playing = ok_p and on
         before.walk_changes = 0
         before.walk_elapsed = elapsed_of(world, player)
@@ -141,8 +147,9 @@ register_system("Update", function(world)
         local a = named(world, "a")
         local player = parts(world, a:id(), "animation/player")[1]
         local node = a:get("animation/graph").nodes.walk
-        local ok_p, on = pcall(world.call_component_method, world, player:id(), "AnimationPlayer",
-            "is_playing_animation", node)
+        local ok_p, on = pcall(function()
+            return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(node)
+        end)
         -- Not restarted: the clip has run the whole time it walked.
         local ran = (elapsed_of(world, player) or 0) - (before.walk_elapsed or 0)
         local now_speed
@@ -155,7 +162,7 @@ register_system("Update", function(world)
                 tostring(now_speed), before.walk_changes))
         moving = nil
         -- As a player moves: a dynamic body, its velocity stepped by physics.
-        spawn({
+        commands:spawn({
             ["zz/char"] = { name = "c" }, animation = {},
             Transform = { translation = { x = -5, y = 1, z = 0 } },
             RigidBody3d = "Dynamic",
@@ -306,8 +313,9 @@ register_system("Update", function(world)
             local playing = c:get("animation/playing") or {}
             local on = false
             if player and graph and playing.state then
-                local ok_p, r = pcall(world.call_component_method, world, player:id(), "AnimationPlayer",
-                    "is_playing_animation", graph.nodes[playing.state])
+                local ok_p, r = pcall(function()
+                    return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(graph.nodes[playing.state])
+                end)
                 on = ok_p and r
             end
             ok = ok and models == 1 and on
@@ -328,4 +336,4 @@ register_system("Update", function(world)
         suite.finish("ANIMATION_CLIENT")
         phase = "done"
     end
-end, { label = "AnimationClientSuite" })
+end):in_set("zz/animation_client_suite")

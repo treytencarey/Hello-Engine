@@ -1,17 +1,19 @@
 -- --host
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("CameraServerSuite")
 
-spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+end)
 
 local phase, clock = "spawn", 0
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
 
     if phase == "spawn" then
-        spawn({ ["zz/subject"] = {}, camera = {} })
+        commands:spawn({ ["zz/subject"] = {}, camera = {} })
         phase, clock = "check", 0
 
     elseif phase == "check" then
@@ -36,4 +38,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("CameraServerSuite")
     end
-end, { label = "CameraServerSuite" })
+end):in_set("zz/camera_server_suite")

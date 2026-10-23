@@ -1,10 +1,12 @@
 -- --host (windowed: UI layout needs a window)
-require("modules/core/init.lua")
+local app = require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("SidebarPanelSuite")
 
-spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-spawn({ Camera2d = {}, Camera = { order = 0 } })
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
+end)
 
 local function panel(world, name)
     for _, e in ipairs(world:query({
@@ -33,13 +35,13 @@ end
 local phase, clock = "spawn", 0
 local room
 
-register_system("Update", function(world)
+app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
-        spawn({ ["zz/panel"] = { name = "files" }, ["sidebar/panel"] = { scroll_speed = 25 } })
-        spawn({ ["zz/panel"] = { name = "bare" }, ["sidebar/panel"] = { title = "", width = 48 } })
+        commands:spawn({ ["zz/panel"] = { name = "files" }, ["sidebar/panel"] = { scroll_speed = 25 } })
+        commands:spawn({ ["zz/panel"] = { name = "bare" }, ["sidebar/panel"] = { title = "", width = 48 } })
         step("built")
 
     elseif phase == "built" and clock > 0.5 then
@@ -70,7 +72,7 @@ register_system("Update", function(world)
         suite.assert_test("L4_width_follows_the_config", width(files) == 320, "width=" .. tostring(width(files)))
         local scroll = part(world, files, "sidebar/panel/scroll")
         for i = 1, 40 do
-            spawn({ ["zz/row"] = {}, Node = { height = { Px = 30 }, flex_shrink = 0 } }):with_parent(scroll:id())
+            commands:entity(scroll:id()):add_child(commands:spawn({ ["zz/row"] = {}, Node = { height = { Px = 30 }, flex_shrink = 0 } }):id())
         end
         step("filled")
 
@@ -78,14 +80,14 @@ register_system("Update", function(world)
         local scroll = part(world, panel(world, "files"), "sidebar/panel/scroll")
         local node = scroll:get("ComputedNode")
         room = node.content_size.y - node.size.y
-        scroll:invoke_observer("Pointer<Scroll>", { event = { y = 3 } })
+        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = 3 } })
         step("at top")
 
     elseif phase == "at top" and clock > 0.3 then
         local scroll = part(world, panel(world, "files"), "sidebar/panel/scroll")
         suite.assert_test("L5a_scrolling_up_at_the_top_stays_at_the_top",
             scroll:get("sidebar/panel/scroll").offset == 0, "offset=" .. tostring(scroll:get("sidebar/panel/scroll").offset))
-        scroll:invoke_observer("Pointer<Scroll>", { event = { y = -3 } })
+        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = -3 } })
         step("scrolled")
 
     elseif phase == "scrolled" and clock > 0.3 then
@@ -94,7 +96,7 @@ register_system("Update", function(world)
         suite.assert_test("L5_wheel_steps_scroll_by_speed",
             room > 100 and s.offset == 75 and scroll:get("ScrollPosition").y == 75,
             string.format("room=%.0f offset=%s", room, tostring(s.offset)))
-        scroll:invoke_observer("Pointer<Scroll>", { event = { y = -1000 } })
+        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = -1000 } })
         step("scrolled far")
 
     elseif phase == "scrolled far" and clock > 0.3 then
@@ -103,12 +105,13 @@ register_system("Update", function(world)
         suite.assert_test("L6_scrolling_stops_at_the_end_of_the_content", math.abs(s.offset - room) < 1,
             string.format("room=%.0f offset=%s", room, tostring(s.offset)))
         for _, row in ipairs(world:query({ with = { "zz/row" } })) do
-            despawn(row:id())
+            commands:entity(row:id()):despawn()
         end
         step("emptied")
 
     elseif phase == "emptied" and clock > 0.5 then
-        part(world, panel(world, "files"), "sidebar/panel/scroll"):invoke_observer("Pointer<Scroll>", { event = { y = -1 } })
+        local scroll = part(world, panel(world, "files"), "sidebar/panel/scroll")
+        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = -1 } })
         step("stepped")
 
     elseif phase == "stepped" and clock > 0.3 then
@@ -133,4 +136,4 @@ register_system("Update", function(world)
         phase = "done"
         suite.finish("SidebarPanelSuite")
     end
-end, { label = "SidebarPanelSuite" })
+end):in_set("zz/sidebar_panel_suite")

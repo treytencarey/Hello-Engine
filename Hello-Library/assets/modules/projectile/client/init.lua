@@ -1,9 +1,14 @@
 -- The client half: every client draws every projectile, a glowing ball of its radius and color.
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ added = { "projectile" } })) do
+local app = ...
+
+app:add_systems(First, {
+    Query[{ added = { "projectile" } }],
+    Commands,
+}, function(projectiles, commands)
+    for _, e in ipairs(projectiles:iter()) do
         local p = e:get("projectile")
-        e:patch({
+        commands:entity(e:id()):insert({
             Mesh3d = create_asset("bevy_mesh::mesh::Mesh", {
                 primitive = { Sphere = { radius = p.radius } },
             }),
@@ -13,14 +18,15 @@ register_system("First", function(world)
             }),
         })
     end
-end, { label = "ProjectileDraw", after = { "ProjectileInit" } })
+end):in_set("projectile/draw"):after("projectile/init")
 
--- `projectile` was taken off an entity that stays: take off what this mod added.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "projectile" } })) do
-        e:patch({
-            Mesh3d = null,
-            ["MeshMaterial3d<StandardMaterial>"] = null,
-        })
+-- `projectile` was taken off an entity that stays: take off what this mod added. A despawned
+-- projectile is in the `removed` rows too, which `try_remove` passes by.
+app:add_systems(First, {
+    Query[{ removed = { "projectile" } }],
+    Commands,
+}, function(removed, commands)
+    for _, e in ipairs(removed:iter()) do
+        commands:entity(e:id()):try_remove("Mesh3d", "MeshMaterial3d<StandardMaterial>")
     end
-end, { label = "ProjectileUndraw" })
+end):in_set("projectile/undraw")

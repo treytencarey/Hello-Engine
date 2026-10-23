@@ -3,17 +3,22 @@
 -- component exists. The net client marks its own player `core/net/local` frames after the
 -- player arrives, so both edges count.
 
+local app = ...
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
+local Time = require("bevy::time::Time")
 
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         ["or"] = {
             added = { "movement", "core/net/local", "input" },
         },
         with = { "movement", "core/net/local" },
-    })) do
-        e:patch({
+    }],
+    Commands,
+}, function(owned, commands)
+    for _, e in ipairs(owned:iter()) do
+        commands:entity(e:id()):patch({
             ["input/game"] = {
                 movement = {
                     forward = { key = "KeyW" },
@@ -25,28 +30,30 @@ register_system("First", function(world)
             },
         })
     end
-end, { label = "MovementBind" })
+end):in_set("movement/bind")
 
 -- Another client's player: incoming Transforms land in the `core/net/sync/Transform` shadow,
 -- which this client then eases toward.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(First, {
+    Query[{
         added = { "movement" },
         with = { "Transform" },
         without = { "core/net/local", "core/net/sync/Transform" },
-    })) do
-        e:patch({ ["core/net/sync/Transform"] = e:get("Transform") })
+    }],
+    Commands,
+}, function(others, commands)
+    for _, e in ipairs(others:iter()) do
+        commands:entity(e:id()):insert({ ["core/net/sync/Transform"] = e:get("Transform") })
     end
-end, { label = "MovementShadow" })
+end):in_set("movement/shadow")
 
 -- Walking: while a key is held, the horizontal velocity follows the keys, turned by the
 -- camera's yaw, and the player turns to face that way. It polls while a key is held (ground
 -- friction would slow a single push). Letting go of the last key stands it still; vertical
 -- velocity is left to gravity and jumps.
-register_system("Update", function(world)
-    -- A released key's row still answers get() with its old value: stop here, and the
-    -- keys still held are walked below.
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Res[Time],
+    Query[{
         ["or"] = {
             removed = {
                 "input/game/movement/forward",
@@ -56,19 +63,31 @@ register_system("Update", function(world)
             },
         },
         with = { "movement", "core/net/local", "Velocity3d" },
-    })) do
-        e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
-    end
-    local dt = world:delta_time() or 0
-    for _, e in ipairs(world:query({
+    }],
+    Query[{
+        with = { "movement", "core/net/local", Mut["Velocity3d"] },
+    }],
+    Query[{
         any_of = {
             "input/game/movement/forward",
             "input/game/movement/backward",
             "input/game/movement/left",
             "input/game/movement/right",
         },
-        with = { "movement", "camera", "core/net/local", "Velocity3d", "Transform" },
-    })) do
+        with = { "movement", "camera", "core/net/local", Mut["Velocity3d"], Mut["Transform"] },
+    }],
+}, function(time, released, bodies, walkers)
+    -- A released key's row still answers get() with its old value: stop here, and the
+    -- keys still held are walked below. A body that despawned has no row in `bodies`.
+    local stopped = {}
+    for _, e in ipairs(released:iter()) do
+        stopped[#stopped + 1] = e:id()
+    end
+    for _, e in ipairs(bodies:iter_many_mut(stopped)) do
+        e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
+    end
+    local dt = time:delta_secs()
+    for _, e in ipairs(walkers:iter_mut()) do
         local m = e:get("movement")
         local camera = e:get("camera")
         local rotation = e:get("Transform").rotation
@@ -97,11 +116,12 @@ register_system("Update", function(world)
             end
         end
     end
-end, { label = "MovementWalk" })
+end):in_set("movement/walk")
 
 -- Polls: standing on something is a short ray down from the origin, past the feet, that
--- skips the player's own body.
-register_system("Update", function(world)
+-- skips the player's own body. Rapier's `ReadRapierContext` is not yet a parameter a Lua
+-- system can declare, so this one takes the World to cast the ray.
+app:add_systems(Update, { World }, function(world)
     for _, e in ipairs(world:query({
         with = { "movement", "core/net/local", "Transform" },
         optional = { "movement/grounded" },
@@ -117,29 +137,33 @@ register_system("Update", function(world)
             e:patch({ ["movement/grounded"] = null })
         end
     end
-end, { label = "MovementGround" })
+end):in_set("movement/ground")
 
 -- Space while standing: straight up at `jump`. One press is one jump (the action's `added` edge).
-register_system("Update", function(world)
-    for _, e in ipairs(world:query({
+app:add_systems(Update, {
+    Query[{
         added = { "input/game/movement/jump" },
-        with = { "movement", "movement/grounded", "core/net/local" },
-    })) do
+        with = { "movement", "movement/grounded", "core/net/local", Mut["Velocity3d"] },
+    }],
+    Commands,
+}, function(jumpers, commands)
+    for _, e in ipairs(jumpers:iter_mut()) do
         local m = e:get("movement")
-        e:patch({
-            Velocity3d = { linvel = { y = m.jump } },
-            ["movement/grounded"] = null,
-        })
+        e:patch({ Velocity3d = { linvel = { y = m.jump } } })
+        commands:entity(e:id()):remove("movement/grounded")
     end
-end, { label = "MovementJump" })
+end):in_set("movement/jump")
 
 -- Follows, so it polls: another client's player eases toward its synced Transform.
-register_system("Update", function(world)
-    local dt = world:delta_time() or 0
-    for _, e in ipairs(world:query({
-        with = { "movement", "core/net/sync/Transform", "Transform" },
+app:add_systems(Update, {
+    Res[Time],
+    Query[{
+        with = { "movement", "core/net/sync/Transform", Mut["Transform"] },
         without = { "core/net/local" },
-    })) do
+    }],
+}, function(time, others)
+    local dt = time:delta_secs()
+    for _, e in ipairs(others:iter_mut()) do
         local m = e:get("movement")
         local target = e:get("core/net/sync/Transform")
         local current = e:get("Transform")
@@ -153,13 +177,22 @@ register_system("Update", function(world)
             })
         end
     end
-end, { label = "MovementFollow" })
+end):in_set("movement/follow")
 
--- `movement` was taken off an entity that stays: take off what this half added.
-register_system("First", function(world)
-    for _, e in ipairs(world:query({ removed = { "movement" } })) do
-        e:patch({
+-- `movement` was taken off an entity that stays: take off what this half added. A despawned
+-- entity has no row in `bound`.
+app:add_systems(First, {
+    Query[{ removed = { "movement" } }],
+    Query[{ with = { "input/game" } }],
+    Commands,
+}, function(removed, bound, commands)
+    local gone = {}
+    for _, e in ipairs(removed:iter()) do
+        gone[#gone + 1] = e:id()
+    end
+    for _, e in ipairs(bound:iter_many(gone)) do
+        commands:entity(e:id()):patch({
             ["input/game"] = { movement = null },
         })
     end
-end, { label = "MovementRemoved" })
+end):in_set("movement/removed")

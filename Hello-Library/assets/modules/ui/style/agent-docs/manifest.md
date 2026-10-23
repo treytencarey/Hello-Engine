@@ -22,26 +22,26 @@ UI colors by role. A UI node says what it is, and `ui/style` alone writes its `B
 
 ## Systems
 
-| Schedule | Label | Purpose |
+| Schedule | Set | Purpose |
 |----------|-------|---------|
-| PostUpdate | Style | Color each node whose style or interaction changed; every node when the theme changed |
-| First | StyleRemoved | When `ui/style` is removed from a node that stays, remove its colors |
+| PostUpdate | `ui/style` | Color each node whose style or interaction changed; every node when the theme changed |
+| First | `ui/style/removed` | When `ui/style` is removed from a node that stays, remove its colors |
 
 ## Use
 
 ```lua
-spawn({
+commands:spawn({
     Node = { ... },
     ["ui/style"] = { background = "bg", border = "border" },
 })
 
-spawn({ Button = {}, Node = { ... }, ["ui/style"] = { background = "icon_bg", hover = "icon_hover" } })
+commands:spawn({ Button = {}, Node = { ... }, ["ui/style"] = { background = "icon_bg", hover = "icon_hover" } })
 
-icon:patch({ ["ui/style"] = { background = "icon_active" } })   -- now active
-card:patch({ ["ui/style"] = { alpha = 0.4 } })                  -- fading
+commands:entity(icon):patch({ ["ui/style"] = { background = "icon_active" } })   -- now active
+commands:entity(card):patch({ ["ui/style"] = { alpha = 0.4 } })                  -- fading
 
 -- restyle every UI in the world
-theme:patch({ ["ui/theme"] = { bg = { r = 0.1, g = 0.1, b = 0.2, a = 1 } } })
+commands:entity(theme):patch({ ["ui/theme"] = { bg = { r = 0.1, g = 0.1, b = 0.2, a = 1 } } })
 ```
 
 ## Notes
