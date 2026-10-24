@@ -94,7 +94,7 @@ app:add_systems(Update, {
             })
         end
     end
-end):in_set("camera/third_person"):before("camera/3d/camera3d_aim")
+end):in_set("camera/third_person"):before("camera/3d/aim")
 
 app:add_systems(Update, {
     Query[{
@@ -150,6 +150,6 @@ app:add_systems(Update, {
 end):in_set("camera/third_person/aim")
     :after("camera/third_person")
     :after("camera/third_person/zoom")
-    :before("camera/3d/camera3d_aim")
+    :before("camera/3d/aim")
 
 return { base = "camera/3d" }

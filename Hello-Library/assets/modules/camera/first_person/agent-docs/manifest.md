@@ -21,8 +21,8 @@ A first-person camera. Extends `camera/3d` (`base = "camera/3d"`), which owns th
 | First | `camera/first_person/init` | On an added `camera/first_person`, fill in missing config fields |
 | First | `camera/first_person/bind` | On the local carrier, bind mouse look (again when `input` is added back) |
 | First | `camera/first_person/unbind` | When `camera/first_person` is removed, unbind mouse look |
-| Update, before `camera/3d/camera3d_aim` | `camera/first_person` | Turn yaw and pitch from mouse motion by `sensitivity`; pitch is clamped to `pitch_limit` |
-| Update, before `camera/3d/camera3d_aim` | `camera/first_person/aim` | Put the eye at the head: `camera/3d.offset = { 0, camera.height, 0 }` |
+| Update, before `camera/3d/aim` | `camera/first_person` | Turn yaw and pitch from mouse motion by `sensitivity`; pitch is clamped to `pitch_limit` |
+| Update, before `camera/3d/aim` | `camera/first_person/aim` | Put the eye at the head: `camera/3d.offset = { 0, camera.height, 0 }` |
 
 ## Use
 

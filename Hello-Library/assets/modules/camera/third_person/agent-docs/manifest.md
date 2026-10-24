@@ -29,9 +29,9 @@ A third-person orbit camera. Extends `camera/3d` (`base = "camera/3d"`), which o
 | First | `camera/third_person/init` | On an added `camera/third_person`, fill in missing config fields |
 | First | `camera/third_person/bind` | On the local carrier, bind mouse look and zoom (again when `input` is added back) |
 | First | `camera/third_person/unbind` | When `camera/third_person` is removed, unbind them |
-| Update, before `camera/3d/camera3d_aim` | `camera/third_person` | Turn yaw and pitch from mouse motion by `sensitivity`; pitch is clamped to `min_pitch`..`max_pitch` |
+| Update, before `camera/3d/aim` | `camera/third_person` | Turn yaw and pitch from mouse motion by `sensitivity`; pitch is clamped to `min_pitch`..`max_pitch` |
 | Update | `camera/third_person/zoom` | Change `camera.distance` by scroll times `zoom_step`, clamped to `min_distance`..`max_distance` |
-| Update, after `camera/third_person` and `camera/third_person/zoom`, before `camera/3d/camera3d_aim` | `camera/third_person/aim` | Put the eye on the orbit through `camera/3d.offset` |
+| Update, after `camera/third_person` and `camera/third_person/zoom`, before `camera/3d/aim` | `camera/third_person/aim` | Put the eye on the orbit through `camera/3d.offset` |
 
 ## Use
 

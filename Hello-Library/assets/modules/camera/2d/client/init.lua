@@ -29,7 +29,7 @@ app:add_systems(First, {
             },
         })
     end
-end):in_set("camera/2d/camera2d_init")
+end):in_set("camera/2d/init")
 
 app:add_systems(First, {
     Query[{
@@ -89,7 +89,7 @@ app:add_systems(First, {
             },
         })
     end
-end):in_set("camera/2d/camera2d_bind")
+end):in_set("camera/2d/bind")
 
 -- The player left for another world: its eye stops rendering this one.
 app:add_systems(First, {

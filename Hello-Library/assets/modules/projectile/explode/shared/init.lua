@@ -26,13 +26,6 @@ app:add_systems(First, {
     end
 end):in_set("projectile/explode/sensor")
 
-local function hits_other_than(entered, caster)
-    for _, id in ipairs(entered or {}) do
-        if not (caster and id == caster.entity) then return true end
-    end
-    return false
-end
-
 app:add_systems(Update, {
     Query[{
         changed = { "collision_trigger" },
@@ -43,17 +36,22 @@ app:add_systems(Update, {
     Commands,
 }, function(balls, commands)
     for _, e in ipairs(balls:iter()) do
-        if hits_other_than(e:get("collision_trigger").entered, e:get("projectile/caster")) then
-            local x = e:get("projectile/explode")
-            local at = e.GlobalTransform:compute_transform().translation
-            commands:spawn({
-                explosion = { at = { x = at.x, y = at.y, z = at.z },
-                              radius = x.radius, duration = x.duration, color = x.color },
-                -- Not reaped with this mod: the ball that spawned it is its last carrier.
-                ["core/script/owner"] = false,
-            })
-            -- A client's copy is the server's to end: hidden here, despawned by the server.
-            commands:entity(e:id()):try_insert({ ["projectile/explode/hit"] = {}, Visibility = "Hidden" })
+        local entered = e:get("collision_trigger").entered or {}
+        local caster = e:get("projectile/caster")
+        for _, id in ipairs(entered) do
+            if not (caster and id == caster.entity) then
+                local x = e:get("projectile/explode")
+                local at = e.GlobalTransform:compute_transform().translation
+                commands:spawn({
+                    explosion = { at = { x = at.x, y = at.y, z = at.z },
+                                  radius = x.radius, duration = x.duration, color = x.color },
+                    -- Not reaped with this mod: the ball that spawned it is its last carrier.
+                    ["core/script/owner"] = false,
+                })
+                -- A client's copy is the server's to end: hidden here, despawned by the server.
+                commands:entity(e:id()):try_insert({ ["projectile/explode/hit"] = {}, Visibility = "Hidden" })
+                break
+            end
         end
     end
 end):in_set("projectile/explode")

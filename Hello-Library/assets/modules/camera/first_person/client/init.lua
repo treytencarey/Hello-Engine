@@ -81,7 +81,7 @@ app:add_systems(Update, {
             })
         end
     end
-end):in_set("camera/first_person"):before("camera/3d/camera3d_aim")
+end):in_set("camera/first_person"):before("camera/3d/aim")
 
 -- The eye sits at the head. Written only once `camera/3d` exists: writing it earlier would
 -- put the base on the entity directly, and it would not leave with this mod.
@@ -102,6 +102,6 @@ app:add_systems(Update, {
             e:patch({ ["camera/3d"] = { offset = { x = 0, y = cam.height, z = 0 } } })
         end
     end
-end):in_set("camera/first_person/aim"):before("camera/3d/camera3d_aim")
+end):in_set("camera/first_person/aim"):before("camera/3d/aim")
 
 return { base = "camera/3d" }

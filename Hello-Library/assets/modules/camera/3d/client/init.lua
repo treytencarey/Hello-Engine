@@ -37,7 +37,7 @@ app:add_systems(First, {
             },
         })
     end
-end):in_set("camera/3d/camera3d_init")
+end):in_set("camera/3d/init")
 
 app:add_systems(First, {
     Query[{
@@ -112,6 +112,6 @@ app:add_systems(Update, {
             eye:patch({ ["transform/follow"] = follow(cam, c3d) })
         end
     end
-end):in_set("camera/3d/camera3d_aim")
+end):in_set("camera/3d/aim")
 
 return { base = "camera" }

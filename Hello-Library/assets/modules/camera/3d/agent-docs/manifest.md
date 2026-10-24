@@ -19,10 +19,10 @@ Camera mods that look through a 3D eye (`camera/first_person`, `camera/third_per
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `camera/3d/camera3d_init` | On an added `camera/3d`, fill in a missing offset |
+| First | `camera/3d/init` | On an added `camera/3d`, fill in a missing offset |
 | First | `camera/3d/spawn` | On the local carrier, spawn the eye already aimed, or turn the existing eye back on |
 | First | `camera/3d/teardown` | When the player leaves for another world (`core/net/local` removed), turn the eye off |
-| Update | `camera/3d/camera3d_aim` | When `camera` or `camera/3d` changes, set the eye's `transform/follow` rotation (yaw, then pitch) and offset. The camera mods extending this one order their writers `:before` it |
+| Update | `camera/3d/aim` | When `camera` or `camera/3d` changes, set the eye's `transform/follow` rotation (yaw, then pitch) and offset. The camera mods extending this one order their writers `:before` it |
 
 ## Use
 
@@ -42,7 +42,7 @@ app:add_systems(Update, {
         local cam = e:get("camera")
         e:patch({ ["camera/3d"] = { offset = { x = 0, y = cam.height, z = 0 } } })
     end
-end):in_set("my/camera/aim"):after("my/camera"):before("camera/3d/camera3d_aim")
+end):in_set("my/camera/aim"):after("my/camera"):before("camera/3d/aim")
 
 return { base = "camera/3d" }
 
@@ -55,6 +55,6 @@ local eye = eyes:iter_many(player:get("Children") or {})[1]
 
 - Write `camera/3d` only once it exists (`with = { "camera/3d" }`). Writing it first puts it on the entity directly, and it then stays when your mod is removed.
 - `camera` arrives as `{}` and gets its defaults when its own mod loads, which can be a frame after `camera/3d`. A new eye starts level and is turned when the defaults arrive. A mod reading `camera` fields must allow for them being missing until then.
-- Order every system that writes `camera` or `camera/3d` `:before("camera/3d/camera3d_aim")`, so the eye turns and moves in the frame the look changes.
+- Order every system that writes `camera` or `camera/3d` `:before("camera/3d/aim")`, so the eye turns and moves in the frame the look changes.
 - The server half only chains the base to `camera`. The eye and offset are the client's view and are not synced.
 - The eye is a child, so it despawns with its carrier.
