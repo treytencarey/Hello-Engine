@@ -21,6 +21,7 @@
 --       and a linked player, and plays
 --   AN7 taken off an entity that stays: its model and its parts go
 local app = require("modules/core/init.lua")
+local AssetServer = require("bevy::asset::AssetServer")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AnimationClientSuite")
 local watcher = require("modules/core/hot_reload/watcher.lua")
@@ -67,7 +68,7 @@ local before = {}
 
 -- The suite's clock is the mod's: Bevy's `Time`, so what it moves in a frame is what
 -- `animation/state` measures over that frame.
-app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, function(world, time, asset_server, commands)
     local dt = time:delta_secs()
     clock = clock + dt
     local function step(next_phase) phase, clock = next_phase, 0 end
@@ -280,7 +281,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         before.walk_key = key_of("Model-Walk.glb")
         if before.walk_key then
             write_file_bytes("assets/" .. before.walk_key, read_file_bytes("assets/" .. before.walk_key))
-            watcher.process_changed_path(before.walk_key, world)
+            watcher.process_changed_path(before.walk_key, world, asset_server)
         end
         step("refired")
 
