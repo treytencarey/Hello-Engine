@@ -78,8 +78,8 @@ app:add_systems(Update, {
         with = { "movement", "camera", "core/net/local", Mut["Velocity3d"], Mut["Transform"] },
     }],
 }, function(time, released, bodies, walkers)
-    -- A released key's row still answers get() with its old value: stop here, and the
-    -- keys still held are walked below. A body that despawned has no row in `bodies`.
+    -- A released key stops its body here (only the edge is read), and the keys still held
+    -- are walked below. A body that despawned has no row in `bodies`.
     local stopped = {}
     for _, e in ipairs(released:iter()) do
         stopped[#stopped + 1] = e:id()
