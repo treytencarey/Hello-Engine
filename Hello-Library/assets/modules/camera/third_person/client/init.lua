@@ -12,7 +12,6 @@
 --     max_distance = <metres>,
 -- }
 
-local app = ...
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 

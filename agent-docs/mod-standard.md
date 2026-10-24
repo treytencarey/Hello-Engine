@@ -8,10 +8,9 @@ A mod's Lua memory is private. Everything it shares with other mods goes through
 
 ## A mod file
 
-A mod's file is a plugin, as in Bevy: it is handed its `App` and adds its systems to it at its top level.
+A mod's file is a plugin, as in Bevy: it adds its systems to its `App`, `app`, at its top level.
 
 ```lua
-local app = ...
 local Time = require("bevy::time::Time")
 
 app:add_systems(First, {
@@ -30,7 +29,7 @@ end):in_set("cooldown/tick")
 ```
 
 - `app:add_systems(Schedule, { parameters }, function(...) end)` adds a system. The function is handed its declared parameters, in order, and no world.
-- Always there, with no `require`: `Res`, `ResMut`, `Query`, `Commands`, `Mut`, and the schedules `Startup`, `First`, `PreUpdate`, `Update`, `PostUpdate`, `Last`. Every other type is imported at its Bevy path, as Rust's `use` (`local AssetServer = require("bevy::asset::AssetServer")`), or all at once from `require("bevy::prelude")` (`bevy.MessageReader`).
+- Always there, with no `require`: `app` (the VM's `App`; no file writes `local app = ...`), `Res`, `ResMut`, `Query`, `Commands`, `Mut`, and the schedules `Startup`, `First`, `PreUpdate`, `Update`, `PostUpdate`, `Last`. Every other type is imported at its Bevy path, as Rust's `use` (`local AssetServer = require("bevy::asset::AssetServer")`), or all at once from `require("bevy::prelude")` (`bevy.MessageReader`).
 - The parameters:
   - `Query[{ ... }]`, a query over the columns it names, with Bevy's methods: `iter`, `iter_mut`, `get(e)`, `get_mut(e)`, `single`, `single_mut`, `iter_many(list)`, `iter_many_mut(list)`, `contains(e)`, `is_empty`, `count`, and Bevy's hierarchy walks (Queries and writes). `get` and `single` answer as Bevy's `Result`: the row, or nil and why.
   - `Mut["name"]` marks a column the system writes, in any list (`with = { Mut["camera"] }`, `optional = { Mut["Node"] }`).
@@ -41,7 +40,7 @@ end):in_set("cooldown/tick")
 - A parameter works only during its own system's run, as a Bevy parameter cannot outlive it. Never keep one in a local for later.
 - A mod's systems declare their parameters. `World`, Bevy's exclusive world, is for the engine's own internals and for suites.
 - The `register_system`, `spawn`, `despawn` and `load_asset` globals and the `world:call_*` methods are gone.
-- Besides the parameters, a mod uses `require` of its own stateless function file, `null` (a nested key taken out), and `world_id` (this VM's id). Forbidden in mods: `World`, `require_async`, `_raw_fns`, `_exec_ctx`, `__shared_*`, `vm.*`, `get_env`, `os.getenv`, `define_resource`, `create_asset`, and new globals. If a mod needs one, ask for the missing word instead of reaching in.
+- Besides the parameters, a mod uses `require` of its own stateless function file, `null` (a nested key taken out), and `world_id` (this VM's id). Forbidden in mods: `World`, `require_async`, `_raw_fns`, `_exec_ctx`, `__shared_*`, `vm.*`, `get_env`, `os.getenv`, `define_resource`, and new globals. If a mod needs one, ask for the missing word instead of reaching in.
 
 ## Components
 
@@ -247,7 +246,7 @@ return {
 ## Tests
 
 - Suites use the embedded test helper with phases and `suite.finish`. Never copy the helper into a repository.
-- A suite is an entry script: it takes its `App` from core (`local app = require("modules/core/init.lua")`), spawns its fixtures in `app:add_systems(Startup, { Commands }, function(commands) ... end)`, and inspects the world from systems that take `{ World, Commands }`. A variable a `Startup` system assigns is nil to the suite's top-level code at load.
+- A suite is an entry script: it loads core first (`require("modules/core/init.lua")`), which gives it `app`, spawns its fixtures in `app:add_systems(Startup, { Commands }, function(commands) ... end)`, and inspects the world from systems that take `{ World, Commands }`. A variable a `Startup` system assigns is nil to the suite's top-level code at load.
 - A suite waits for a state, not a fixed frame: a command's write lands when the commands apply.
 - A test proves the real effect (the map built, the answer delivered), not just that a component is present. A mutation of the code under test must turn it red.
 - Drive an observer in a suite with `entity:invoke_observer(event_type, event)` (`scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = 3 } })`): it delivers `event` to that entity's Lua observers at the next queue drain, as a real event would.
@@ -320,7 +319,7 @@ Before a design is shown, check it against every item, and list the earlier ruli
 11. No write recreates something its owner removed.
 12. Latest value or every value: a component holds only the latest, so two writes between a consumer's runs lose one.
 13. Which processes have the plugin, loader or asset this needs (a headless server has no rendering).
-14. Assets are handles from `asset_server:load` or `Assets[T]:add` (never `create_asset`), refilled in place when their file changes; nothing re-runs, and what the mod computes from an asset's contents reacts to the change itself (`asset_changed`).
+14. Assets are handles from `asset_server:load` or `Assets[T]:add`, refilled in place when their file changes; nothing re-runs, and what the mod computes from an asset's contents reacts to the change itself (`asset_changed`).
 15. The test proves the real effect, and a mutation turns it red.
 16. No component is only a signal.
 17. The design lists the earlier rulings that apply and follows each.
@@ -339,5 +338,5 @@ Before a design is shown, check it against every item, and list the earlier ruli
 30. A mod that spawns or adds on an edge, loads assets, or keeps its own markers has a suite case for its hot reload (and for a changed asset file), checking nothing is lost or doubled.
 31. Hierarchy lookups use Bevy's walks and `iter_many` on a declared query; no hand walk through `ChildOf`.
 32. Defaults are filled in the `<mod>/init` set, including any engine component the mod needs that is missing, and what goes with the component in the `<mod>/removed` set.
-33. Every system declares its parameters (no `World` in a mod), and is added at the file's top level; the mod spawns from an `added` edge or `Startup`, never at its top level, and uses nothing on the forbidden list (`require_async`, `create_asset`, `define_resource`).
+33. Every system declares its parameters (no `World` in a mod), and is added at the file's top level; the mod spawns from an `added` edge or `Startup`, never at its top level, and uses nothing on the forbidden list (`require_async`, `define_resource`).
 34. A component two systems write in the same frame is patched key by key, never replaced whole; no system reads back its own writes in the same run.

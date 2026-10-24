@@ -4,8 +4,6 @@
 -- collider never attaches. The net client marks its own player `core/net/local` frames
 -- after the player arrives, so both edges count.
 
-local app = ...
-
 app:add_systems(First, {
     Query[{
         ["or"] = {

@@ -15,8 +15,6 @@
 --     color = { r = <0..1>, g = <0..1>, b = <0..1> },
 -- }
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ changed = { "abilities/grenade" } }],
     Commands,

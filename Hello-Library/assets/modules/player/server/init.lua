@@ -11,7 +11,6 @@
 --     smoothing = <how fast the server's Transform follows the owner's, per second>,
 -- }
 
-local app = ...
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")

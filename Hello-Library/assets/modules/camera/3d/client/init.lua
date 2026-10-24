@@ -14,7 +14,6 @@
 -- `camera` arrives as `{}` and its own mod may load a frame later, so a new eye can be
 -- spawned before `camera` has its defaults. It starts level; filling them is a change to
 -- `camera`, and Camera3dAim turns the eye then.
-local app = ...
 local Quat = require("bevy::math::Quat")
 
 local function follow(cam, c3d)

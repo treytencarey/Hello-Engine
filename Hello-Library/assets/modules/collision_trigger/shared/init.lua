@@ -10,8 +10,6 @@
 -- Writes are `try_` commands: they land after the system, and a synced copy may be despawned
 -- by then (the server ended it).
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { "collision_trigger" } }],
     Commands,

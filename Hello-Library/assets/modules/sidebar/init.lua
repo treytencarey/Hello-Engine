@@ -24,7 +24,6 @@
 --
 -- sidebar/bar = {}
 
-local app = ...
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")

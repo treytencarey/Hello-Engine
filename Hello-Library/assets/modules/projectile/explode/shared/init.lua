@@ -15,8 +15,6 @@
 -- Writes are `try_` commands: they land after the system, and a client's copy may be despawned
 -- by then (the server ended it).
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { "projectile/explode" } }],
     Commands,

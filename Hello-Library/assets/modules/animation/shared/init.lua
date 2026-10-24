@@ -15,8 +15,6 @@
 -- animation/action = { state = <a clip's name>, speed = <playback speed> }: written by
 -- another mod; while present it is played instead of the motion's state.
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { "animation" } }],
     Commands,

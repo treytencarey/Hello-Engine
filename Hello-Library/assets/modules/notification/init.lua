@@ -22,7 +22,6 @@
 --
 -- notification/alive: present while the timeout runs (a `cooldown` timer).
 
-local app = ...
 local Time = require("bevy::time::Time")
 
 -- A new notification fills in its config and becomes a card under the overlay.

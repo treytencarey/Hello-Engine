@@ -4,7 +4,7 @@
 --   XC1 it is drawn: a sphere mesh with a glowing material of its color
 --   XC2 it grows toward its radius while it burns
 --   XC3 taken off an entity that stays: the mesh and material go
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ExplosionClientSuite")
 

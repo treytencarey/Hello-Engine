@@ -13,8 +13,6 @@
 --
 -- camera/2d/eye = {}
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { Mut["camera/2d"] } }],
 }, function(added)

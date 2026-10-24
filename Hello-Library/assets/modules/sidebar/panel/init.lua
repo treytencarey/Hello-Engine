@@ -18,7 +18,6 @@
 --     speed = <pixels per wheel step>,
 -- }
 
-local app = ...
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Scroll = require("bevy::picking::prelude::Scroll")

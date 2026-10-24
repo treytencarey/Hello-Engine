@@ -36,7 +36,6 @@
 -- input/actions = { <action component> = true }
 
 
-local app = ...
 local bevy = require("bevy::prelude")
 local LuaCustomEvent = require("bevy_lua_ecs::custom_events::LuaCustomEvent")
 local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")

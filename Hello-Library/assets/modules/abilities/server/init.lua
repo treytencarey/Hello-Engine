@@ -2,8 +2,6 @@
 -- reads each ability's press, and declares that action's sync on the player (client
 -- authority, the owner only). An ability that went loses its entry.
 
-local app = ...
-
 app:add_systems(First, {
     Query[{
         ["or"] = { added = { "abilities" }, changed = { "abilities" } },

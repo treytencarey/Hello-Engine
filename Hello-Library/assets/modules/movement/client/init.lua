@@ -3,7 +3,6 @@
 -- component exists. The net client marks its own player `core/net/local` frames after the
 -- player arrives, so both edges count.
 
-local app = ...
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")

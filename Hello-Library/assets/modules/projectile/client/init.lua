@@ -1,6 +1,5 @@
 -- The client half: every client draws every projectile, a glowing ball of its radius and color.
 
-local app = ...
 local Assets = require("bevy::asset::Assets")
 local Mesh = require("bevy::mesh::Mesh")
 local StandardMaterial = require("bevy::pbr::StandardMaterial")

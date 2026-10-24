@@ -10,8 +10,6 @@
 --     offset = { x = <metres>, y = <metres>, z = <metres> },
 -- }
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { Mut["camera"] } }],
 }, function(cameras)

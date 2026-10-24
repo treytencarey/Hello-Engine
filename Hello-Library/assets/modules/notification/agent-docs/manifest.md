@@ -30,8 +30,6 @@ The base also gives your entity `Node`, `BorderRadius` and `ui/style`, and adds 
 
 ```lua
 -- my/notice/init.lua
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { "my/notice" } }],
     Commands,

@@ -16,8 +16,6 @@
 --
 -- The press is the input action `input/game/abilities/<name>`.
 
-local app = ...
-
 -- Defaults, and an entry that went loses its cooldown.
 app:add_systems(First, {
     Query[{

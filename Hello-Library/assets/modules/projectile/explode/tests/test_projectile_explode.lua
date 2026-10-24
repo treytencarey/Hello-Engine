@@ -8,7 +8,7 @@
 --   E7 its explosion is local: it carries no sync
 --   E5 it flies through its caster (`projectile/caster`) and ends on the next thing
 --   E6 the caster lists it in `projectile/casts` while it flies, and not once it is gone
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileExplodeSuite")
 

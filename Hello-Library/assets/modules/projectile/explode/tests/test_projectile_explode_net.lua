@@ -8,7 +8,7 @@
 -- Per shot it prints, on the client, when its copy appeared, when its sensor was ready, when
 -- `collision_trigger` first fired, when explode reacted and when the server's despawn arrived
 -- (seconds after the copy appeared), with the copy's z then. The wall's face is z = -9.5.
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local suite = helpers.create_suite("ProjectileExplodeNetSuite")
@@ -30,7 +30,6 @@ local WALL = {
 
 -- ═══ The server: an isolated world that fires ═══════════════════════════
 helpers.make_fixture("modules/test_fixtures/gen_projectile_explode_net_vm1.lua", [=[
-local app = ...
 require("modules/core/net/server/init.lua")
 local boot = require("modules/core/instances.lua").boot_data()
 local DEFAULTS = boot.DEFAULTS

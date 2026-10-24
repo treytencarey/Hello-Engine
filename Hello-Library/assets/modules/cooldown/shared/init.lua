@@ -11,7 +11,6 @@
 --     <component> = <seconds still to run>,
 -- }
 
-local app = ...
 local Time = require("bevy::time::Time")
 
 app:add_systems(First, {

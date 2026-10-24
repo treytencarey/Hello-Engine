@@ -8,7 +8,7 @@
 --   C4 a local press starts the cooldown at once, on the client
 --   C5 `abilities` taken off: the keys are unbound
 --   C6 another player's copy is not bound
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesClientSuite")
 

@@ -6,7 +6,7 @@
 --   X3 it burns (`explosion/burning`) for its duration, and despawns itself at the end
 --   X3c one without a duration burns for the default
 --   X4 taken off an entity that stays: its timer stops
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ExplosionServerSuite")
 

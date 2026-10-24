@@ -16,7 +16,6 @@
 --     color = { r = <0..1>, g = <0..1>, b = <0..1> },
 -- }
 
-local app = ...
 local Quat = require("bevy::math::Quat")
 
 app:add_systems(First, {

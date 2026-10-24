@@ -8,7 +8,7 @@
 --   C3 the client does not despawn the ball: the server ends it
 --   C4 it reacts once: the hidden ball flies on until the server ends it, and what it
 --      enters next shows nothing
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileExplodeClientSuite")
 

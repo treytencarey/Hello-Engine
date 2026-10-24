@@ -9,8 +9,6 @@
 --     sun = <lux of the sunlight>,
 -- }
 
-local app = ...
-
 -- A new or changed map: missing fields are filled in (which is itself a change, so the box
 -- is built on the next run), or the entity becomes a fixed box of its size. `changed` also
 -- fires when it is added.

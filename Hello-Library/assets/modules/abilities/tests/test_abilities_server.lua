@@ -12,7 +12,7 @@
 --   A7 a press after the cooldown fires again
 --   A8 one entry taken out while it cools: its action sync and its cooldown go, the others stay
 --   A9 `abilities` taken off: the action syncs and the cooldowns go
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesServerSuite")
 local Time = require("bevy::time::Time")

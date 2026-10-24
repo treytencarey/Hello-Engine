@@ -9,7 +9,6 @@
 --     offset = { x = <metres>, y = <metres>, z = <metres> },
 -- }
 
-local app = ...
 local Quat = require("bevy::math::Quat")
 local TransformSystems = require("bevy::transform::TransformSystems")
 

@@ -17,8 +17,6 @@
 -- It moves its body through `Velocity3d`, which the server does not send: one is added
 -- when it is missing, and stays when `movement` goes.
 
-local app = ...
-
 app:add_systems(First, {
     Query[{
         added = { "movement" },

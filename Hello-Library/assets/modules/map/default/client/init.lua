@@ -1,7 +1,6 @@
 -- The client half: the ground's box and color, and the sun, a child light shining down at
 -- an angle. A change redraws the box and relights the same sun.
 
-local app = ...
 local Quat = require("bevy::math::Quat")
 local Assets = require("bevy::asset::Assets")
 local Mesh = require("bevy::mesh::Mesh")

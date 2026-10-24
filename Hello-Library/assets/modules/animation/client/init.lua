@@ -19,7 +19,6 @@
 -- animation/motion = { at = { x, y, z } }: where the character was last frame.
 -- animation/playing = { state = <name>, speed = <playback speed> }: what it should play.
 
-local app = ...
 local AssetServer = require("bevy::asset::AssetServer")
 local Assets = require("bevy::asset::Assets")
 local AnimationGraph = require("bevy::animation::graph::AnimationGraph")

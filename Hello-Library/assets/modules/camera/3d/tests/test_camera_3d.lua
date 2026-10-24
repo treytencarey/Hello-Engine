@@ -1,7 +1,7 @@
 -- --host
 local Quat = require("bevy::math::Quat")
 
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("Camera3dSuite")
 

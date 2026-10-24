@@ -12,7 +12,7 @@
 --   F6 a cooldown started by something else (a debuff) fires nothing
 --   F7 a press while it cools fires nothing
 --   F5 taken off: its entry goes, and another ability's entry stays
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesFireballSuite")
 local Time = require("bevy::time::Time")

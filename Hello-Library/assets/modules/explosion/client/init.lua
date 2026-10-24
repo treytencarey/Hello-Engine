@@ -1,7 +1,6 @@
 -- The client half: a glowing sphere of the explosion's color, growing from nothing to its
 -- radius while it lasts.
 
-local app = ...
 local Assets = require("bevy::asset::Assets")
 local Mesh = require("bevy::mesh::Mesh")
 local StandardMaterial = require("bevy::pbr::StandardMaterial")

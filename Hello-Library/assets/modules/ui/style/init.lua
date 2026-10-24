@@ -12,8 +12,6 @@
 --     alpha = <0..1, scales every color>,
 -- }
 
-local app = ...
-
 -- Nodes whose style or interaction changed; every node when the theme changed (a theme
 -- filling its colors is such a change, so nodes styled before it are not missed). A role
 -- the theme lacks leaves that color alone.

@@ -12,8 +12,6 @@
 --
 -- explosion/burning = {}: present on each side while it lasts (a `cooldown` timer).
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { "explosion" } }],
     Commands,

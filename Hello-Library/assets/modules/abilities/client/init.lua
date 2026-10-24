@@ -2,8 +2,6 @@
 -- `abilities` (client data, never synced). Rebound when `input` arrives, and when the
 -- abilities change; an ability that went is unbound.
 
-local app = ...
-
 app:add_systems(First, {
     Query[{
         ["or"] = {

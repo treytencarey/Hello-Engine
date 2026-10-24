@@ -1,8 +1,6 @@
 -- A dark theme: dark panels, light text, blue accents. Add `ui/theme/dark = {}` to an entity
 -- to give its world this theme.
 
-local app = ...
-
 app:add_systems(First, {
     Query[{
         added = { "ui/theme" },

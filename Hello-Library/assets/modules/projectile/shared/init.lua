@@ -19,8 +19,6 @@
 -- projectile/caster = { entity = <the caster> }
 -- projectile/casts = { <projectile>, ... }   (kept by the engine; read only)
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { "projectile" } }],
     Commands,

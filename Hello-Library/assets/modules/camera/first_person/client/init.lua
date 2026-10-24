@@ -6,8 +6,6 @@
 --     pitch_limit = <radians up or down from level>,
 -- }
 
-local app = ...
-
 app:add_systems(First, {
     Query[{ added = { Mut["camera/first_person"] } }],
 }, function(added)

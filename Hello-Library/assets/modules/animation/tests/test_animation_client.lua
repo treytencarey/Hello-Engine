@@ -20,7 +20,7 @@
 --   AN9 the mod itself is edited (hot reload): each character still has one model, a graph
 --       and a linked player, and plays
 --   AN7 taken off an entity that stays: its model and its parts go
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 local AssetServer = require("bevy::asset::AssetServer")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AnimationClientSuite")

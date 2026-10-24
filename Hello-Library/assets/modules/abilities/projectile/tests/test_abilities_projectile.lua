@@ -5,7 +5,7 @@
 --   P2 its own fields reach the projectile
 --   P3 the pitch aims it: a look straight up launches straight up
 --   P4 taken off an entity that stays: the `projectile` goes
-local app = require("modules/core/init.lua")
+require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesProjectileSuite")
 

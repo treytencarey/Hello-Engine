@@ -1,8 +1,6 @@
 -- The server half: the end. A ball whose copy here hit something (`projectile/explode/hit`,
 -- from the shared half) is despawned, and the despawn reaches every client.
 
-local app = ...
-
 app:add_systems(Update, {
     Query[{
         added = { "projectile/explode/hit" },
