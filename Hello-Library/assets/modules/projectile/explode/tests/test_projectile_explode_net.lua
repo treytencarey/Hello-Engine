@@ -29,41 +29,48 @@ local WALL = {
 }
 
 -- ═══ The server: an isolated world that fires ═══════════════════════════
-require_async("modules/core/net/server/init.lua", function()
-    local app = require("bevy::app::App")
-    require("modules/core/mod_registry/init.lua")
-    local ts = require("modules/core/test_helpers.lua").shared_state("ProjectileExplodeNetState", DEFAULTS)
-    local shooter
-    app:add_systems(Startup, { Commands }, function(commands)
+helpers.make_fixture("modules/test_fixtures/gen_projectile_explode_net_vm1.lua", [=[
+local app = ...
+require("modules/core/net/server/init.lua")
+local boot = require("modules/core/instances.lua").boot_data()
+local DEFAULTS = boot.DEFAULTS
+local PORT = boot.PORT
+local WALL = boot.WALL
+local SHOTS = boot.SHOTS
+require("modules/core/mod_registry/init.lua")
+local ts = require("modules/core/test_helpers.lua").shared_state("ProjectileExplodeNetState", DEFAULTS)
+local shooter
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({
+        ["core/world/net"] = { mode = "server", name = "zzpen", port = PORT },
+        ["core/net"] = { mode = "server", name = "zzpen", port = PORT },
+        ["core/net/sync"] = false,
+    })
+    commands:spawn(WALL)
+    shooter = commands:spawn({ ["zz/shooter"] = { v = 1 }, Transform = { translation = { x = 0, y = 49, z = 0 } },
+                               ["core/net/sync"] = { ["zz/shooter"] = {} } }):id()
+end)
+local clock, last = 0, -10
+app:add_systems(Update, { World, Commands }, function(world, commands)
+    clock = clock + world:delta_time()
+    if not ts.srv_ready then ts.srv_ready = true end
+    if ts.go_fire and ts.srv_fired < SHOTS and clock - last >= 1.0 then
+        last = clock
+        ts.srv_fired = ts.srv_fired + 1
         commands:spawn({
-            ["core/world/net"] = { mode = "server", name = "zzpen", port = PORT },
-            ["core/net"] = { mode = "server", name = "zzpen", port = PORT },
-            ["core/net/sync"] = false,
+            ["abilities/projectile"] = { at = { x = 0, y = 50, z = 0 }, yaw = 0, pitch = 0, speed = 25,
+                                         radius = 0.25, gravity = 0, lifetime = 5,
+                                         color = { r = 1, g = 0.3, b = 0.1 } },
+            ["projectile/explode"] = { radius = 1.5, color = { r = 1, g = 0.3, b = 0.1 } },
+            ["projectile/caster"] = { entity = shooter },
+            ["core/net/sync"] = { ["projectile/caster"] = { authority = "server" } },
         })
-        commands:spawn(WALL)
-        shooter = commands:spawn({ ["zz/shooter"] = { v = 1 }, Transform = { translation = { x = 0, y = 49, z = 0 } },
-                                   ["core/net/sync"] = { ["zz/shooter"] = {} } }):id()
-    end)
-    local clock, last = 0, -10
-    app:add_systems(Update, { World, Commands }, function(world, commands)
-        clock = clock + world:delta_time()
-        if not ts.srv_ready then ts.srv_ready = true end
-        if ts.go_fire and ts.srv_fired < SHOTS and clock - last >= 1.0 then
-            last = clock
-            ts.srv_fired = ts.srv_fired + 1
-            commands:spawn({
-                ["abilities/projectile"] = { at = { x = 0, y = 50, z = 0 }, yaw = 0, pitch = 0, speed = 25,
-                                             radius = 0.25, gravity = 0, lifetime = 5,
-                                             color = { r = 1, g = 0.3, b = 0.1 } },
-                ["projectile/explode"] = { radius = 1.5, color = { r = 1, g = 0.3, b = 0.1 } },
-                ["projectile/caster"] = { entity = shooter },
-                ["core/net/sync"] = { ["projectile/caster"] = { authority = "server" } },
-            })
-        end
-        -- Its own explosions: the ball that hit is despawned in the same frame.
-        ts.srv_ends = ts.srv_ends + #world:query({ added = { "explosion" } })
-    end):in_set("zz/explode_net_server")
-end, { parallel = true, isolated_world = true })
+    end
+    -- Its own explosions: the ball that hit is despawned in the same frame.
+    ts.srv_ends = ts.srv_ends + #world:query({ added = { "explosion" } })
+end):in_set("zz/explode_net_server")
+]=])
+helpers.spawn_vm("modules/test_fixtures/gen_projectile_explode_net_vm1.lua", { DEFAULTS = DEFAULTS, PORT = PORT, WALL = WALL, SHOTS = SHOTS })
 
 -- ═══ The client: this VM ════════════════════════════════════════════════
 require("modules/core/net/client/init.lua")
