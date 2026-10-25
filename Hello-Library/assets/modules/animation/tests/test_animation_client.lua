@@ -338,3 +338,5 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         phase = "done"
     end
 end):in_set("zz/animation_client_suite")
+    -- it moves the characters: their state reads this frame's move with this frame's time step
+    :before("animation/state")

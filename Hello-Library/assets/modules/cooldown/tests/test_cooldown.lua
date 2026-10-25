@@ -9,9 +9,10 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 end)
 
+-- The suite's own marker: a `cooldown/<x>` name is a part of the mod, removed with `cooldown`.
 local function subject(world, name)
     for _, e in ipairs(world:query({
-        with = { "cooldown/subject" },
+        with = { "zz/cooldown_subject" },
         optional = {
             "cooldown",
             "cooldown/left",
@@ -22,7 +23,7 @@ local function subject(world, name)
             "cooldown/test_e",
         },
     })) do
-        if e:get("cooldown/subject").name == name then
+        if e:get("zz/cooldown_subject").name == name then
             return e
         end
     end
@@ -33,9 +34,9 @@ local ended = {}
 app:add_systems(Update, { World }, function(world)
     for _, e in ipairs(world:query({
         ["or"] = { removed = { "cooldown/test_a", "cooldown/test_e" } },
-        optional = { "cooldown/test_a", "cooldown/test_e", "cooldown/subject" },
+        optional = { "cooldown/test_a", "cooldown/test_e", "zz/cooldown_subject" },
     })) do
-        ended[#ended + 1] = tostring((e:get("cooldown/subject") or {}).name)
+        ended[#ended + 1] = tostring((e:get("zz/cooldown_subject") or {}).name)
     end
 end):in_set("zz/cooldown_suite_ended")
 
@@ -44,9 +45,9 @@ local writes = 0
 app:add_systems(Update, { World }, function(world)
     for _, e in ipairs(world:query({
         changed = { "cooldown" },
-        with = { "cooldown/subject" },
+        with = { "zz/cooldown_subject" },
     })) do
-        if e:get("cooldown/subject").name == "short" then
+        if e:get("zz/cooldown_subject").name == "short" then
             writes = writes + 1
         end
     end
@@ -64,7 +65,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
 
     if phase == "spawn" then
         commands:spawn({
-            ["cooldown/subject"] = { name = "short" },
+            ["zz/cooldown_subject"] = { name = "short" },
             cooldown = {
                 ["cooldown/test_a"] = { remaining = 0.3 },
                 ["cooldown/test_b"] = { remaining = 30 },
@@ -72,14 +73,14 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
             ["core/net/sync"] = false,
         })
         commands:spawn({
-            ["cooldown/subject"] = { name = "doomed" },
+            ["zz/cooldown_subject"] = { name = "doomed" },
             cooldown = {
                 ["cooldown/test_e"] = { remaining = 0.5 },
             },
             ["core/net/sync"] = false,
         })
         commands:spawn({
-            ["cooldown/subject"] = { name = "long" },
+            ["zz/cooldown_subject"] = { name = "long" },
             cooldown = {
                 ["cooldown/test_c"] = { remaining = 30 },
             },
