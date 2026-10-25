@@ -2,10 +2,14 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("SidebarSuite")
+local Pointer = require("bevy::picking::prelude::Pointer")
+local Click = require("bevy::picking::prelude::Click")
+
+local camera
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-    commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
+    camera = commands:spawn({ Camera2d = {}, Camera = { order = 0 } }):id()
 end)
 
 -- What a script spawns is linked to its file. The panel stand-in below spawns its buttons
@@ -91,10 +95,14 @@ local function letters(world, b)
     return world:query({ entities = { b:id() }, with = { "Text" } })
 end
 
--- A real click names the entity it lands on.
-local function click(world, title)
+-- A click on an icon, as Bevy's picking triggers it: a Pointer<Click> on the entity it lands on.
+local function click(world, commands, title)
     local b = button(world, title)
-    b:invoke_observer("Pointer<Click>", { entity = b:id() })
+    commands:trigger(Pointer[Click], {
+        entity = b:id(),
+        pointer_location = { target = { None = { width = 0, height = 0 } } },
+        event = { button = "Primary", hit = { camera = camera } },
+    })
 end
 
 local function shown(c) return c:get("Node").display.Flex ~= nil end
@@ -144,14 +152,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             me:has("sidebar/open") and shown(container(world))
                 and me:get("input").mode == "input/ui" and me:get("input").show_cursor == true,
             "mode=" .. tostring(me:get("input").mode))
-        click(world, "Alpha")
+        click(world, commands, "Alpha")
         step("alpha")
 
     elseif phase == "alpha" and clock > 0.3 then
         local alpha = button(world, "Alpha")
         suite.assert_test("R4_clicking_an_icon_opens_its_panel_and_marks_the_icon",
             alpha:has("sidebar/button/open") and alpha:get("ui/style").background == "icon_active", "")
-        click(world, "Beta")
+        click(world, commands, "Beta")
         step("beta")
 
     elseif phase == "beta" and clock > 0.3 then
@@ -162,28 +170,28 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("R5_escape_closes_the_newest_panel_first",
             not button(world, "Beta"):has("sidebar/button/open")
                 and button(world, "Alpha"):has("sidebar/button/open") and me:has("sidebar/open"), "")
-        click(world, "Alpha")
+        click(world, commands, "Alpha")
         step("clicked closed")
 
     elseif phase == "clicked closed" and clock > 0.3 then
         local alpha = button(world, "Alpha")
         suite.assert_test("R6_clicking_an_open_icon_closes_its_panel",
             not alpha:has("sidebar/button/open") and alpha:get("ui/style").background == "icon_bg", "")
-        click(world, "Beta")
+        click(world, commands, "Beta")
         step("reorder 1")
 
     -- Beta, then Alpha, then Beta closed and opened again: Beta is the newest. (Beta is the
     -- second row a query returns, so a tie in order would pick Alpha.)
     elseif phase == "reorder 1" and clock > 0.3 then
-        click(world, "Alpha")
+        click(world, commands, "Alpha")
         step("reorder 2")
 
     elseif phase == "reorder 2" and clock > 0.3 then
-        click(world, "Beta")
+        click(world, commands, "Beta")
         step("reorder 3")
 
     elseif phase == "reorder 3" and clock > 0.3 then
-        click(world, "Beta")
+        click(world, commands, "Beta")
         step("reorder 4")
 
     elseif phase == "reorder 4" and clock > 0.3 then
@@ -211,7 +219,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("reopened")
 
     elseif phase == "reopened" and clock > 0.4 then
-        click(world, "Beta")
+        click(world, commands, "Beta")
         step("closing with a panel open")
 
     elseif phase == "closing with a panel open" and clock > 0.3 then
@@ -274,7 +282,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("open for reload")
 
     elseif phase == "open for reload" and clock > 0.4 then
-        click(world, "Beta")
+        click(world, commands, "Beta")
         step("beta open for reload")
 
     elseif phase == "beta open for reload" and clock > 0.3 then

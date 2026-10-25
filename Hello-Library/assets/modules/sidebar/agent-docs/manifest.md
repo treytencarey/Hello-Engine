@@ -59,7 +59,7 @@ Query[{ removed = { "sidebar/button/open" }, with = { "sidebar/profiler/button" 
 
 ## Notes
 
-- A click on an icon opens or closes its button's panel in the button's `Pointer<Click>` observer. A suite clicks with `button:invoke_observer("Pointer<Click>", { entity = button:id() })`: the observer reads the clicked entity from `event.entity`.
+- A click on an icon opens or closes its button's panel in the button's `Pointer<Click>` observer. A suite clicks by triggering Bevy's event in a system with `Commands`: `commands:trigger(Pointer[Click], { entity = button:id(), pointer_location = { target = { None = { width = 0, height = 0 } } }, event = { button = "Primary", hit = { camera = camera } } })`. The observer reads the clicked entity from `event.entity`.
 - A key held through a mode switch waits for its release (`input`), so the Escape that opens the sidebar does not also close it.
 - The container is a UI root of its own: a UI node under the player would not be laid out.
 - Layout and clicks need a window: the suite runs windowed. It stands in for a world VM (an instance id), where spawns carry their mod's stamp, plays a panel mod that spawns two buttons into each new bar, and reloads the sidebar by rewriting its file with the same bytes.

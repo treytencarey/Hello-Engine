@@ -2,11 +2,24 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("SidebarPanelSuite")
+local Pointer = require("bevy::picking::prelude::Pointer")
+local Scroll = require("bevy::picking::prelude::Scroll")
+
+local camera
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-    commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
+    camera = commands:spawn({ Camera2d = {}, Camera = { order = 0 } }):id()
 end)
+
+-- A wheel step over the scroll area, as Bevy's picking triggers it: a Pointer<Scroll> on the area.
+local function wheel(commands, scroll, y)
+    commands:trigger(Pointer[Scroll], {
+        entity = scroll:id(),
+        pointer_location = { target = { None = { width = 0, height = 0 } } },
+        event = { unit = "Line", y = y, hit = { camera = camera } },
+    })
+end
 
 local function panel(world, name)
     for _, e in ipairs(world:query({
@@ -80,14 +93,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local scroll = part(world, panel(world, "files"), "sidebar/panel/scroll")
         local node = scroll:get("ComputedNode")
         room = node.content_size.y - node.size.y
-        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = 3 } })
+        wheel(commands, scroll, 3)
         step("at top")
 
     elseif phase == "at top" and clock > 0.3 then
         local scroll = part(world, panel(world, "files"), "sidebar/panel/scroll")
         suite.assert_test("L5a_scrolling_up_at_the_top_stays_at_the_top",
             scroll:get("sidebar/panel/scroll").offset == 0, "offset=" .. tostring(scroll:get("sidebar/panel/scroll").offset))
-        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = -3 } })
+        wheel(commands, scroll, -3)
         step("scrolled")
 
     elseif phase == "scrolled" and clock > 0.3 then
@@ -96,7 +109,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("L5_wheel_steps_scroll_by_speed",
             room > 100 and s.offset == 75 and scroll:get("ScrollPosition").y == 75,
             string.format("room=%.0f offset=%s", room, tostring(s.offset)))
-        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = -1000 } })
+        wheel(commands, scroll, -1000)
         step("scrolled far")
 
     elseif phase == "scrolled far" and clock > 0.3 then
@@ -111,7 +124,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "emptied" and clock > 0.5 then
         local scroll = part(world, panel(world, "files"), "sidebar/panel/scroll")
-        scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = -1 } })
+        wheel(commands, scroll, -1)
         step("stepped")
 
     elseif phase == "stepped" and clock > 0.3 then

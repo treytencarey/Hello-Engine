@@ -249,7 +249,7 @@ return {
 - A suite is an entry script: it loads core first (`require("modules/core/init.lua")`), which gives it `app`, spawns its fixtures in `app:add_systems(Startup, { Commands }, function(commands) ... end)`, and inspects the world from systems that take `{ World, Commands }`. A variable a `Startup` system assigns is nil to the suite's top-level code at load.
 - A suite waits for a state, not a fixed frame: a command's write lands when the commands apply.
 - A test proves the real effect (the map built, the answer delivered), not just that a component is present. A mutation of the code under test must turn it red.
-- Drive an observer in a suite with `entity:invoke_observer(event_type, event)` (`scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = 3 } })`): it delivers `event` to that entity's Lua observers at the next queue drain, as a real event would.
+- Drive an observer in a suite by triggering the real event, as Bevy's own tests do: `commands:trigger(Pointer[Scroll], { entity = scroll, ... })` in a system with `Commands` (the first argument is the type `On[...]` takes; fields left out take their type's default). Observers receive it, and it propagates, as a real one does.
 - A suite marks its own entities under `zz/` (`zz/zone`), never under the mod's name: `mod_registry` treats `<mod>/<data>` as the mod's parts and removes them with it.
 - A suite is green only if its log also has zero Lua errors. A windowed suite exits 0 even when it fails; read the verdict line.
 - A mod that renders (meshes, materials, cameras) runs a windowed suite: a headless server has no rendering.
@@ -298,7 +298,7 @@ Each was written by an agent and rejected. The wrong form is what to look for; t
 - **A flag to run a loop body once.** Wrong: `local done = false` ... `if not done then done = true`. Right: `break` after the work.
 - **A local function used once.** Wrong: `local function apply(...)` called from one place. Right: write it where it is used.
 - **Spawning a default entity, then filling it in another system.** Wrong: `ui/style` spawning `ui/theme = {}` and a second system filling its colors. Right: a mod extends a base and fills it (`ui/theme/dark` with `base = "ui/theme"`), and the world adds the mod it wants.
-- **Counters an observer fills for a system.** Wrong: an observer adding to `clicks` or `wheel` and a system acting on them. Right: act in the observer; a suite drives it with `entity:invoke_observer`.
+- **Counters an observer fills for a system.** Wrong: an observer adding to `clicks` or `wheel` and a system acting on them. Right: act in the observer; a suite drives it with `commands:trigger(...)`.
 - **Cleaning up what `mod_registry` already removes.** Wrong: despawning your own marked children, or removing your own sub-components, on your `removed` edge. Right: mark the children with your sub-component and let the registry take them (it also runs when your mod stops with its last carrier, when your own systems do not).
 - **Telling `added` from `removed` with `get`.** Wrong: one query over both edges, then `get()` to decide. Right: one system per edge (in the form that reads a removed value, both edges answer one).
 

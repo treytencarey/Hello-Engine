@@ -42,7 +42,7 @@ commands:entity(panel):patch({ ["sidebar/panel"] = { title = "Files" } })
 
 ## Notes
 
-- The wheel scrolls in a `Pointer<Scroll>` observer on the scroll area, keeping the offset between the top and the end of the content. A suite scrolls with `scroll:invoke_observer("Pointer<Scroll>", { entity = scroll:id(), event = { y = <steps> } })`: the observer reads the scroll area from `event.entity`.
+- The wheel scrolls in a `Pointer<Scroll>` observer on the scroll area, keeping the offset between the top and the end of the content. A suite scrolls by triggering Bevy's event in a system with `Commands`: `commands:trigger(Pointer[Scroll], { entity = scroll:id(), pointer_location = { target = { None = { width = 0, height = 0 } } }, event = { unit = "Line", y = <steps>, hit = { camera = camera } } })`. The observer reads the scroll area from `event.entity` and the steps from `event.event.y`.
 - When content shrinks, Bevy clamps what is drawn; the next wheel step clamps `offset` too.
 - Find the parts by their markers among the panel's descendants (`parts:iter_many(parts:iter_descendants(panel))`), never by a stored id.
 - Layout needs a window: a suite for a panel runs windowed.
