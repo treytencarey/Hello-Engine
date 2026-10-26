@@ -3,6 +3,11 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("InputSuite")
 
+-- `input`'s messages, written here before the mod may have loaded; adding again adds nothing
+for _, name in ipairs({ "input/synthetic_key", "input/synthetic_mouse_button", "input/synthetic_mouse_wheel", "input/analog" }) do
+    app:add_message(name)
+end
+
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
 end)
@@ -39,11 +44,11 @@ local events = {}
 
 app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
-    for _, ev in ipairs(events) do world:write_event(ev[1], ev[2]) end
+    for _, ev in ipairs(events) do world:write_message(ev[1], ev[2]) end
     events = {}
     local p = player(world)
     local function step(next_phase) phase, clock = next_phase, 0 end
-    local function key(code, state) events[#events + 1] = { "SyntheticKeyInput", { key_code = code, state = state } } end
+    local function key(code, state) events[#events + 1] = { "input/synthetic_key", { key_code = code, state = state } } end
 
     if phase == "spawn" then
         commands:spawn({
@@ -74,8 +79,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             not p:has("input/game/movement/forward") and not p:has("input/ui/menu/pick"), "")
         key("KeyW", "Pressed")
         key("KeyE", "Pressed")
-        events[#events + 1] = { "SyntheticMouseInput", { button = "Left", state = "Pressed" } }
-        events[#events + 1] = { "SyntheticMouseWheel", { x = 0, y = 3 } }
+        events[#events + 1] = { "input/synthetic_mouse_button", { button = "Left", state = "Pressed" } }
+        events[#events + 1] = { "input/synthetic_mouse_wheel", { x = 0, y = 3 } }
         step("held")
 
     elseif phase == "held" and p:has("input/game/movement/forward") and clock > 0.3 then
@@ -86,7 +91,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("I3_another_modes_action_stays_absent", not p:has("input/ui/menu/pick"), "")
         suite.assert_test("I4_a_scroll_arrives_scaled_for_one_frame",
             max_dy == 6 and not p:has("input/game/look/zoom"), "max dy=" .. max_dy)
-        events[#events + 1] = { "AnalogInput", { key_code = "KeyW", value = 0.5 } }
+        events[#events + 1] = { "input/analog", { key_code = "KeyW", value = 0.5 } }
         step("analog")
 
     elseif phase == "analog" and clock > 0.2 then
@@ -101,12 +106,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             not p:has("input/game/movement/forward") and not p:has("input/ui/menu/pick")
                 and not p:has("input/ui/menu/point"), "")
         key("KeyE", "Released")
-        events[#events + 1] = { "SyntheticMouseInput", { button = "Left", state = "Released" } }
+        events[#events + 1] = { "input/synthetic_mouse_button", { button = "Left", state = "Released" } }
         step("e released")
 
     elseif phase == "e released" and clock > 0.2 then
         key("KeyE", "Pressed")
-        events[#events + 1] = { "SyntheticMouseInput", { button = "Left", state = "Pressed" } }
+        events[#events + 1] = { "input/synthetic_mouse_button", { button = "Left", state = "Pressed" } }
         step("e pressed")
 
     elseif phase == "e pressed" and clock > 0.2 then

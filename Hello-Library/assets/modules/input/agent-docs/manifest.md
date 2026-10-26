@@ -18,11 +18,20 @@ Keys, mouse buttons, motion and scroll, turned into one component per bound acti
 - `<mode>/<group>/<action>`: present while the action is active. `{ value = <1, or the analog strength> }` for keys and buttons; `{ dx, dy }` for motion and scroll, present only on frames with movement. Added, updated and removed by `input`.
 - `input/held`, `input/actions`: `input`'s own state (held keys and buttons; which action components it added).
 
+## Messages
+
+Input that does not come from a device, written by any mod (a suite, a replay, an on-screen control) with `MessageWriter["<name>"]`; `input` adds them, and a mod writing one before `input` loads adds it too (`app:add_message`, which adds nothing the second time).
+
+- `input/synthetic_key`: a key, shaped as Bevy's `KeyboardInput` (`{ key_code = <KeyCode>, state = "Pressed" | "Released" }`).
+- `input/synthetic_mouse_button`: a mouse button, shaped as Bevy's `MouseButtonInput` (`{ button = <MouseButton>, state = ... }`).
+- `input/synthetic_mouse_wheel`: a scroll, `{ x, y }`.
+- `input/analog`: an analog strength for a held key, `{ key_code = <KeyCode>, value = <0..1> }`.
+
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `input/held` | Fold key, button and analog events into `input/held` |
+| First | `input/held` | Fold keys, buttons (Bevy's and the synthetic messages) and `input/analog` into `input/held` |
 | PreUpdate | `input` | Turn the active mode's bindings into action components; write only what changed |
 | PreUpdate | `input/cursor` | On a changed `input`, apply `show_cursor` |
 

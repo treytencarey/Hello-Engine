@@ -4,6 +4,8 @@ local Quat = require("bevy::math::Quat")
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("MovementSuite")
+-- `input`'s message, written here before the mod may have loaded; adding again adds nothing
+app:add_message("input/synthetic_key")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -14,7 +16,7 @@ end)
 local key_frames = {}
 app:add_systems(First, { World }, function(world)
     local ev = table.remove(key_frames, 1)
-    if ev ~= nil and ev.key_code ~= nil then world:write_event("SyntheticKeyInput", ev) end
+    if ev ~= nil and ev.key_code ~= nil then world:write_message("input/synthetic_key", ev) end
 end):in_set("zz/movement_suite_keys")
 local function key(code, state)
     key_frames[#key_frames + 1] = { key_code = code, state = state }

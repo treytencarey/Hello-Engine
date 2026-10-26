@@ -37,34 +37,36 @@
 
 
 local bevy = require("bevy::prelude")
-local LuaCustomEvent = require("bevy_lua_ecs::custom_events::LuaCustomEvent")
 local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
 local MouseButtonInput = require("bevy::input::mouse::MouseButtonInput")
 local MouseMotion = require("bevy::input::mouse::MouseMotion")
 local MouseWheel = require("bevy::input::mouse::MouseWheel")
 
+-- Input that does not come from a device: a key, a mouse button or a scroll written by a mod (a
+-- suite, a replay, an on-screen control), shaped as Bevy's own message of each, and an analog
+-- strength for a held key (`{ key_code = <KeyCode>, value = <0..1> }`).
+app:add_message("input/synthetic_key")
+app:add_message("input/synthetic_mouse_button")
+app:add_message("input/synthetic_mouse_wheel")
+app:add_message("input/analog")
+
 app:add_systems(First, {
     bevy.MessageReader[KeyboardInput],
     bevy.MessageReader[MouseButtonInput],
-    bevy.MessageReader[LuaCustomEvent],
+    bevy.MessageReader["input/synthetic_key"],
+    bevy.MessageReader["input/synthetic_mouse_button"],
+    bevy.MessageReader["input/analog"],
     Query[{
         with = { "input", "core/net/local" },
         optional = { "input/held" },
     }],
     Commands,
-}, function(keyboard, mouse_buttons, lua_messages, players, commands)
+}, function(keyboard, mouse_buttons, synthetic_keys, synthetic_buttons, analog_in, players, commands)
     local keys = keyboard:read()
     local buttons = mouse_buttons:read()
-    local analog = {}
-    for _, m in ipairs(lua_messages:read()) do
-        if m.name == "SyntheticKeyInput" then
-            keys[#keys + 1] = m.data
-        elseif m.name == "SyntheticMouseInput" then
-            buttons[#buttons + 1] = m.data
-        elseif m.name == "AnalogInput" then
-            analog[#analog + 1] = m.data
-        end
-    end
+    for _, m in ipairs(synthetic_keys:read()) do keys[#keys + 1] = m end
+    for _, m in ipairs(synthetic_buttons:read()) do buttons[#buttons + 1] = m end
+    local analog = analog_in:read()
 
     for _, e in ipairs(players:iter()) do
         local held = e:get("input/held") or {}
@@ -104,7 +106,7 @@ end):in_set("input/held")
 app:add_systems(PreUpdate, {
     bevy.MessageReader[MouseMotion],
     bevy.MessageReader[MouseWheel],
-    bevy.MessageReader[LuaCustomEvent],
+    bevy.MessageReader["input/synthetic_mouse_wheel"],
     Query[{
         with = { "input", "core/net/local" },
         optional = { "input/actions" },
@@ -114,7 +116,7 @@ app:add_systems(PreUpdate, {
         optional = { "input/actions" },
     }],
     Commands,
-}, function(mouse_motion, mouse_wheel, lua_messages, players, held_players, commands)
+}, function(mouse_motion, mouse_wheel, synthetic_wheel, players, held_players, commands)
     local motion, scroll = { x = 0, y = 0 }, { x = 0, y = 0 }
     for _, ev in ipairs(mouse_motion:read()) do
         motion.x = motion.x + (ev.delta and ev.delta.x or 0)
@@ -124,11 +126,9 @@ app:add_systems(PreUpdate, {
         scroll.x = scroll.x + (ev.x or 0)
         scroll.y = scroll.y + (ev.y or 0)
     end
-    for _, m in ipairs(lua_messages:read()) do
-        if m.name == "SyntheticMouseWheel" then
-            scroll.x = scroll.x + (m.data.x or 0)
-            scroll.y = scroll.y + (m.data.y or 0)
-        end
+    for _, m in ipairs(synthetic_wheel:read()) do
+        scroll.x = scroll.x + (m.x or 0)
+        scroll.y = scroll.y + (m.y or 0)
     end
 
     -- The columns this pass reads come from data: each player's mode and the actions

@@ -37,11 +37,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 end):in_set("zz/sidebar_suite_panel")
 
 -- Keys go through `input` as the real ones do: pressed one frame, released two frames later.
+-- `input`'s message, written here before the mod may have loaded; adding again adds nothing.
+app:add_message("input/synthetic_key")
 local key_frames = {}
 
 app:add_systems(First, { World }, function(world)
     local ev = table.remove(key_frames, 1)
-    if ev ~= nil and ev.key_code ~= nil then world:write_event("SyntheticKeyInput", ev) end
+    if ev ~= nil and ev.key_code ~= nil then world:write_message("input/synthetic_key", ev) end
 end):in_set("zz/sidebar_suite_keys")
 
 local function escape()
