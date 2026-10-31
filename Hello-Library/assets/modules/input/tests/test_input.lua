@@ -2,11 +2,7 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("InputSuite")
-
--- `input`'s messages, written here before the mod may have loaded; adding again adds nothing
-for _, name in ipairs({ "input/synthetic_key", "input/synthetic_mouse_button", "input/synthetic_mouse_wheel", "input/analog" }) do
-    app:add_message(name)
-end
+local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -140,6 +136,34 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "released" and clock > 0.2 then
         suite.assert_test("I8_releasing_removes_the_action", not p:has("input/game/movement/forward"), "")
+        step("window key")
+
+    -- The window's own message, as Bevy writes it, read through reflection as a mod's synthetic
+    -- key is written: a unit variant by its name.
+    elseif phase == "window key" and clock > 0.2 then
+        local window = world:query({ with = { "Window" } })[1]
+        suite.assert_test("I11a_the_suite_has_a_window", window ~= nil, "")
+        if window then
+            events[#events + 1] = { KeyboardInput, {
+                key_code = "KeyW", logical_key = { Character = "w" }, state = "Pressed",
+                ["repeat"] = false, window = window:id(),
+            } }
+        end
+        step("window held")
+
+    elseif phase == "window held" and clock > 0.3 then
+        suite.assert_test("I11_a_window_key_holds_its_action", p:has("input/game/movement/forward"), "")
+        local window = world:query({ with = { "Window" } })[1]
+        if window then
+            events[#events + 1] = { KeyboardInput, {
+                key_code = "KeyW", logical_key = { Character = "w" }, state = "Released",
+                ["repeat"] = false, window = window:id(),
+            } }
+        end
+        step("window released")
+
+    elseif phase == "window released" and clock > 0.3 then
+        suite.assert_test("I12_a_window_key_release_removes_it", not p:has("input/game/movement/forward"), "")
         key("KeyW", "Pressed")
         step("rebind")
 

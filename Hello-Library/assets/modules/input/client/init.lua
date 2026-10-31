@@ -45,11 +45,6 @@ local MouseWheel = require("bevy::input::mouse::MouseWheel")
 -- Input that does not come from a device: a key, a mouse button or a scroll written by a mod (a
 -- suite, a replay, an on-screen control), shaped as Bevy's own message of each, and an analog
 -- strength for a held key (`{ key_code = <KeyCode>, value = <0..1> }`).
-app:add_message("input/synthetic_key")
-app:add_message("input/synthetic_mouse_button")
-app:add_message("input/synthetic_mouse_wheel")
-app:add_message("input/analog")
-
 app:add_systems(First, {
     bevy.MessageReader[KeyboardInput],
     bevy.MessageReader[MouseButtonInput],
@@ -73,9 +68,12 @@ app:add_systems(First, {
         local before = held.keys or {}
         local held_keys, held_buttons = {}, {}
         local released_keys, released_buttons = {}, {}
+        -- a key or button with no name (`KeyCode::Unidentified`, `MouseButton::Other`) binds to nothing
         for _, ev in ipairs(keys) do
-            held_keys[ev.key_code] = ev.state == "Pressed" and 1 or null
-            released_keys[ev.key_code] = ev.state ~= "Pressed" and null or nil
+            if type(ev.key_code) == "string" then
+                held_keys[ev.key_code] = ev.state == "Pressed" and 1 or null
+                released_keys[ev.key_code] = ev.state ~= "Pressed" and null or nil
+            end
         end
         for _, ev in ipairs(analog) do
             if held_keys[ev.key_code] == 1 or (held_keys[ev.key_code] == nil and before[ev.key_code]) then
@@ -83,8 +81,10 @@ app:add_systems(First, {
             end
         end
         for _, ev in ipairs(buttons) do
-            held_buttons[ev.button] = ev.state == "Pressed" and 1 or null
-            released_buttons[ev.button] = ev.state ~= "Pressed" and null or nil
+            if type(ev.button) == "string" then
+                held_buttons[ev.button] = ev.state == "Pressed" and 1 or null
+                released_buttons[ev.button] = ev.state ~= "Pressed" and null or nil
+            end
         end
         if next(held_keys) or next(held_buttons) or not e:has("input/held") then
             commands:entity(e:id()):patch({

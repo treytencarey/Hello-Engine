@@ -20,7 +20,7 @@ Keys, mouse buttons, motion and scroll, turned into one component per bound acti
 
 ## Messages
 
-Input that does not come from a device, written by any mod (a suite, a replay, an on-screen control) with `MessageWriter["<name>"]`; `input` adds them, and a mod writing one before `input` loads adds it too (`app:add_message`, which adds nothing the second time).
+Input that does not come from a device, written by any mod (a suite, a replay, an on-screen control) with `MessageWriter["<name>"]`; each exists from its first use, so a mod may write one before `input` loads.
 
 - `input/synthetic_key`: a key, shaped as Bevy's `KeyboardInput` (`{ key_code = <KeyCode>, state = "Pressed" | "Released" }`).
 - `input/synthetic_mouse_button`: a mouse button, shaped as Bevy's `MouseButtonInput` (`{ button = <MouseButton>, state = ... }`).
