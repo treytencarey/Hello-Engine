@@ -37,8 +37,6 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 end):in_set("zz/sidebar_suite_panel")
 
 -- Keys go through `input` as the real ones do: pressed one frame, released two frames later.
--- `input`'s message, written here before the mod may have loaded; adding again adds nothing.
-app:add_message("input/synthetic_key")
 local key_frames = {}
 
 app:add_systems(First, { World }, function(world)
@@ -107,7 +105,7 @@ local function click(world, commands, title)
     })
 end
 
-local function shown(c) return c:get("Node").display.Flex ~= nil end
+local function shown(c) return c:get("Node").display == "Flex" end
 
 -- Frames as well as seconds: the frame the bar first appears can take over half a second
 -- (the UI's first draw), and the panel's buttons are styled two frames after it.

@@ -67,7 +67,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("S2_a_client_gets_one_player_at_a_spawn_point",
             #seven == 1 and p:get("player").spawn_index == 1
                 and near(pos.x, 2.121) and near(pos.y, 5) and near(pos.z, -2.121)
-                and p:get("RigidBody3d").KinematicPositionBased == true,
+                and p:get("RigidBody3d") == "KinematicPositionBased",
             pos and string.format("index=%s at %.2f %.2f %.2f", tostring(p:get("player").spawn_index), pos.x, pos.y, pos.z) or "none")
         suite.assert_test("S3_the_next_client_gets_the_next_free_point",
             #eight == 1 and eight[1]:get("player").spawn_index == 2, "")

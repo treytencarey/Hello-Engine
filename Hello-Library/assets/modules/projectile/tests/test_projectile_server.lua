@@ -71,7 +71,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
             p.radius == 0.2 and p.gravity == 0.3 and p.lifetime == 3 and p.color.r == 1
                 and p.velocity.x == 0 and p.from.x == 20, "")
         local body = level:get("RigidBody3d")
-        suite.assert_test("P2_it_gets_a_dynamic_body", body ~= nil and body.Dynamic == true, "")
+        suite.assert_test("P2_it_gets_a_dynamic_body", body == "Dynamic", "")
         local pos = at(world, level)
         flown = pos.x
         suite.assert_test("P3_it_starts_at_from_and_moves_at_its_velocity_without_gravity",

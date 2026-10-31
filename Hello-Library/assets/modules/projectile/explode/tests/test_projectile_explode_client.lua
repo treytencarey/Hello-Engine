@@ -69,7 +69,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("blasts=%d at.x=%s", #blasts, tostring(at.x)))
         local ball = world:query({ with = { "zz/ball" }, optional = { "projectile/explode/hit", "Visibility" } })[1]
         suite.assert_test("C2_the_ball_is_hidden_and_marked",
-            ball ~= nil and ball:has("projectile/explode/hit") and (ball:get("Visibility") or {}).Hidden == true,
+            ball ~= nil and ball:has("projectile/explode/hit") and ball:get("Visibility") == "Hidden",
             "visibility=" .. require("modules/core/dkjson.lua").encode(ball and ball:get("Visibility")))
         step("stays")
 

@@ -58,10 +58,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             me:get("input").mode == "input/game" and me:has("sidebar")
                 and #world:query({ with = { "sidebar/container" } }) == 1, "")
         suite.assert_test("C2_its_own_body_turns_dynamic_and_falls",
-            me:get("RigidBody3d").Dynamic == true and y_of(world, me) < 2,
+            me:get("RigidBody3d") == "Dynamic" and y_of(world, me) < 2,
             string.format("y=%.2f", y_of(world, me)))
         suite.assert_test("C3_a_remote_player_is_left_as_the_server_sent_it",
-            other:get("RigidBody3d").KinematicPositionBased == true and not other:has("input")
+            other:get("RigidBody3d") == "KinematicPositionBased" and not other:has("input")
                 and not other:has("sidebar") and math.abs(y_of(world, other) - 3) < 0.01, "")
         me:remove("player")
         step("removed")

@@ -278,7 +278,7 @@ return {
 
 ## Engine notes
 
-- A reflected enum reads back as a table naming its variant: `RigidBody3d` reads as `{ KinematicPositionBased = true }`.
+- An engine enum reads back as Bevy serialises it, and as it is written: a variant with no data is its name (`RigidBody3d` reads `"KinematicPositionBased"`, a key `"KeyW"`), a variant with data is a table keyed by its name (`{ Character = "w" }`), and an `Option` is its value, or nil for `None`.
 - Some numeric engine fields read back as strings (`Camera.order`). Convert with `tonumber` before comparing.
 - A `removed` edge brings its row in the frame after the removal, exactly once, in every query form, whether the entity despawned or the component was removed from an entity that stays. The old value is readable only from `Query[{ ["or"] = { removed = { "X" } }, optional = { "X" } }]`; a plain `removed = { "X" }`, with or without `optional = { "X" }`, reads nil for X. In that `["or"]` form a query that also takes `added = { "X" }` answers a value on both edges, so `get()` cannot tell which happened: react to each edge in its own system (`sidebar/show` on `added`, `sidebar/hide` on `removed`).
 - `Text` reads back as its string, and `ScrollPosition` as `{ x, y }`.

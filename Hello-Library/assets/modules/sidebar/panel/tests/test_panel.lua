@@ -62,14 +62,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local header = part(world, files, "sidebar/panel/header")
         local loading = part(world, files, "sidebar/panel/loading")
         suite.assert_test("L1_a_new_panel_is_loading_with_its_header_hidden",
-            width(files) == 280 and header ~= nil and header:get("Node").display.None ~= nil
+            width(files) == 280 and header ~= nil and header:get("Node").display == "None"
                 and loading ~= nil and part(world, files, "sidebar/panel/scroll") ~= nil
                 and files:get("ui/style").background == "bg",
             "width=" .. tostring(width(files)))
         local bare = panel(world, "bare")
         local bare_header = part(world, bare, "sidebar/panel/header")
         suite.assert_test("L2_an_empty_title_hides_the_header_and_is_not_loading",
-            width(bare) == 48 and bare_header:get("Node").display.None ~= nil
+            width(bare) == 48 and bare_header:get("Node").display == "None"
                 and bare:get("sidebar/panel").scroll_speed == 20
                 and part(world, bare, "sidebar/panel/loading") == nil, "")
         files:patch({ ["sidebar/panel"] = { title = "Files", width = 320 } })
@@ -80,7 +80,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local header = part(world, files, "sidebar/panel/header")
         local title = part(world, files, "sidebar/panel/title")
         suite.assert_test("L3_a_title_shows_the_header_and_ends_loading",
-            header:get("Node").display.Flex ~= nil and title:get("Text") == "Files"
+            header:get("Node").display == "Flex" and title:get("Text") == "Files"
                 and part(world, files, "sidebar/panel/loading") == nil, "")
         suite.assert_test("L4_width_follows_the_config", width(files) == 320, "width=" .. tostring(width(files)))
         local scroll = part(world, files, "sidebar/panel/scroll")

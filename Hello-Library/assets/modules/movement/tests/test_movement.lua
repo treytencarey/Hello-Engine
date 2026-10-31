@@ -4,8 +4,6 @@ local Quat = require("bevy::math::Quat")
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("MovementSuite")
--- `input`'s message, written here before the mod may have loaded; adding again adds nothing
-app:add_message("input/synthetic_key")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -182,6 +180,28 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "landing" and clock > 1.5 then
         local me = named(world, "me")
         suite.assert_test("V10_it_lands_and_stands_again", me:has("movement/grounded"), "")
+        key("KeyW", "Pressed")
+        step("walking to jump")
+
+    -- A jump while walking: the walk writes only the horizontal velocity, so the jump's
+    -- vertical one stays.
+    elseif phase == "walking to jump" and clock > 0.4 then
+        start = placed(world, named(world, "me")).translation
+        key("Space", "Pressed")
+        key(nil, nil)
+        key("Space", "Released")
+        step("walking jump")
+
+    elseif phase == "walking jump" and clock > 0.4 then
+        local me = named(world, "me")
+        suite.assert_test("V13_a_jump_while_walking_leaves_the_ground",
+            placed(world, me).translation.y > start.y + 0.5 and not me:has("movement/grounded"),
+            string.format("y=%.2f from %.2f", placed(world, me).translation.y, start.y))
+        key("KeyW", "Released")
+        step("walking landing")
+
+    elseif phase == "walking landing" and clock > 1.5 then
+        local me = named(world, "me")
         me:remove("input")
         step("no input")
 

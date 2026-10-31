@@ -39,12 +39,12 @@ app:add_systems(PostUpdate, {
         local theme = t:get("ui/theme")
         for _, e in ipairs(nodes) do
             local style = e:get("ui/style")
-            local interaction = e:get("Interaction") or {}
+            local interaction = e:get("Interaction")
             local alpha = style.alpha or 1
             local background = style.background
-            if interaction.Pressed and style.press ~= nil then
+            if interaction == "Pressed" and style.press ~= nil then
                 background = style.press
-            elseif (interaction.Hovered or interaction.Pressed) and style.hover ~= nil then
+            elseif (interaction == "Hovered" or interaction == "Pressed") and style.hover ~= nil then
                 background = style.hover
             end
             local bg = background and theme[background]

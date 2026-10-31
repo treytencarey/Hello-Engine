@@ -63,7 +63,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local given = map:get("map/default")
         suite.assert_test("M1b_fields_not_given_get_defaults_beside_those_given",
             given.size.x == 10 and given.sun == 10000 and given.color.g == 0.5, "")
-        suite.assert_test("M2_the_ground_is_a_fixed_body", body ~= nil and body.Fixed == true, "")
+        suite.assert_test("M2_the_ground_is_a_fixed_body", body == "Fixed", "")
         suite.assert_test("M3_a_ball_rests_on_its_top_surface", near(y_of(world, "on"), 1.0, 0.05),
             string.format("y=%.3f", y_of(world, "on")))
         suite.assert_test("M4_its_size_sets_its_edge", y_of(world, "off") < -1,
