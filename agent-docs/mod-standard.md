@@ -154,6 +154,7 @@ return {
 - A mod may `require` its own stateless function file from its halves, and the JSON library, which ships with core as a plain, stateless Lua library (not a mod) and is required by name, like a standard library. Never another mod's file, not even a helper shared inside an area (`<area>/shared/*`), and never one that holds state: to use another mod, write its component (Ownership); to learn a fact, query it.
   - Today differs: the JSON library is required by its path in core, `require("modules/core/dkjson.lua")`.
 - Mods never read the environment (`get_env`, `os.getenv`). Configuration arrives as component data: `core/config` gives a mod its own `<mod>/config` from the host's files.
+- A mod never holds or reads a credential (a sign-in token, a provider's key). Work that needs one, a call to a signed-in service or a push, is a request to root with no target: a method component of the call, with `Request = {}` (`commands:spawn({ ["<method>"] = { ... }, Request = {} })`). Root does the work and attaches the credential itself. It writes only the result back, as `<method>/reply` on the asking entity, and despawning that entity closes the request. The token never reaches the mod's world.
 - Nothing a hot reload would empty: no module-level locals that hold state between runs.
 
 ## Systems
@@ -200,6 +201,7 @@ return {
 - A system never sees its own writes: they land when its run ends (Systems). Never read back in the same run what it just wrote.
 - To change a component that another system may also write in the same frame, patch it key by key (`commands:entity(e):patch({ ["cooldown/left"] = { [name] = secs - dt } })`). Never replace the whole component (`insert`, `set`): it erases a key the other system patched in the same frame.
 - To replace a value that holds nested tables, `insert` it (or `set` it on its row). A `patch` merges nested tables, so a key the new value leaves out stays (a clip taken out of a graph's list stayed listed).
+- A `patch` changes only what it names, at every depth: `Velocity3d = { linvel = { x = 1 } }` leaves `linvel.y` and `angvel` as they were. A `set` writes the whole component, so a field it leaves out takes its default.
 - A command on an entity that is gone warns and is skipped. On an edge where the entity may have despawned (`removed` also fires on despawn), use Bevy's `try_` forms (`try_remove`, `try_despawn`, `try_insert`), or `commands:get_entity(e)`, which answers nil for an entity that is gone.
 - No general helper functions (`copy`, deep compare). Compare the fields you need directly. Tell kinds of data apart by the fields a value has (`b.key`, `b.motion`), not by comparing strings or checking value types.
 - Removing a component, as in Bevy, is `remove` or `try_remove`, for an engine component too, reflected or not: `commands:entity(e):remove("Collider3d")`, several in one call (`try_remove("Mesh3d", "MeshMaterial3d<StandardMaterial>")`). A component is never removed by patching it to `null`.
@@ -282,7 +284,11 @@ return {
 - Some numeric engine fields read back as strings (`Camera.order`). Convert with `tonumber` before comparing.
 - A `removed` edge brings its row in the frame after the removal, exactly once, in every query form, whether the entity despawned or the component was removed from an entity that stays. The old value is readable only from `Query[{ ["or"] = { removed = { "X" } }, optional = { "X" } }]`; a plain `removed = { "X" }`, with or without `optional = { "X" }`, reads nil for X. In that `["or"]` form a query that also takes `added = { "X" }` answers a value on both edges, so `get()` cannot tell which happened: react to each edge in its own system (`sidebar/show` on `added`, `sidebar/hide` on `removed`).
 - `Text` reads back as its string, and `ScrollPosition` as `{ x, y }`.
-- An engine component without reflection reads back as its bare name (`Collider3d` reads as `"Collider3d"`). Test what it does instead (a ball of radius r rests r above a floor).
+- An engine component without reflection reads back as plain data when its type is serializable (`Collider3d`). Otherwise it reads back as text: its debug form, or, for a marker, its bare name. Test what such a component does rather than its text (a ball of radius r rests r above a floor).
+- A method whose Bevy answer is a tuple answers a table named after the method's documented return: `rapier:cast_ray(...)` answers `{ entity, toi }`. A tuple Bevy gives no names, Bevy's math tuples among them, answers a list by position.
+  - Today differs: `Assets[T]`'s `iter` and the message readers' tuple answers are still lists.
+- A `Duration` that a bound method takes or answers is a number of seconds.
+- A method whose answer has no Lua form and does its work when dropped (most `Gizmos` shapes) answers nothing: call it for its effect.
 - An asset is read in Lua as a copy, `Res[Assets[T]]:get(handle)`, and changed in place through `ResMut[Assets[T]]:get_mut(handle)`.
 - After a hot reload, the mod's systems see their own component as `added` again on every carrier, but a state sub-component (`sidebar/open`, `sidebar/button/open`) gets no new edge. What a rebuild draws from such a state, it reads in the setup (`optional = { "sidebar/open" }`).
 - A `removed` edge for `ChildOf` is seen (after `remove("ChildOf")`, Bevy's `remove_child`, or the parent despawning, which despawns the child too), but `get("ChildOf")` reads nil in every form: the old parent cannot be read back. A reaction that needs the parent reacts to the parent's own edge.
@@ -331,11 +337,15 @@ Each was written by an agent and rejected. The wrong form is what to look for; t
 - **Removing a component with a null patch.** Wrong: `commands:entity(e):patch({ ["cooldown/left"] = null })`. Right: `commands:entity(e):remove("cooldown/left")`, or `try_remove` on an edge where the entity may be gone (Queries and writes).
 - **Requiring another mod's file.** Wrong: `require` of another mod's module, or of a helper shared across an area, to call its API or read a fact. Right: write that mod's component to ask it for work, and query its components for facts (State, Ownership).
 - **A function in a component.** Wrong: `["<mod>/handlers"] = { on_hit = function(...) end }`. Right: plain data; behaviour stays in the mod's systems (Components).
+- **A credential in a mod's world.** Wrong: reading a token from a component, a config file or a shared entity, and putting it on the request yourself. Right: a request to root with `Request = {}`; root attaches the credential and answers with the result only (State).
 - **A retired form.** Wrong: the old `spawn`, `despawn`, `register_system`, `load_asset`, `load_asset_async`, `reload_asset` or `create_asset` globals, `world:call_*`, `world:query` in a mod, `require_async` in a new mod, `app:init_resource`, `app:add_message`, `invoke_observer`. Right: the forms of A mod file.
 - **A dated comment, or one saying who decided.** Wrong: `-- measured <date>`, `-- (owner, <date>)`. Right: the reason only (Formatting).
 - **Ordering a mod against the unload.** Wrong: `:before("core/mod_registry/unload")` on a mod's cleanup. Right: nothing; the unload runs after every Lua system, so the mod's `removed` cleanups have already run (Systems).
+- **A suite fixture simpler than production.** Wrong: a case that writes only the synthetic form of an input (`input/synthetic_key`), or a hand-built value in a shape the engine never sends, when the mod also reads the engine's own. Right: at least one case writes what the engine writes (a `KeyboardInput`, a reflected component), so the case fails when the engine's form changes.
 
 ## Design review checklist
+
+How to audit a mod against this standard, and how to rate what you find, is in `mod-audit.md`.
 
 Before a design is shown, check it against every item, and list the earlier rulings that apply:
 
@@ -375,3 +385,4 @@ Before a design is shown, check it against every item, and list the earlier ruli
 34. A component two systems write in the same frame is patched key by key, never replaced whole; no system reads back its own writes in the same run, and nothing depends on a write surviving a run that errors.
 35. Every `require` is a top-of-file local (fixture strings included), every component and set name is a literal, and every `:after`/`:before` names a declared set.
 36. The mod requires no other mod's file; resources are made through `Commands`; Lua messages are used by name with nothing added first.
+37. Work that needs a credential is a request to root (`Request = {}`); the mod's world holds no token.
