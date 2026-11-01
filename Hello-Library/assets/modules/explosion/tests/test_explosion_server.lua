@@ -8,7 +8,9 @@
 --   X4 taken off an entity that stays: its timer stops
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("ExplosionServerSuite")
+local helpers = require("modules/core/test_helpers.lua")
+
+local suite = helpers.create_suite("ExplosionServerSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
@@ -53,7 +55,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "ended" then
         if clock < 0.6 then return end
         suite.assert_test("X3b_it_despawns_itself_when_it_ends", named(world, "short") == nil, "")
-        world:get_entity(named(world, "long"):id()):patch({ explosion = null })
+        commands:entity(named(world, "long"):id()):remove("explosion")
         step("removed")
 
     elseif phase == "removed" then

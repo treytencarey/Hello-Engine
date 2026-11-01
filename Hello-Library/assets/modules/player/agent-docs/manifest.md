@@ -31,12 +31,21 @@ The owning client drives its player's Transform until prediction returns with th
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | `player/setup` | On an added `player`, fill in missing fields and add identity, the camera, movement and the abilities |
+| First (server) | `player/init` | On an added `player`, fill in missing fields and add identity, the camera, movement and the abilities |
 | Update (server) | `player/identity` | When the join ticket is verified, set `player.user_id` |
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`) |
 | First (server) | `player/removed` | When `player` is removed from an entity that stays, remove identity, the camera, movement and the abilities |
 | First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input and the sidebar, and make its body dynamic |
 | First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input and the sidebar |
+
+## Use
+
+A world does not add `player` itself: `player/spawner` spawns one for each client that joins, with its body, collider and sync, and this mod sets it up.
+
+```lua
+-- in a world's boot, on the server
+commands:spawn({ ["player/spawner"] = {}, ChildOf = boot:id() })
+```
 
 ## Notes
 

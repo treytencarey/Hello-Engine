@@ -14,8 +14,10 @@
 --   F5 taken off: its entry goes, and another ability's entry stays
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesFireballSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+
+local suite = helpers.create_suite("AbilitiesFireballSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
@@ -114,7 +116,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
                 end
                 return table.concat(out, " ")
             end)()))
-        patch({ ["input/game/abilities/fireball"] = null })
+        commands:entity(player_id):remove("input/game/abilities/fireball")
         step("cooled")
 
     elseif phase == "cooled" then
@@ -138,7 +140,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         if clock < 0.4 then return end
         suite.assert_test("F7_a_press_while_it_cools_fires_nothing",
             launches == launches_before, "launches since=" .. (launches - launches_before))
-        patch({ ["abilities/fireball"] = null })
+        commands:entity(player_id):remove("abilities/fireball")
         step("removed")
 
     elseif phase == "removed" then

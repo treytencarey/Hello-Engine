@@ -1,7 +1,10 @@
 -- --host (windowed: UI layout needs a window)
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("NotificationSuite")
+local helpers = require("modules/core/test_helpers.lua")
+local Instances = require("modules/core/instances.lua")
+
+local suite = helpers.create_suite("NotificationSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -10,7 +13,6 @@ end)
 
 -- What a script spawns is linked to its file. Another mod spawns a notification; moved
 -- under the overlay, it becomes the notification mod's. The link names that other mod's file.
-local Instances = require("modules/core/instances.lua")
 local NOTICE = "modules/zz_notice/init.lua"
 Instances.mark_mod_script(NOTICE)
 local function notice(commands, name, config)
@@ -68,7 +70,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         notice(commands, "slow", { fade = 0.5 })
         step("shown")
 
-    elseif phase == "shown" and clock > 0.3 then
+    -- `cooldown` loads once the first card asks it for a timer, which can take longer than
+    -- the cards' own setup.
+    elseif phase == "shown" and clock > 0.3 and (note(world, "quick"):has("notification/alive") or clock > 3) then
         local quick, kept = note(world, "quick"), note(world, "kept")
         local n = kept:get("notification")
         suite.assert_test("N1_a_notification_becomes_a_card_with_defaults",

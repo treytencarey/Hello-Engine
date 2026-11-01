@@ -1,9 +1,10 @@
 -- --host (windowed: keys reach `input` through a window)
-local Quat = require("bevy::math::Quat")
-
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("MovementSuite")
+local helpers = require("modules/core/test_helpers.lua")
+local Quat = require("bevy::math::Quat")
+
+local suite = helpers.create_suite("MovementSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })

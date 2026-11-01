@@ -35,7 +35,8 @@ app:add_systems(PostUpdate, {
     if not theme_changes:is_empty() then
         nodes = styled_nodes:iter()
     end
-    for _, t in ipairs(themes:iter()) do
+    local t = themes:iter()[1]
+    if t then
         local theme = t:get("ui/theme")
         for _, e in ipairs(nodes) do
             local style = e:get("ui/style")

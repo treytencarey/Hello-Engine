@@ -37,11 +37,18 @@ Walking and jumping. The owning client moves its own player from input, relative
 | Update (client) | `movement/follow` | Polls: another client's player eases toward its synced Transform |
 | First (client) | `movement/removed` | When `movement` is removed from an entity that stays, unbind; `movement/grounded` goes by `mod_registry` |
 
+## Use
+
+```lua
+-- on the server, on the player: walk faster and jump higher than the defaults
+commands:entity(player):insert({ movement = { speed = 8, jump = 7 } })
+```
+
 ## Notes
 
 - It faces where the keys point, not where it moves: a push does not turn it, and opposite keys held together stand it still without turning.
 - One press is one jump: the jump reacts to the action's `added` edge, so the old cooldown after a jump is gone.
 - The ground ray passes `{ exclude_rigid_body = <the player> }`; the old ray started inside the player's own capsule and always found it.
-- `movement/ground` takes Bevy's exclusive `World` to cast its ray: Rapier's `ReadRapierContext` is not yet a parameter a Lua system can declare.
+- `movement/ground` casts its ray through Rapier's `ReadRapierContext`, declared as a system parameter.
 - Not yet carried over: facing where a VR headset looks (returns with `vr`), and server-side movement for prediction (returns with the net rewrite and the input action sync).
 - The suite runs windowed: keys reach `input` through a window.

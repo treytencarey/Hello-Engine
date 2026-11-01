@@ -6,7 +6,9 @@
 --   XC3 taken off an entity that stays: the mesh and material go
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("ExplosionClientSuite")
+local helpers = require("modules/core/test_helpers.lua")
+
+local suite = helpers.create_suite("ExplosionClientSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -50,7 +52,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local now = scale(big)
         suite.assert_test("XC2_it_grows_toward_its_radius", early > 0 and now > early and now < 4,
             string.format("scale %.2f then %.2f", early, now))
-        world:get_entity(big:id()):patch({ explosion = null })
+        commands:entity(big:id()):remove("explosion")
         step("removed")
 
     elseif phase == "removed" then

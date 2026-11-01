@@ -8,6 +8,8 @@
 --       dropping, fall
 --   AN4b walking on past the clip's length, speeding up halfway, it keeps walking: the clip
 --        loops at its new speed and is not restarted while the state stays the same
+--   AN4d a character standing still writes its motion no more: `animation/motion` changes
+--        only when it moves
 --   AN4c a character moved by physics (its body's velocity, stepped at a fixed rate) walks
 --        steadily: its state does not flicker between frames that moved and frames that did not
 --   AN5 `animation/action` wins while it is there; without it the motion's state returns
@@ -21,11 +23,13 @@
 --       and a linked player, and plays
 --   AN7 taken off an entity that stays: its model and its parts go
 require("modules/core/init.lua")
-local AssetServer = require("bevy::asset::AssetServer")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("AnimationClientSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local watcher = require("modules/core/hot_reload/watcher.lua")
+local AssetServer = require("bevy::asset::AssetServer")
 local Time = require("bevy::time::Time")
+
+local suite = helpers.create_suite("AnimationClientSuite")
 
 -- An immediate watcher, for AN9's edit.
 local fw = define_resource("_FileWatcherState", {})
@@ -132,12 +136,16 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         end)
         before.walk_playing = ok_p and on
         before.walk_changes = 0
+        before.b_motion_writes = 0
         before.walk_elapsed = elapsed_of(world, player)
         step("walk_long")
 
     elseif phase == "walk_long" then
         for _ in ipairs(world:query({ changed = { "animation/playing" }, with = { "zz/char" } })) do
             before.walk_changes = before.walk_changes + 1
+        end
+        for _, e in ipairs(world:query({ changed = { "animation/motion" }, with = { "zz/char" } })) do
+            if e:get("zz/char").name == "b" then before.b_motion_writes = before.b_motion_writes + 1 end
         end
         -- Halfway, it speeds up: a new speed for the same clip.
         if clock >= 1.2 and not before.sped_up then
@@ -161,6 +169,8 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
             ok_p and on and ran > 2.0 and math.abs((now_speed or 0) - 0.75) < 0.05,
             string.format("playing=%s ran=%.2f speed=%s state_changes=%d", tostring(ok_p and on), ran,
                 tostring(now_speed), before.walk_changes))
+        suite.assert_test("AN4d_standing_still_it_writes_its_motion_no_more", before.b_motion_writes == 0,
+            "writes=" .. before.b_motion_writes)
         moving = nil
         -- As a player moves: a dynamic body, its velocity stepped by physics.
         commands:spawn({
@@ -213,7 +223,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         if clock < 0.3 then return end
         local p = named(world, "b"):get("animation/playing") or {}
         before.action = p.state .. "@" .. tostring(p.speed)
-        world:get_entity(named(world, "b"):id()):patch({ ["animation/action"] = null })
+        commands:entity(named(world, "b"):id()):remove("animation/action")
         step("action_gone")
 
     elseif phase == "action_gone" then
@@ -323,7 +333,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
             detail[#detail + 1] = string.format("%s: models=%d playing=%s", n, models, tostring(on))
         end
         suite.assert_test("AN9_editing_the_mod_keeps_every_character_drawn_and_playing", ok, table.concat(detail, "; "))
-        world:get_entity(named(world, "a"):id()):patch({ animation = null })
+        commands:entity(named(world, "a"):id()):remove("animation")
         step("removed")
 
     elseif phase == "removed" then

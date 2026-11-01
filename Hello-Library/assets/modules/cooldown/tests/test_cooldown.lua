@@ -1,9 +1,10 @@
 -- --host
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("CooldownSuite")
-local World = require("bevy::ecs::world::World")
+local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+
+local suite = helpers.create_suite("CooldownSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
@@ -117,11 +118,11 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         suite.assert_test("C6_the_running_timer_survives_a_new_start", ((short:get("cooldown/left") or {})["cooldown/test_b"] or 0) > 20,
             "b left: " .. tostring((short:get("cooldown/left") or {})["cooldown/test_b"]))
         short:patch({ cooldown = { ["cooldown/test_b"] = null } })
-        long:patch({ cooldown = null })
+        commands:entity(long:id()):remove("cooldown")
         step("cancelled")
 
     elseif phase == "cancelled" and not short:has("cooldown/test_b") and not long:has("cooldown/test_c")
-        and not short:get("cooldown/left") and not long:get("cooldown/left") then
+        and not short:has("cooldown/left") and not long:has("cooldown/left") then
         suite.assert_test("C7_cancelling_an_entry_removes_its_component", true, "")
         suite.assert_test("C8_removing_cooldown_removes_every_component", true, "")
         print("[CD] removed-edge rows seen by the consumer: " .. table.concat(ended, ","))

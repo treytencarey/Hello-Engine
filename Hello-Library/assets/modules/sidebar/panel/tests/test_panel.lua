@@ -1,9 +1,11 @@
 -- --host (windowed: UI layout needs a window)
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("SidebarPanelSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Scroll = require("bevy::picking::prelude::Scroll")
+
+local suite = helpers.create_suite("SidebarPanelSuite")
 
 local camera
 
@@ -34,7 +36,7 @@ end
 
 local function part(world, e, marker)
     return world:query({
-        entities = { e:id() },
+        iter_many = world:descendants(e:id()),
         with = { marker },
         optional = { "Node", "Text", "ScrollPosition", "sidebar/panel/scroll", "ComputedNode" },
     })[1]

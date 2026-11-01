@@ -14,22 +14,21 @@
 --   A9 `abilities` taken off: the action syncs and the cooldowns go
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesServerSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+
+local suite = helpers.create_suite("AbilitiesServerSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 end)
-
-local BALL, SLOW = "input/game/abilities/zzball", "input/game/abilities/zzslow"
-local BALL_COOL, SLOW_COOL = "abilities/zzball/cooling", "abilities/zzslow/cooling"
 
 local fires = { zzball = 0, zzslow = 0 }
 
 local function the_player(world)
     return world:query({
         with = { "zz/player" },
-        optional = { "abilities", "core/net/sync", "cooldown", BALL_COOL, SLOW_COOL },
+        optional = { "abilities", "core/net/sync", "cooldown", "abilities/zzball/cooling", "abilities/zzslow/cooling" },
     })[1]
 end
 
@@ -58,24 +57,24 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     elseif phase == "declared" then
         if clock < 0.3 then return end
         local sync = p:get("core/net/sync") or {}
-        local entry = sync[BALL] or {}
+        local entry = sync["input/game/abilities/zzball"] or {}
         suite.assert_test("A1_each_action_is_declared_for_sync",
-            entry.authority == "client" and entry.target == "owner" and (sync[SLOW] or {}).authority == "client",
+            entry.authority == "client" and entry.target == "owner" and (sync["input/game/abilities/zzslow"] or {}).authority == "client",
             "zzball entry: " .. tostring(entry.authority) .. "/" .. tostring(entry.target))
         local slow = (p:get("abilities") or {}).zzslow or {}
         suite.assert_test("A2_a_missing_cooldown_gets_its_default", slow.cooldown == 1 and slow.key == "KeyE",
             "zzslow: cooldown=" .. tostring(slow.cooldown))
-        press({ [BALL] = { value = 1 } })
+        press({ ["input/game/abilities/zzball"] = { value = 1 } })
         step("fired")
 
     elseif phase == "fired" then
         if clock < 0.2 then return end
-        suite.assert_test("A3_a_press_fires", fires.zzball == 1 and p:has(BALL_COOL), "fires=" .. fires.zzball)
-        press({ [BALL] = null })
+        suite.assert_test("A3_a_press_fires", fires.zzball == 1 and p:has("abilities/zzball/cooling"), "fires=" .. fires.zzball)
+        commands:entity(player_id):remove("input/game/abilities/zzball")
         step("released")
 
     elseif phase == "released" then
-        press({ [BALL] = { value = 1 } })
+        press({ ["input/game/abilities/zzball"] = { value = 1 } })
         step("pressed_cooling")
 
     elseif phase == "pressed_cooling" then
@@ -85,20 +84,20 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
 
     elseif phase == "held" then
         if clock < 0.8 then return end
-        suite.assert_test("A5_holding_the_key_fires_once", fires.zzball == 1 and not p:has(BALL_COOL),
+        suite.assert_test("A5_holding_the_key_fires_once", fires.zzball == 1 and not p:has("abilities/zzball/cooling"),
             "fires=" .. fires.zzball)
-        press({ [SLOW] = { value = 1 } })
+        press({ ["input/game/abilities/zzslow"] = { value = 1 } })
         step("other_pressed")
 
     elseif phase == "other_pressed" then
         if clock < 0.2 then return end
         suite.assert_test("A6_another_press_fires_only_that_ability", fires.zzball == 1 and fires.zzslow == 1,
             "zzball=" .. fires.zzball .. " zzslow=" .. fires.zzslow)
-        press({ [BALL] = null, [SLOW] = null })
+        commands:entity(player_id):remove("input/game/abilities/zzball", "input/game/abilities/zzslow")
         step("released_again")
 
     elseif phase == "released_again" then
-        press({ [BALL] = { value = 1 } })
+        press({ ["input/game/abilities/zzball"] = { value = 1 } })
         step("pressed_ready")
 
     elseif phase == "pressed_ready" then
@@ -113,16 +112,16 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         local sync = p:get("core/net/sync") or {}
         local timers = p:get("cooldown") or {}
         suite.assert_test("A8_one_entry_taken_out_takes_its_sync_and_cooldown",
-            sync[BALL] == nil and timers[BALL_COOL] == nil and not p:has(BALL_COOL)
-                and sync[SLOW] ~= nil and ((p:get("abilities") or {}).zzslow or {}).key == "KeyE",
-            "sync=" .. tostring(sync[BALL] ~= nil) .. " timer=" .. tostring(timers[BALL_COOL] ~= nil)
-                .. " cooling=" .. tostring(p:has(BALL_COOL)))
-        press({ [SLOW] = { value = 1 } })
+            sync["input/game/abilities/zzball"] == nil and timers["abilities/zzball/cooling"] == nil and not p:has("abilities/zzball/cooling")
+                and sync["input/game/abilities/zzslow"] ~= nil and ((p:get("abilities") or {}).zzslow or {}).key == "KeyE",
+            "sync=" .. tostring(sync["input/game/abilities/zzball"] ~= nil) .. " timer=" .. tostring(timers["abilities/zzball/cooling"] ~= nil)
+                .. " cooling=" .. tostring(p:has("abilities/zzball/cooling")))
+        press({ ["input/game/abilities/zzslow"] = { value = 1 } })
         step("slow_cooling")
 
     elseif phase == "slow_cooling" then
         if clock < 0.1 then return end
-        world:get_entity(player_id):patch({ abilities = null })
+        commands:entity(player_id):remove("abilities")
         step("removed")
 
     elseif phase == "removed" then
@@ -130,8 +129,8 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         local sync = p:get("core/net/sync") or {}
         local timers = p:get("cooldown") or {}
         suite.assert_test("A9_taken_off_the_action_syncs_and_cooldowns_go",
-            sync[SLOW] == nil and sync.Transform ~= nil and timers[SLOW_COOL] == nil and not p:has(SLOW_COOL),
-            "sync=" .. tostring(sync[SLOW] ~= nil) .. " timer=" .. tostring(timers[SLOW_COOL] ~= nil))
+            sync["input/game/abilities/zzslow"] == nil and sync.Transform ~= nil and timers["abilities/zzslow/cooling"] == nil and not p:has("abilities/zzslow/cooling"),
+            "sync=" .. tostring(sync["input/game/abilities/zzslow"] ~= nil) .. " timer=" .. tostring(timers["abilities/zzslow/cooling"] ~= nil))
         suite.finish("ABILITIES_SERVER")
         phase = "done"
     end
@@ -139,8 +138,8 @@ end):in_set("zz/abilities_server_suite")
 
 -- What a sub-mod reacts to: the cooldown starting.
 app:add_systems(Update, { World }, function(world)
-    for _, e in ipairs(world:query({ ["or"] = { added = { BALL_COOL, SLOW_COOL } } })) do
-        if e:is_added(BALL_COOL) then fires.zzball = fires.zzball + 1 end
-        if e:is_added(SLOW_COOL) then fires.zzslow = fires.zzslow + 1 end
+    for _, e in ipairs(world:query({ ["or"] = { added = { "abilities/zzball/cooling", "abilities/zzslow/cooling" } } })) do
+        if e:is_added("abilities/zzball/cooling") then fires.zzball = fires.zzball + 1 end
+        if e:is_added("abilities/zzslow/cooling") then fires.zzslow = fires.zzslow + 1 end
     end
 end):in_set("zz/abilities_server_fires")

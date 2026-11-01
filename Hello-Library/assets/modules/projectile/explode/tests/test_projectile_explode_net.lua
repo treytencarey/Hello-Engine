@@ -10,7 +10,9 @@
 -- (seconds after the copy appeared), with the copy's z then. The wall's face is z = -9.5.
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
+require("modules/core/net/client/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
+
 local suite = helpers.create_suite("ProjectileExplodeNetSuite")
 local T = suite.assert_test
 
@@ -31,13 +33,16 @@ local WALL = {
 -- ═══ The server: an isolated world that fires ═══════════════════════════
 helpers.make_fixture("modules/test_fixtures/gen_projectile_explode_net_vm1.lua", [=[
 require("modules/core/net/server/init.lua")
-local boot = require("modules/core/instances.lua").boot_data()
+require("modules/core/mod_registry/init.lua")
+local Instances = require("modules/core/instances.lua")
+local helpers = require("modules/core/test_helpers.lua")
+
+local boot = Instances.boot_data()
 local DEFAULTS = boot.DEFAULTS
 local PORT = boot.PORT
 local WALL = boot.WALL
 local SHOTS = boot.SHOTS
-require("modules/core/mod_registry/init.lua")
-local ts = require("modules/core/test_helpers.lua").shared_state("ProjectileExplodeNetState", DEFAULTS)
+local ts = helpers.shared_state("ProjectileExplodeNetState", DEFAULTS)
 local shooter
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({
@@ -72,14 +77,12 @@ end):in_set("zz/explode_net_server")
 helpers.spawn_vm("modules/test_fixtures/gen_projectile_explode_net_vm1.lua", { DEFAULTS = DEFAULTS, PORT = PORT, WALL = WALL, SHOTS = SHOTS })
 
 -- ═══ The client: this VM ════════════════════════════════════════════════
-require("modules/core/net/client/init.lua")
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn(WALL)
 end)
 
 local t, frame = 0, 0
-local shots = {}          -- the client's copies, in the order they appeared
-local by_entity = {}      -- entity → its record
+local shots = {}          -- the client's copies, in the order they appeared, each naming its entity
 local explosions = 0
 local phase, mark = "wait_srv", 0
 
@@ -96,32 +99,34 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     -- The trace: every edge of each copy, as it happens.
     for _, e in ipairs(world:query({ added = { "projectile/explode" }, with = { "core/net/id" } })) do
-        local r = { seen = t, seen_frame = frame }
-        by_entity[e:id()] = r
-        shots[#shots + 1] = r
+        shots[#shots + 1] = { entity = e:id(), seen = t, seen_frame = frame }
     end
     for _, e in ipairs(world:query({ with = { "projectile/explode", "Sensor3d" } })) do
-        local r = by_entity[e:id()]
-        if r and not r.sensor then r.sensor = t; r.sensor_z = z_of(world, e:id()) end
+        for _, r in ipairs(shots) do
+            if r.entity == e:id() and not r.sensor then r.sensor = t; r.sensor_z = z_of(world, e:id()) end
+        end
     end
     for _, e in ipairs(world:query({ changed = { "collision_trigger" }, with = { "projectile/explode" } })) do
-        local r = by_entity[e:id()]
-        local entered = (e:get("collision_trigger") or {}).entered or {}
-        if r and #entered > 0 and not r.trigger then r.trigger = t; r.trigger_z = z_of(world, e:id()) end
+        local entered = e:get("collision_trigger").entered or {}
+        for _, r in ipairs(shots) do
+            if r.entity == e:id() and #entered > 0 and not r.trigger then r.trigger = t; r.trigger_z = z_of(world, e:id()) end
+        end
     end
     for _, e in ipairs(world:query({ added = { "projectile/explode/hit" } })) do
-        local r = by_entity[e:id()]
-        if r then r.hit = t end
+        for _, r in ipairs(shots) do
+            if r.entity == e:id() then r.hit = t end
+        end
     end
-    for e, r in pairs(by_entity) do
+    for _, r in ipairs(shots) do
         if not r.gone then
-            local z = z_of(world, e)
+            local z = z_of(world, r.entity)
             if z then r.last_z = z end
         end
     end
     for _, e in ipairs(world:query({ removed = { "projectile/explode" } })) do
-        local r = by_entity[e:id()]
-        if r and not r.gone then r.gone = t end
+        for _, r in ipairs(shots) do
+            if r.entity == e:id() and not r.gone then r.gone = t end
+        end
     end
     explosions = explosions + #world:query({ added = { "explosion" } })
 

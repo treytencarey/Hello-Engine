@@ -100,10 +100,11 @@ app:add_systems(Update, {
     end
     for _, e in ipairs(cards:iter_many(ended)) do
         local node = e:get("ComputedNode")
+        local n = e:get("notification")
         commands:entity(e:id()):patch({
             ["notification/fade"] = {
                 elapsed = 0,
-                duration = e:get("notification").fade,
+                duration = n.fade,
                 height = node and node.size.y or 0,
             },
         })

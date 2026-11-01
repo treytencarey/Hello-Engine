@@ -54,6 +54,7 @@ app:add_systems(Update, {
             names[#names + 1] = "input/game/abilities/" .. name
         end
     end
+    -- An empty `added` list would match every Lua component.
     if #names == 0 then return end
     for _, e in ipairs(players:with_columns({ ["or"] = { added = names } }):iter()) do
         local timers = {}

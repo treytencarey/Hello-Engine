@@ -10,7 +10,7 @@ Makes an entity a trigger: when what overlaps it changes, `collision_trigger` sa
 
 ## Components
 
-- `collision_trigger = { entered = { <id>, ... }, exited = { <id>, ... }, inside = { <id>, ... } }`: written on each physics change of what overlaps the entity. `entered` and `exited` hold what changed since the last write; `inside` holds everything overlapping now.
+- `collision_trigger = { entered = { <entity>, ... }, exited = { <entity>, ... }, inside = { <entity>, ... } }`: written on each physics change of what overlaps the entity. `entered` and `exited` hold what changed since the last write; `inside` holds everything overlapping now.
 
 When `collision_trigger` is added, the mod gives it this full shape and adds `Sensor3d`, `CollidingEntities3d` and `ActiveEvents3d`. It removes those three when `collision_trigger` is removed.
 
@@ -18,7 +18,7 @@ When `collision_trigger` is added, the mod gives it this full shape and adds `Se
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `collision_trigger/setup` | On an added `collision_trigger`, set its shape and add the sensor components |
+| First | `collision_trigger/init` | On an added `collision_trigger`, set its shape and add the sensor components |
 | First | `collision_trigger/removed` | On a removed `collision_trigger`, remove the sensor components |
 | First | `collision_trigger` | On a changed `CollidingEntities3d`, write `entered`, `exited` and `inside` when anything changed |
 

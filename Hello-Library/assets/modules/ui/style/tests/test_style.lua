@@ -1,7 +1,9 @@
 -- --host
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("StyleSuite")
+local helpers = require("modules/core/test_helpers.lua")
+
+local suite = helpers.create_suite("StyleSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -116,6 +118,17 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("S9_leaving_returns_to_the_background",
             is(node(world, "icon"):get("BackgroundColor"), 0.15, 0.15, 0.18, 1),
             show(node(world, "icon"):get("BackgroundColor")))
+        -- One theme per world: a second one is not painted over the first.
+        commands:spawn({ ["zz/theme"] = {}, ["ui/theme"] = { icon_bg = { r = 1, g = 0, b = 0, a = 1 } } })
+        step("two themes")
+
+    elseif phase == "two themes" and clock > 0.3 then
+        local first = world:query({ with = { "ui/theme" } })[1]:get("ui/theme").icon_bg
+        suite.assert_test("S11_with_two_themes_a_node_is_painted_from_one",
+            #world:query({ with = { "ui/theme" } }) == 2
+                and is(node(world, "icon"):get("BackgroundColor"), first.r, first.g, first.b, first.a),
+            show(node(world, "icon"):get("BackgroundColor")))
+        commands:entity(world:query({ with = { "zz/theme" } })[1]:id()):despawn()
         node(world, "panel"):remove("ui/style")
         step("unstyled")
 

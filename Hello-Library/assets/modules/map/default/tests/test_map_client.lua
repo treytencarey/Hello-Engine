@@ -1,11 +1,12 @@
 -- --host (windowed: a headless run has no StandardMaterial assets)
+require("modules/core/init.lua")
+require("modules/core/mod_registry/init.lua")
+local helpers = require("modules/core/test_helpers.lua")
 local Quat = require("bevy::math::Quat")
 local Assets = require("bevy::asset::Assets")
 local StandardMaterial = require("bevy::pbr::StandardMaterial")
 
-require("modules/core/init.lua")
-require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("MapClientSuite")
+local suite = helpers.create_suite("MapClientSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -32,7 +33,7 @@ local function named(world, name)
 end
 
 local function suns(world, map)
-    return world:query({ entities = { map:id() }, with = { "map/default/sun", "DirectionalLight" } })
+    return world:query({ iter_many = world:descendants(map:id()), with = { "map/default/sun", "DirectionalLight" } })
 end
 
 local function near(a, b, tolerance) return a ~= nil and math.abs(a - b) < (tolerance or 1e-3) end
@@ -86,6 +87,23 @@ app:add_systems(Update, { World, Res[Assets[StandardMaterial]], Commands }, func
         suite.assert_test("C5_a_change_relights_the_same_sun_and_redraws_the_box",
             #list == 1 and list[1]:get("DirectionalLight").illuminance == 2000
                 and color ~= nil and near(color.red, 0.9), "suns=" .. #list .. " red=" .. tostring(color and color.red))
+        -- The mod's own file is written again with the same bytes: the watcher reloads it.
+        local path = "assets/modules/map/default/client/init.lua"
+        write_file_bytes(path, read_file_bytes(path))
+        step("reloaded")
+
+    -- The watcher polls the file every 5 s. A reload reaps what the old run spawned, the sun
+    -- included, and the new run builds it again.
+    elseif phase == "reloaded" and clock > 7 then
+        local map = named(world, "map")
+        local list, others = suns(world, map), suns(world, named(world, "other"))
+        local bounds, color = drawn(materials, map)
+        suite.assert_test("C6_after_a_reload_each_map_has_one_sun_and_the_same_box",
+            #list == 1 and list[1]:get("DirectionalLight").illuminance == 2000 and #others == 1
+                and bounds ~= nil and near(bounds.x, 5) and near(bounds.y, 0.5) and near(bounds.z, 3)
+                and color ~= nil and near(color.red, 0.9),
+            string.format("suns=%d other suns=%d half=%s red=%s", #list, #others, tostring(bounds and bounds.x),
+                tostring(color and color.red)))
         map:remove("map/default")
         step("undrawn")
 

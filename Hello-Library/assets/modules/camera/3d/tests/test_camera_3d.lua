@@ -1,9 +1,10 @@
 -- --host
-local Quat = require("bevy::math::Quat")
-
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("Camera3dSuite")
+local helpers = require("modules/core/test_helpers.lua")
+local Quat = require("bevy::math::Quat")
+
+local suite = helpers.create_suite("Camera3dSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -24,7 +25,7 @@ end
 
 local function eyes_of(world, e)
     return world:query({
-        entities = { e:id() },
+        iter_many = world:descendants(e:id()),
         with = { "camera/3d/eye", "Camera" },
         optional = { "Transform" },
     })
@@ -102,7 +103,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "moved" and clock > 0.3 then
         local ok, got = placed(world, first_eye, { x = 2, y = 1, z = 1 }, -1, 0.4)
         suite.assert_test("D5_changing_the_offset_moves_the_eye", ok, got)
-        me:patch({ ["core/net/local"] = null })
+        commands:entity(me:id()):remove("core/net/local")
         step("away")
 
     elseif phase == "away" and clock > 0.2 then
@@ -131,12 +132,29 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "other local" and #eyes_of(world, other) > 0 and clock > 0.3 then
         local ok, got = placed(world, eyes_of(world, other)[1]:id(), { x = -4, y = 2, z = 0 }, 0.3, 0.1)
         suite.assert_test("D8_a_carrier_that_becomes_local_gets_an_eye_already_aimed", ok, got)
+        -- The mod's own file is written again with the same bytes: the watcher reloads it.
+        local path = "assets/modules/camera/3d/client/init.lua"
+        write_file_bytes(path, read_file_bytes(path))
+        step("reloaded")
+
+    -- The watcher polls the file every 5 s. A reload reaps what the old run spawned, the eyes
+    -- included, and the new run spawns them again.
+    elseif phase == "reloaded" and clock > 7 then
+        local eyes, other_eyes = eyes_of(world, me), eyes_of(world, other)
+        local ok, got = false, "no eye"
+        if #eyes == 1 then
+            first_eye = eyes[1]:id()
+            ok, got = placed(world, first_eye, { x = 2, y = 1, z = 1 }, -1, 0.4)
+        end
+        suite.assert_test("D10_after_a_reload_each_carrier_has_one_eye_on_and_aimed",
+            #eyes == 1 and eyes[1]:get("Camera").is_active == true and ok and #other_eyes == 1,
+            "eyes=" .. #eyes .. " other eyes=" .. #other_eyes .. " " .. got)
         me:remove("camera/3d")
         step("removed")
 
     elseif phase == "removed" and clock > 0.3 then
         suite.assert_test("D9_removal_despawns_the_eye", #eyes_of(world, me) == 0
-            and #world:query({ entities = { first_eye }, with = { "Camera" } }) == 0, "")
+            and #world:query({ iter_many = { first_eye }, with = { "Camera" } }) == 0, "")
         phase = "done"
         suite.finish("Camera3dSuite")
     end

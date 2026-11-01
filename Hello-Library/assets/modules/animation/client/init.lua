@@ -125,13 +125,14 @@ app:add_systems(Update, {
     for _, e in ipairs(characters:iter()) do
         local a = e:get("animation")
         local at = e:get("Transform").translation
+        local last = (e:get("animation/motion") or {}).at
         local vx, vy, vz
         local body = e:get("Velocity3d")
         if body and body.linvel then
             vx, vy, vz = body.linvel.x or 0, body.linvel.y or 0, body.linvel.z or 0
         else
-            local last = (e:get("animation/motion") or {}).at or at
-            vx, vy, vz = (at.x - last.x) / dt, (at.y - last.y) / dt, (at.z - last.z) / dt
+            local from = last or at
+            vx, vy, vz = (at.x - from.x) / dt, (at.y - from.y) / dt, (at.z - from.z) / dt
         end
         local state, speed = "idle", 1
         local action = e:get("animation/action")
@@ -149,7 +150,9 @@ app:add_systems(Update, {
             end
         end
         local playing = e:get("animation/playing") or {}
-        commands:entity(e:id()):patch({ ["animation/motion"] = { at = { x = at.x, y = at.y, z = at.z } } })
+        if last == nil or last.x ~= at.x or last.y ~= at.y or last.z ~= at.z then
+            commands:entity(e:id()):patch({ ["animation/motion"] = { at = { x = at.x, y = at.y, z = at.z } } })
+        end
         if playing.state ~= state or playing.speed ~= speed then
             commands:entity(e:id()):patch({ ["animation/playing"] = { state = state, speed = speed } })
         end

@@ -12,7 +12,7 @@ app:add_systems(First, {
     for _, e in ipairs(players:iter()) do
         local sync = e:get("core/net/sync")
         local entries = {}
-        if type(sync) == "table" then
+        if sync then
             for name in pairs(sync) do
                 if name:sub(1, #"input/game/abilities/") == "input/game/abilities/" then entries[name] = null end
             end

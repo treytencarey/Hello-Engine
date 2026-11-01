@@ -1,8 +1,10 @@
 -- --host
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileServerSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+
+local suite = helpers.create_suite("ProjectileServerSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })

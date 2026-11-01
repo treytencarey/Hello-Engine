@@ -8,9 +8,13 @@
 --   C3 the client does not despawn the ball: the server ends it
 --   C4 it reacts once: the hidden ball flies on until the server ends it, and what it
 --      enters next shows nothing
+--   C5 taken off a ball it hid: the ball shows again, and its `projectile/explode/hit` goes
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileExplodeClientSuite")
+local helpers = require("modules/core/test_helpers.lua")
+local json = require("modules/core/dkjson.lua")
+
+local suite = helpers.create_suite("ProjectileExplodeClientSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -70,7 +74,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local ball = world:query({ with = { "zz/ball" }, optional = { "projectile/explode/hit", "Visibility" } })[1]
         suite.assert_test("C2_the_ball_is_hidden_and_marked",
             ball ~= nil and ball:has("projectile/explode/hit") and ball:get("Visibility") == "Hidden",
-            "visibility=" .. require("modules/core/dkjson.lua").encode(ball and ball:get("Visibility")))
+            "visibility=" .. json.encode(ball and ball:get("Visibility")))
         step("stays")
 
     elseif phase == "stays" then
@@ -80,6 +84,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             #world:query({ with = { "zz/ball" } }) == 1, "")
         local blasts = #world:query({ with = { "explosion" } })
         suite.assert_test("C4_it_reacts_once", blasts == 1, "explosions=" .. blasts)
+        commands:entity(world:query({ with = { "zz/ball" } })[1]:id()):remove("projectile/explode")
+        step("taken off")
+
+    elseif phase == "taken off" then
+        if clock < 0.3 then return end
+        local ball = world:query({ with = { "zz/ball" }, optional = { "projectile/explode/hit", "Visibility" } })[1]
+        suite.assert_test("C5_taken_off_the_ball_shows_again_and_is_no_longer_marked",
+            ball ~= nil and not ball:has("projectile/explode/hit") and ball:get("Visibility") == "Inherited",
+            "visibility=" .. json.encode(ball and ball:get("Visibility"))
+                .. " hit=" .. tostring(ball ~= nil and ball:has("projectile/explode/hit")))
         suite.finish("PROJECTILE_EXPLODE_CLIENT")
         phase = "done"
     end

@@ -34,7 +34,8 @@ app:add_systems(Update, {
 }, function(burning, commands)
     for _, e in ipairs(burning:iter()) do
         local x = e:get("explosion")
-        local left = (e:get("cooldown/left") or {})["explosion/burning"]
+        local timers = e:get("cooldown/left")
+        local left = timers["explosion/burning"]
         if left and x.duration and x.duration > 0 then
             local size = math.max(0.01, x.radius * (1 - left / x.duration))
             commands:entity(e:id()):patch({ Transform = { scale = { x = size, y = size, z = size } } })

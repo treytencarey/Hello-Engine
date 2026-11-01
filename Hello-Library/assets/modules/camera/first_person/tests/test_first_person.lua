@@ -1,9 +1,10 @@
 -- --host
-local Quat = require("bevy::math::Quat")
-
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("FirstPersonSuite")
+local helpers = require("modules/core/test_helpers.lua")
+local Quat = require("bevy::math::Quat")
+
+local suite = helpers.create_suite("FirstPersonSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -24,7 +25,7 @@ end
 
 local function eye_of(world, e)
     for _, eye in ipairs(world:query({
-        entities = { e:id() },
+        iter_many = world:descendants(e:id()),
         with = { "camera/3d/eye", "Camera" },
         optional = { "Transform" },
     })) do
@@ -129,7 +130,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             near(cam.yaw, -0.25) and near(cam.pitch, -1.4)
                 and near(t.rotation.x, want.x) and near(t.rotation.y, want.y) and near(t.rotation.w, want.w),
             string.format("yaw=%s pitch=%s", tostring(cam.yaw), tostring(cam.pitch)))
-        me:patch({ ["core/net/local"] = null })
+        commands:entity(me:id()):remove("core/net/local")
         step("away")
 
     elseif phase == "away" and clock > 0.2 then
@@ -141,7 +142,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "back" and clock > 0.2 then
         local eye = eye_of(world, me)
-        local eyes = #world:query({ entities = { me:id() }, with = { "camera/3d/eye" } })
+        local eyes = #world:query({ iter_many = world:descendants(me:id()), with = { "camera/3d/eye" } })
         suite.assert_test("F7_coming_back_turns_the_same_eye_on",
             eyes == 1 and eye:id() == first_eye and eye:get("Camera").is_active == true, "eyes=" .. eyes)
         me:remove("camera/first_person")

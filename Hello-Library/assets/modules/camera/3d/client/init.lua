@@ -11,9 +11,6 @@
 --
 -- camera/3d/eye = {}
 
--- `camera` arrives as `{}` and its own mod may load a frame later, so a new eye can be
--- spawned before `camera` has its defaults. It starts level; filling them is a change to
--- `camera`, and Camera3dAim turns the eye then.
 local Quat = require("bevy::math::Quat")
 
 local function follow(cam, c3d)
@@ -38,6 +35,9 @@ app:add_systems(First, {
     end
 end):in_set("camera/3d/init")
 
+-- `camera` arrives as `{}` and its own mod may load a frame later, so a new eye can be
+-- spawned before `camera` has its defaults. It starts level; filling them is a change to
+-- `camera`, and `camera/3d/aim` turns the eye then.
 app:add_systems(First, {
     Query[{
         ["or"] = {

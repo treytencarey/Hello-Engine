@@ -1,7 +1,9 @@
 -- --host
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("Camera2dSuite")
+local helpers = require("modules/core/test_helpers.lua")
+
+local suite = helpers.create_suite("Camera2dSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -22,7 +24,7 @@ end
 
 local function eyes_of(world, e)
     return world:query({
-        entities = { e:id() },
+        iter_many = world:descendants(e:id()),
         with = { "camera/2d/eye", "Camera" },
         optional = { "Transform" },
     })
@@ -136,7 +138,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("reset")
 
     elseif phase == "reset" and clock > 0.3 then
-        me:patch({ ["core/net/local"] = null })
+        commands:entity(me:id()):remove("core/net/local")
         step("away")
 
     elseif phase == "away" and clock > 0.2 then
@@ -171,12 +173,33 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "exact" and exact ~= nil then
         suite.assert_test("C11_a_zoom_scales_the_eye_in_the_same_frame", exact.ok, exact.got)
+        -- `input` takes a scroll off on the first frame without one; the reload must not
+        -- find this one still there.
+        commands:entity(me:id()):remove("input/game/camera_2d/zoom")
+        -- The mod's own file is written again with the same bytes: the watcher reloads it.
+        local path = "assets/modules/camera/2d/client/init.lua"
+        write_file_bytes(path, read_file_bytes(path))
+        step("reloaded")
+
+    -- The watcher polls the file every 5 s. A reload reaps what the old run spawned, the eyes
+    -- included, and the new run spawns them again.
+    elseif phase == "reloaded" and clock > 7 then
+        local eyes, other_eyes = eyes_of(world, me), eyes_of(world, other)
+        local ok, got = false, "no eye"
+        if #eyes == 1 then
+            first_eye = eyes[1]:id()
+            ok, got = placed(world, first_eye, AT, 500, 1.5)
+        end
+        suite.assert_test("C17_after_a_reload_each_carrier_has_one_eye_on_and_placed",
+            #eyes == 1 and eyes[1]:get("Camera").is_active == true and ok
+                and #other_eyes == 1 and (me:get("input/game") or {}).camera_2d ~= nil,
+            "eyes=" .. #eyes .. " other eyes=" .. #other_eyes .. " " .. got)
         me:patch({ ["camera/third_person"] = {} })
         step("switched")
 
     elseif phase == "switched" and clock > 0.5 then
         local bindings = me:get("input/game") or {}
-        local eyes_3d = world:query({ entities = { me:id() }, with = { "camera/3d/eye", "Camera" } })
+        local eyes_3d = world:query({ iter_many = world:descendants(me:id()), with = { "camera/3d/eye", "Camera" } })
         suite.assert_test("C12_switching_to_third_person_removes_the_2d_camera_eye_and_binding",
             me:get("camera/2d") == nil and #eyes_of(world, me) == 0 and bindings.camera_2d == nil
                 and #eyes_3d == 1, "3d eyes=" .. #eyes_3d)

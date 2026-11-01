@@ -72,7 +72,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("C2_a_gone_ability_is_unbound_and_a_changed_key_rebound",
             b.slow == nil and (b.fireball or {}).key == "KeyR",
             "slow=" .. tostring(b.slow ~= nil) .. " fireball=" .. tostring((b.fireball or {}).key))
-        world:get_entity(player_id):patch({ input = null, ["input/game"] = null })
+        commands:entity(player_id):remove("input", "input/game")
         step("input_gone")
 
     elseif phase == "input_gone" then
@@ -89,7 +89,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "pressed" then
         if clock < 0.3 then return end
         suite.assert_test("C4_a_local_press_starts_the_cooldown", p:has("abilities/fireball/cooling"), "")
-        world:get_entity(player_id):patch({ abilities = null })
+        commands:entity(player_id):remove("abilities")
         step("removed")
 
     elseif phase == "removed" then

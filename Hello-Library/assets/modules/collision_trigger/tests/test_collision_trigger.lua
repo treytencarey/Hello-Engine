@@ -1,7 +1,9 @@
 -- --host
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("CollisionTriggerSuite")
+local helpers = require("modules/core/test_helpers.lua")
+
+local suite = helpers.create_suite("CollisionTriggerSuite")
 
 local function zone(commands, x, name)
     commands:spawn({
@@ -47,7 +49,7 @@ app:add_systems(Update, { World }, function(world)
             local ids = ct[kind] or {}
             if #ids > 0 then
                 for _, probe in ipairs(world:query({
-                    entities = ids,
+                    iter_many = ids,
                     with = { "zz/probe" },
                     without = { "core/net/peer/mirror" },
                 })) do
@@ -124,7 +126,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "staying" and clock > 1 then
         expect("T3_nothing_while_nothing_changes", "")
-        z.main:patch({ collision_trigger = null })
+        commands:entity(z.main:id()):remove("collision_trigger")
         step("removed")
 
     elseif phase == "removed" and not z.main:has("Sensor3d") and not z.main:has("CollidingEntities3d")

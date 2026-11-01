@@ -34,7 +34,7 @@ app:add_systems(First, {
             ["abilities/grenade"] = {},
         })
     end
-end):in_set("player/setup")
+end):in_set("player/init")
 
 -- Who the player is, from the join ticket its client presented (`core/player/attest`).
 app:add_systems(Update, {

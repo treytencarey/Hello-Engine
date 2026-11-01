@@ -1,10 +1,12 @@
 -- --host (windowed: a headless run has no StandardMaterial assets)
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileClientSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
 local Assets = require("bevy::asset::Assets")
 local StandardMaterial = require("bevy::pbr::StandardMaterial")
+
+local suite = helpers.create_suite("ProjectileClientSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })

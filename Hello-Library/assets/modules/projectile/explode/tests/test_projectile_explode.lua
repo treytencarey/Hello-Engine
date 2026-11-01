@@ -10,7 +10,9 @@
 --   E6 the caster lists it in `projectile/casts` while it flies, and not once it is gone
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("ProjectileExplodeSuite")
+local helpers = require("modules/core/test_helpers.lua")
+
+local suite = helpers.create_suite("ProjectileExplodeSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
@@ -93,7 +95,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and math.abs((at.x or 0) - 5.5) < 0.6 and named(world, "fired") == nil,
             string.format("blasts=%d at.x=%s", #blasts, tostring(at.x)))
         local kept = named(world, "kept")
-        world:get_entity(kept:id()):patch({ ["projectile/explode"] = null })
+        commands:entity(kept:id()):remove("projectile/explode")
         step("removed")
 
     elseif phase == "removed" then

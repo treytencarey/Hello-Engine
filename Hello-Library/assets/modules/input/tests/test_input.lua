@@ -1,25 +1,28 @@
 -- --host
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("InputSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
+
+local suite = helpers.create_suite("InputSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
 end)
 
-local ACTIONS = {
-    "input/game/movement/forward",
-    "input/game/movement/jump",
-    "input/game/look/zoom",
-    "input/ui/menu/pick",
-    "input/ui/menu/point",
-}
-
 local function player(world)
     for _, e in ipairs(world:query({
         with = { "zz/player" },
-        optional = { "input", "input/held", "input/actions", table.unpack(ACTIONS) },
+        optional = {
+            "input",
+            "input/held",
+            "input/actions",
+            "input/game/movement/forward",
+            "input/game/movement/jump",
+            "input/game/look/zoom",
+            "input/ui/menu/pick",
+            "input/ui/menu/point",
+        },
     })) do
         return e
     end
@@ -126,7 +129,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("w pressed")
 
     elseif phase == "w pressed" and p:has("input/game/movement/forward") and clock > 0.2 then
-        p:patch({ ["input/game/movement/forward"] = null })
+        commands:entity(p:id()):remove("input/game/movement/forward")
         step("output removed")
 
     elseif phase == "output removed" and clock > 0.2 then

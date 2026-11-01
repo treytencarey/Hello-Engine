@@ -67,7 +67,6 @@ app:add_systems(First, {
         local entity = commands:entity(e:id())
         entity:try_remove("collision_trigger")
         if e:has("projectile/explode/hit") then
-            entity:try_remove("projectile/explode/hit")
             entity:try_insert({ Visibility = "Inherited" })
         end
     end

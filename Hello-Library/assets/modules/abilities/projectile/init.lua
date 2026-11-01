@@ -24,11 +24,30 @@ app:add_systems(First, {
 }, function(launches, commands)
     for _, e in ipairs(launches:iter()) do
         local a = e:get("abilities/projectile")
-        local look = Quat.mul_quat(Quat.from_rotation_y(a.yaw or 0),
-            Quat.from_rotation_x(a.pitch or 0))
+        if a.at == nil or a.yaw == nil or a.pitch == nil or a.speed == nil then
+            commands:entity(e:id()):patch({
+                ["abilities/projectile"] = {
+                    at = a.at or { x = 0, y = 0, z = 0 },
+                    yaw = a.yaw or 0,
+                    pitch = a.pitch or 0,
+                    speed = a.speed or 20,
+                },
+            })
+        end
+    end
+end):in_set("abilities/projectile/init")
+
+-- After the defaults, so a launch reads them in the frame it is added.
+app:add_systems(First, {
+    Query[{ added = { "abilities/projectile" } }],
+    Commands,
+}, function(launches, commands)
+    for _, e in ipairs(launches:iter()) do
+        local a = e:get("abilities/projectile")
+        local look = Quat.mul_quat(Quat.from_rotation_y(a.yaw), Quat.from_rotation_x(a.pitch))
         local along = Quat.mul_vec3(look, { x = 0, y = 0, z = -1 })
-        local at = a.at or { x = 0, y = 0, z = 0 }
-        local speed = a.speed or 20
+        local at = a.at
+        local speed = a.speed
         commands:entity(e:id()):patch({
             projectile = {
                 from = { x = at.x + along.x, y = at.y + along.y, z = at.z + along.z },
@@ -40,7 +59,7 @@ app:add_systems(First, {
             },
         })
     end
-end):in_set("abilities/projectile/launch")
+end):in_set("abilities/projectile/launch"):after("abilities/projectile/init")
 
 -- `abilities/projectile` was taken off an entity that stays: the `projectile` it added goes.
 -- A despawned launch is in the `removed` rows too, which `try_remove` passes by.

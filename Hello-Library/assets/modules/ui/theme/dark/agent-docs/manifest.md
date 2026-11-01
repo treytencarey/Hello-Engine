@@ -23,3 +23,7 @@ A dark theme: dark panels, light text, blue accents. Extends `ui/theme`.
 ```lua
 commands:spawn({ ["ui/theme/dark"] = {} })
 ```
+
+## Notes
+
+- Its colors are written once, when `ui/theme` arrives; a later patch of `ui/theme` (a role adjusted live) stays until `ui/theme` is added again or this mod reloads.

@@ -35,7 +35,7 @@ app:add_systems(First, {
             commands:entity(e:id()):patch({ abilities = { grenade = { key = g.key, cooldown = g.cooldown } } })
         end
     end
-end):in_set("abilities/grenade")
+end):in_set("abilities/grenade/init")
 
 app:add_systems(Update, {
     Query[{

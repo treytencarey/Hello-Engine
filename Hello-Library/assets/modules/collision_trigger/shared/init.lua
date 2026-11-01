@@ -2,9 +2,9 @@
 -- who came and who went.
 --
 -- collision_trigger = {
---     entered = { <id>, ... },
---     exited = { <id>, ... },
---     inside = { <id>, ... },
+--     entered = { <entity>, ... },
+--     exited = { <entity>, ... },
+--     inside = { <entity>, ... },
 -- }
 --
 -- Writes are `try_` commands: they land after the system, and a synced copy may be despawned
@@ -26,7 +26,7 @@ app:add_systems(First, {
             ActiveEvents3d = "COLLISION_EVENTS",
         })
     end
-end):in_set("collision_trigger/setup")
+end):in_set("collision_trigger/init")
 
 app:add_systems(First, {
     Query[{
@@ -51,20 +51,29 @@ app:add_systems(First, {
     for _, e in ipairs(triggers:iter()) do
         local before = e:get("collision_trigger").inside or {}
         local inside = e:get("CollidingEntities3d")
-        local was, now = {}, {}
         local entered, exited = {}, {}
-        for _, id in ipairs(before) do
-            was[id] = true
-        end
         for _, id in ipairs(inside) do
-            now[id] = true
-            if not was[id] then
+            local was = false
+            for _, old in ipairs(before) do
+                if old == id then
+                    was = true
+                    break
+                end
+            end
+            if not was then
                 entered[#entered + 1] = id
             end
         end
-        for id in pairs(was) do
-            if not now[id] then
-                exited[#exited + 1] = id
+        for _, old in ipairs(before) do
+            local stays = false
+            for _, id in ipairs(inside) do
+                if id == old then
+                    stays = true
+                    break
+                end
+            end
+            if not stays then
+                exited[#exited + 1] = old
             end
         end
         if #entered > 0 or #exited > 0 then

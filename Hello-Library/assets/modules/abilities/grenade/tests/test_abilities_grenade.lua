@@ -10,19 +10,19 @@
 --   G5 ...and another ability's entry stays
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesGrenadeSuite")
+local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+
+local suite = helpers.create_suite("AbilitiesGrenadeSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 end)
 
-local COOL = "abilities/grenade/cooling"
-
 local function the_player(world)
     return world:query({
         with = { "zz/player" },
-        optional = { "abilities/grenade", "abilities", "cooldown", COOL },
+        optional = { "abilities/grenade", "abilities", "cooldown", "abilities/grenade/cooling" },
     })[1]
 end
 
@@ -57,14 +57,14 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         suite.assert_test("G2_it_registers_in_abilities", a.key == "KeyG" and a.cooldown == 2,
             "entry key=" .. tostring(a.key))
         -- A short debuff starts the cooldown with no press.
-        patch({ cooldown = { [COOL] = { remaining = 0.3 } } })
+        patch({ cooldown = { ["abilities/grenade/cooling"] = { remaining = 0.3 } } })
         step("debuff")
 
     elseif phase == "debuff" then
         if clock < 0.6 then return end
         suite.assert_test("G6_a_cooldown_started_by_something_else_lobs_nothing",
-            #world:query({ with = { "abilities/projectile" } }) == 0 and not p:has(COOL),
-            "launches=" .. #world:query({ with = { "abilities/projectile" } }) .. " cooling=" .. tostring(p:has(COOL)))
+            #world:query({ with = { "abilities/projectile" } }) == 0 and not p:has("abilities/grenade/cooling"),
+            "launches=" .. #world:query({ with = { "abilities/projectile" } }) .. " cooling=" .. tostring(p:has("abilities/grenade/cooling")))
         patch({ ["input/game/abilities/grenade"] = { value = 1 } })
         step("fired")
 
@@ -79,9 +79,9 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         suite.assert_test("G3_a_press_lobs_a_falling_launch_from_the_player",
             #list == 1 and (launch.at or {}).x == 3 and (launch.at or {}).y == 51
                 and launch.speed == 20 and launch.radius == 0.2 and (shot.gravity or 0) > 0
-                and list[1]:get("projectile/explode") == nil and p:has(COOL),
+                and list[1]:get("projectile/explode") == nil and p:has("abilities/grenade/cooling"),
             "launches=" .. #list .. " gravity=" .. tostring(shot.gravity))
-        patch({ ["abilities/grenade"] = null })
+        commands:entity(player_id):remove("abilities/grenade")
         step("removed")
 
     elseif phase == "removed" then
@@ -89,9 +89,9 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         local timers = p:get("cooldown") or {}
         local list = p:get("abilities") or {}
         suite.assert_test("G4_taken_off_its_entry_and_cooldown_go",
-            list.grenade == nil and timers[COOL] == nil and not p:has(COOL),
-            "entry=" .. tostring(list.grenade ~= nil) .. " timer=" .. tostring(timers[COOL] ~= nil)
-                .. " cooling=" .. tostring(p:has(COOL)))
+            list.grenade == nil and timers["abilities/grenade/cooling"] == nil and not p:has("abilities/grenade/cooling"),
+            "entry=" .. tostring(list.grenade ~= nil) .. " timer=" .. tostring(timers["abilities/grenade/cooling"] ~= nil)
+                .. " cooling=" .. tostring(p:has("abilities/grenade/cooling")))
         suite.assert_test("G5_another_abilitys_entry_stays", (list.zzother or {}).key == "KeyE", "")
         suite.finish("ABILITIES_GRENADE")
         phase = "done"

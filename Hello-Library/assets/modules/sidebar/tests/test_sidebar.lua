@@ -1,9 +1,12 @@
 -- --host (windowed: UI layout and Interaction need a window)
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
-local suite = require("modules/core/test_helpers.lua").create_suite("SidebarSuite")
+local helpers = require("modules/core/test_helpers.lua")
+local Instances = require("modules/core/instances.lua")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
+
+local suite = helpers.create_suite("SidebarSuite")
 
 local camera
 
@@ -14,7 +17,6 @@ end)
 
 -- What a script spawns is linked to its file. The panel stand-in below spawns its buttons
 -- as a panel mod would, linked to that mod's file.
-local Instances = require("modules/core/instances.lua")
 local PANEL = "modules/zz_panel/init.lua"
 Instances.mark_mod_script(PANEL)
 
@@ -92,7 +94,7 @@ local function icons(world)
 end
 
 local function letters(world, b)
-    return world:query({ entities = { b:id() }, with = { "Text" } })
+    return world:query({ iter_many = world:descendants(b:id()), with = { "Text" } })
 end
 
 -- A click on an icon, as Bevy's picking triggers it: a Pointer<Click> on the entity it lands on.
@@ -223,7 +225,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("closing with a panel open")
 
     elseif phase == "closing with a panel open" and clock > 0.3 then
-        me:patch({ ["sidebar/open"] = null })
+        commands:entity(me:id()):remove("sidebar/open")
         step("closed with panel")
 
     elseif phase == "closed with panel" and clock > 0.3 then
@@ -251,7 +253,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("open before leaving")
 
     elseif phase == "open before leaving" and clock > 0.4 then
-        me:patch({ ["core/net/local"] = null })
+        commands:entity(me:id()):remove("core/net/local")
         step("left")
 
     elseif phase == "left" and clock > 0.3 then
@@ -303,7 +305,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "panel gone" and clock > 0.3 then
         suite.assert_test("R15_a_panels_reload_takes_its_buttons_with_their_letters",
             #world:query({ with = { "sidebar/button" } }) == 0 and #icons(world) == 0
-                and #world:query({ entities = { bar(world):id() }, with = { "Text" } }) == 0, "")
+                and #world:query({ iter_many = world:descendants(bar(world):id()), with = { "Text" } }) == 0, "")
         player(world, "me"):remove("input")
         step("no input")
 

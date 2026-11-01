@@ -5,6 +5,8 @@
 --   P2 its own fields reach the projectile
 --   P3 the pitch aims it: a look straight up launches straight up
 --   P4 taken off an entity that stays: the `projectile` goes
+--   P5 a launch with no `at`, look or speed gets their defaults: 1 m along -Z from the
+--      origin, at 20 m/s
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesProjectileSuite")
@@ -38,6 +40,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["abilities/projectile"] = { at = { x = 50, y = 51, z = 0 }, yaw = 0, pitch = math.pi / 2,
                                          speed = 10, gravity = 0, lifetime = 30 },
         })
+        commands:spawn({
+            ["zz/shot"] = { name = "bare" },
+            ["abilities/projectile"] = { gravity = 0, lifetime = 30 },
+        })
         step("launched")
 
     elseif phase == "launched" then
@@ -56,7 +62,15 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local u = (up and up:get("projectile") or {}).velocity or {}
         suite.assert_test("P3_the_pitch_aims_it", near(u.x, 0) and near(u.y, 10) and near(u.z, 0),
             string.format("v=(%s,%s,%s)", tostring(u.x), tostring(u.y), tostring(u.z)))
-        world:get_entity(level:id()):patch({ ["abilities/projectile"] = null })
+        local bare = named(world, "bare")
+        local b = bare and bare:get("projectile") or {}
+        local bv, bf = b.velocity or {}, b.from or {}
+        suite.assert_test("P5_a_bare_launch_gets_the_defaults",
+            near(bv.x, 0) and near(bv.y, 0) and near(bv.z, -20)
+                and near(bf.x, 0) and near(bf.y, 0) and near(bf.z, -1),
+            string.format("v=(%s,%s,%s) from=(%s,%s,%s)", tostring(bv.x), tostring(bv.y), tostring(bv.z),
+                tostring(bf.x), tostring(bf.y), tostring(bf.z)))
+        commands:entity(level:id()):remove("abilities/projectile")
         step("removed")
 
     elseif phase == "removed" then

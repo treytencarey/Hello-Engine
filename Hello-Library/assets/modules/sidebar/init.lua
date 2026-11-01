@@ -135,10 +135,11 @@ app:add_systems(Update, {
         commands:entity(e:id()):insert({ ["sidebar/open"] = {} })
     end
     for _, e in ipairs(closing:iter()) do
-        local newest
+        local newest, newest_order
         for _, b in ipairs(open_buttons:iter()) do
-            if newest == nil or b:get("sidebar/button/open").order > newest:get("sidebar/button/open").order then
-                newest = b
+            local opened = b:get("sidebar/button/open")
+            if newest == nil or opened.order > newest_order then
+                newest, newest_order = b, opened.order
             end
         end
         if newest ~= nil then
@@ -223,7 +224,8 @@ app:add_systems(Update, {
             else
                 local order = 0
                 for _, o in ipairs(open:iter()) do
-                    order = math.max(order, o:get("sidebar/button/open").order)
+                    local opened = o:get("sidebar/button/open")
+                    order = math.max(order, opened.order)
                 end
                 commands:entity(event.entity):insert({ ["sidebar/button/open"] = { order = order + 1 } })
             end
@@ -247,7 +249,8 @@ app:add_systems(Update, {
         for _, bar in ipairs(bars:iter()) do
             local icons = buttons:iter_many(buttons:iter_descendants(bar:id()))
             table.sort(icons, function(a, b)
-                return a:get("sidebar/button").order < b:get("sidebar/button").order
+                local first, second = a:get("sidebar/button"), b:get("sidebar/button")
+                return first.order < second.order
             end)
             local row = commands:entity(bar:id())
             for i, b in ipairs(icons) do
