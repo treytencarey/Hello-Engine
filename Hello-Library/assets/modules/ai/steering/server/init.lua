@@ -47,7 +47,7 @@ app:add_systems(First, {
             ["ai/steering"] = {
                 speed = s.speed or 2,
                 arrive_radius = s.arrive_radius or 0.9,
-                pass_radius = s.pass_radius or 1.44,
+                pass_radius = s.pass_radius or 0.7,
                 height_radius = s.height_radius or 1.5,
                 ease_radius = s.ease_radius or 2.25,
                 ease_floor = s.ease_floor or 0.25,

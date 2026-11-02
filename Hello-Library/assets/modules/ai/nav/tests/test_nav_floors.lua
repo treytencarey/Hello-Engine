@@ -41,9 +41,7 @@ local function agent(commands, name, x, y, z)
     commands:spawn({
         ["zz/name"] = { name = name },
         ["ai/nav"] = {},
-        -- Turning in the default 1.44 m from a waypoint cuts the corner of the ramp's wall, inside
-        -- the 1 m a bake leaves around it.
-        ["ai/steering"] = { speed = 4, pass_radius = 0.7 },
+        ["ai/steering"] = { speed = 4 },
         Transform = { translation = { x = x, y = y, z = z } },
         RigidBody3d = "Dynamic",
         Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },

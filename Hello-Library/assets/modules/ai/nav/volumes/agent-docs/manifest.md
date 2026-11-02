@@ -59,3 +59,4 @@ commands:spawn({
 - A floor that comes later with no scene and no volume changing is not seen, as a plain collider arriving or going rebakes nothing. Add it before the bake, or touch the volume.
 - Removing the last volume takes the regions. With no regions, `ai/nav` has no graph to route over.
 - A reload reaps its regions and bakes them again.
+- A ramp's bare side can block an agent, since paths hug rectangle borders: give a ramp walls or rails.

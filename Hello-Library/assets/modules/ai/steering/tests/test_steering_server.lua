@@ -190,7 +190,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     if phase == "filled" and w and (w:get("ai/steering") or {}).arrive_radius ~= nil and w:has("ai/steering/state") and clock > 0.5 then
         local s = w:get("ai/steering")
         suite.assert_test("S1_missing_fields_get_defaults_and_given_ones_stay",
-            s.speed == 3 and near(s.arrive_radius, 0.9) and near(s.pass_radius, 1.44) and near(s.ease_radius, 2.25)
+            s.speed == 3 and near(s.arrive_radius, 0.9) and near(s.pass_radius, 0.7) and near(s.ease_radius, 2.25)
                 and near(s.ease_floor, 0.25) and near(s.separation_radius, 1.5) and near(s.separation_strength, 1.2)
                 and s.turn_speed == 6 and near(s.stall_sample, 0.5) and near(s.stall_distance, 0.25)
                 and near(s.stall_timeout, 1.5), "")
@@ -282,7 +282,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         suite.assert_test("S13_it_arrives_at_the_last_waypoint", left < 1.1, "left " .. left)
         suite.assert_test("S14_arrived_it_stands_still", horizontal(w) < 0.2, "speed " .. horizontal(w))
         suite.assert_test("S15_a_waypoint_on_the_way_only_needs_brushing_past",
-            seen.flip ~= nil and seen.flip > 1.2 and seen.flip < 1.6, "at " .. tostring(seen.flip))
+            seen.flip ~= nil and seen.flip > 0.5 and seen.flip < 0.8, "at " .. tostring(seen.flip))
         suite.assert_test("S16_it_slows_for_the_last_waypoint", seen.slowest ~= nil and seen.slowest < 3 * 0.6,
             "slowest " .. tostring(seen.slowest))
         -- several seconds walking, at twice a second, against hundreds of frames
