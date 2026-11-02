@@ -23,7 +23,7 @@ Turns the `ai/nav/volume`s on an entity and below it into `ai/nav/region`s, chil
 
 - `ai/nav/volume = { hx, hy, hz }`, on the entity or anything below it, added by a child mod or by hand: half extents around that entity's world position. The floor is at the bottom of the volume, and agents walk there.
 - `ai/nav/volumes/due = { at }`: on while a bake is owed, `at` being `Time`'s elapsed seconds when it may start.
-- `ai/nav/volumes/job = { vols, vi, grid, i, rects }`: a sampling bake in progress.
+- `ai/nav/volumes/job = { vols, vi, grid, ix, iz, rects }`: a sampling bake in progress.
 - `ai/nav/volumes/region`: marks a region it spawned. They go with this mod, by `mod_registry`.
 
 ## Systems
@@ -51,7 +51,7 @@ commands:spawn({
 
 ## Notes
 
-- Each cell is one ray down. A ray that lands on a body that is not fixed looks past it once, so something standing on the floor is neither floor nor a hole; the upper of two stacked movers does read as floor. Cells within `max_step` of their neighbours are walkable, and they merge into as few rectangles as it can (`shared/grid.lua`).
+- Each cell is one ray down. A ray sees only fixed bodies, so something standing on the floor is neither floor nor a hole. Cells within `max_step` of their neighbours are walkable, and they merge into as few rectangles as it can (`server/grid.lua`).
 - A floor that comes later with no scene and no volume changing is not seen, as a plain collider arriving or going rebakes nothing. Add it before the bake, or touch the volume.
 - Removing the last volume takes the regions. With no regions, `ai/nav` has no graph to route over.
 - A reload reaps its regions and bakes them again.

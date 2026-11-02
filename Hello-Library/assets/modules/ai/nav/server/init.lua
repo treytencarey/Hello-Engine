@@ -9,11 +9,11 @@
 -- ai/nav/link = { from = <region entity>, to = <region entity>, x, y, z, cost, kind, capability, behavior, one_way }, on any entity
 --
 -- The resource ai/nav/graph = {
---     regions = { { entity, min_x, max_x, min_z, max_z, y, cost, center = { x, y, z } }, ... },
+--     regions = { { entity, min_x, max_x, min_z, max_z, y, cost, center = <a Vec2, its y the world's z> }, ... },
 --     edges = { [<region index>] = { { to, cost, x, y, z, kind, capability, behavior }, ... } },
 -- }
 
-local Graph = require("modules/ai/nav/shared/graph.lua")
+local Graph = require("modules/ai/nav/server/graph.lua")
 
 app:add_systems(First, {
     Query[{ added = { "ai/nav" } }],
@@ -39,7 +39,7 @@ app:add_systems(First, {
     Query[{ with = { "ai/nav/link" } }],
     Commands,
 }, function(touched, regions, links, commands)
-    for _ in ipairs(touched:iter()) do
+    if not touched:is_empty() then
         local list, linked = {}, {}
         for _, e in ipairs(regions:iter()) do
             local r = e:get("ai/nav/region")
@@ -52,7 +52,7 @@ app:add_systems(First, {
                     max_z = r.max_z,
                     y = r.y or 0,
                     cost = r.cost or 1,
-                    center = { x = (r.min_x + r.max_x) * 0.5, y = r.y or 0, z = (r.min_z + r.max_z) * 0.5 },
+                    center = { x = (r.min_x + r.max_x) * 0.5, y = (r.min_z + r.max_z) * 0.5 },
                 }
             end
         end
@@ -60,6 +60,5 @@ app:add_systems(First, {
             linked[#linked + 1] = e:get("ai/nav/link")
         end
         commands:insert_resource("ai/nav/graph", { regions = list, edges = Graph.build_edges(list, linked) })
-        break
     end
 end):in_set("ai/nav/index")

@@ -16,10 +16,10 @@
 -- ai/nav/volume = { hx, hy, hz }: half extents, on an entity whose transform places it
 --
 -- ai/nav/volumes/due = { at = <Time's elapsed seconds when the bake may start> }: while a bake is owed
--- ai/nav/volumes/job = { vols, vi, grid, i, rects }: a sampling bake in progress
+-- ai/nav/volumes/job = { vols, vi, grid, ix, iz, rects }: a sampling bake in progress
 -- ai/nav/volumes/region: marks a region this mod spawned
 
-local Grid = require("modules/ai/nav/volumes/shared/grid.lua")
+local Grid = require("modules/ai/nav/volumes/server/grid.lua")
 local Time = require("bevy::time::Time")
 local On = require("bevy::ecs::prelude::On")
 local SceneInstanceReady = require("bevy::scene::SceneInstanceReady")
@@ -70,9 +70,8 @@ app:add_systems(First, {
     Query[{ with = { "ai/nav/volumes" } }],
     Commands,
 }, function(time, touched, carriers, commands)
-    for _ in ipairs(touched:iter()) do
+    if not touched:is_empty() then
         owe(time, carriers, commands)
-        break
     end
 end):in_set("ai/nav/volumes/watch"):before("ai/nav/volumes/init")
 
@@ -94,10 +93,9 @@ app:add_systems(Update, {
     }],
     Query[{ with = { "ai/nav/volume", "GlobalTransform" } }],
     Query[{ with = { "ai/nav/volumes/region" } }],
-    Query[{ with = { "RigidBody3d" } }],
     ReadRapierContext,
     Commands,
-}, function(time, owed, volumes, baked, bodies, rapier, commands)
+}, function(time, owed, volumes, baked, rapier, commands)
     local now = time:elapsed_secs()
     for _, e in ipairs(owed:iter()) do
         if now >= e:get("ai/nav/volumes/due").at then
@@ -134,25 +132,24 @@ app:add_systems(Update, {
                 else
                     if not job.grid then
                         job.grid = Grid.new(vol.x - vol.hx, vol.z - vol.hz, vol.x + vol.hx, vol.z + vol.hz, v.cell)
-                        job.i = 1
+                        job.ix, job.iz = 1, 1
                     end
                     -- from above the volume, down through it and a little under
                     local top = vol.floor_y + vol.hy * 2 + 2
-                    while job.i <= job.grid.count and budget > 0 do
-                        local x, z = Grid.cell_center(job.grid, Grid.coords(job.grid, job.i))
-                        local from, down, depth = { x = x, y = top, z = z }, { x = 0, y = -1, z = 0 }, vol.hy * 4 + 6
-                        local hit = rapier:cast_ray(from, down, depth, true, {})
-                        -- Something standing on the floor is not floor: look past it. A filter's
-                        -- `flags` do not reach Rapier, so this is by hand, and past one body only.
-                        local body = hit ~= nil and bodies:get(hit.entity)
-                        if body and body:get("RigidBody3d") ~= "Fixed" then
-                            hit = rapier:cast_ray(from, down, depth, true, { exclude_rigid_body = hit.entity })
+                    while job.iz <= job.grid.h and budget > 0 do
+                        local x, z = Grid.cell_center(job.grid, job.ix, job.iz)
+                        -- Something standing on the floor is not floor, so only fixed bodies count.
+                        local hit = rapier:cast_ray({ x = x, y = top, z = z }, { x = 0, y = -1, z = 0 }, vol.hy * 4 + 6, true, {
+                            flags = "ONLY_FIXED",
+                        })
+                        job.grid.floor[job.iz][job.ix] = hit ~= nil and top - hit.toi or false
+                        job.ix = job.ix + 1
+                        if job.ix > job.grid.w then
+                            job.ix, job.iz = 1, job.iz + 1
                         end
-                        job.grid.floor[job.i] = hit ~= nil and top - hit.toi or false
-                        job.i = job.i + 1
                         budget = budget - 1
                     end
-                    if job.i > job.grid.count then
+                    if job.iz > job.grid.h then
                         Grid.mark_walkable(job.grid, v.max_step)
                         for _, r in ipairs(Grid.merge_rects(job.grid)) do
                             job.rects[#job.rects + 1] = r

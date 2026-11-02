@@ -61,6 +61,8 @@ app:add_systems(Startup, { Commands }, function(commands)
     agent(commands, "born", 0, 400, { speed = 2 }, { ["ai/nav/path"] = path(1, { 200, 400 }) })
     -- High up, so its fall is plain to see.
     agent(commands, "high", 0, 440, { speed = 3 }, { Transform = { translation = { x = 0, y = 30, z = 440 } } })
+    -- Told there is no way on while it is still walking.
+    agent(commands, "rerouted", 0, 480, { speed = 3 })
     -- No body, and no velocity of its own.
     commands:spawn({ ["zz/name"] = { name = "bare" }, ["ai/steering"] = {}, Transform = {} })
 end)
@@ -150,6 +152,10 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
             end
         end
     end
+    local stuck = named(world, "stuck")
+    if seen.stuck_speed == nil and stuck and (stuck:get("ai/steering/state") or {}).status == "blocked" then
+        seen.stuck_speed = horizontal(stuck)
+    end
     local passer = named(world, "passer")
     if passer and passer:get("Transform") then
         seen.passer_z = math.min(seen.passer_z, passer:get("Transform").translation.z)
@@ -181,6 +187,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         walk(world, commands, "dropper", path(1, { 200, 320 }))
         walk(world, commands, "long", path(1, { 4, 360 }, { 200, 360 }))
         walk(world, commands, "high", path(1, { 200, 440 }))
+        walk(world, commands, "rerouted", path(1, { 200, 480 }))
         step("walking")
 
     elseif phase == "walking" and clock > 1.5 and clock < 1.8 and not seen.checked_walking then
@@ -251,10 +258,16 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         suite.assert_test("S19_and_walks_it", near(at.x, 12, 1.2) and near(at.z, -6, 1.2),
             string.format("at %.2f %.2f", at.x, at.z))
         walk(world, commands, "walker", path(3))
+        suite.assert_test("S19b_the_one_still_walking_is_at_speed", horizontal(named(world, "rerouted")) > 2,
+            "speed " .. horizontal(named(world, "rerouted")))
+        walk(world, commands, "rerouted", path(2))
         step("no route")
 
-    elseif phase == "no route" and state_of(world, "walker").for_solved == 3 then
+    elseif phase == "no route" and state_of(world, "walker").for_solved == 3 and state_of(world, "rerouted").for_solved == 2 then
         suite.assert_test("S20_an_empty_path_is_idle", state_of(world, "walker").status == "idle", "")
+        suite.assert_test("S20b_told_mid_walk_it_stands_still_rather_than_gliding",
+            state_of(world, "rerouted").status == "idle" and horizontal(named(world, "rerouted")) < 0.05,
+            "speed " .. horizontal(named(world, "rerouted")))
         suite.assert_test("S21_a_neighbour_pushes_it_aside", seen.passer_z < 119.8,
             string.format("passer's least z %.2f", seen.passer_z))
         suite.assert_test("S22_with_no_neighbour_it_goes_straight", seen.control_z > 159.9,
@@ -263,6 +276,8 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
 
     elseif phase == "blocked" and state_of(world, "stuck").status == "blocked" then
         suite.assert_test("S23_against_a_wall_it_is_blocked_in_the_end", true, "")
+        suite.assert_test("S23b_and_it_stops_pushing_that_same_frame", seen.stuck_speed ~= nil and seen.stuck_speed < 0.05,
+            "speed " .. tostring(seen.stuck_speed))
         suite.assert_test("S24_one_walking_freely_is_not", state_of(world, "east").status == "moving", tostring(state_of(world, "east").status))
         cursor_before = state_of(world, "long").cursor
         refills_before = refills
@@ -293,4 +308,6 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         phase = "done"
         suite.finish("SteeringServerSuite")
     end
-end):in_set("zz/steering_suite")
+-- After the walk, so this reads what it wrote before Rapier answers: a wall zeroes a velocity by
+-- itself, and "it stops pushing" could then not fail.
+end):in_set("zz/steering_suite"):after("ai/steering/walk")

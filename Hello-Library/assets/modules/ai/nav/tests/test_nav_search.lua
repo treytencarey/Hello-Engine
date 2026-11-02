@@ -11,7 +11,7 @@
 --   +-------------------------------+
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
-local Graph = require("modules/ai/nav/shared/graph.lua")
+local Graph = require("modules/ai/nav/server/graph.lua")
 
 local suite = helpers.create_suite("NavSearchSuite")
 
@@ -24,7 +24,7 @@ local function region(entity, min_x, max_x, min_z, max_z, cost)
         max_z = max_z,
         y = 0,
         cost = cost or 1,
-        center = { x = (min_x + max_x) * 0.5, y = 0, z = (min_z + max_z) * 0.5 },
+        center = { x = (min_x + max_x) * 0.5, y = (min_z + max_z) * 0.5 },
     }
 end
 
@@ -48,7 +48,8 @@ local function has_edge(edges, from, to)
 end
 
 local function solve(regions, edges, from, to, capabilities)
-    local job = Graph.new_job(from, to, regions[to].center, capabilities)
+    local center = regions[to].center
+    local job = Graph.new_job(from, to, { x = center.x, y = 0, z = center.y }, capabilities)
     while not Graph.step(job, regions, edges, 100) do end
     return job
 end
@@ -77,7 +78,15 @@ app:add_systems(Update, {}, function()
     end)(), "")
 
     local corner = { region("a", 0, 10, 0, 10), region("b", 10, 20, 10, 20) }
-    suite.assert_test("NS5_a_corner_joins", has_edge(Graph.build_edges(corner, {}), 1, 2) ~= nil, "")
+    suite.assert_test("NS5_a_corner_does_not_join", not has_edge(Graph.build_edges(corner, {}), 1, 2), "")
+    local near_corner = { region("a", 0, 10, 0, 10), region("b", 10.2, 20, 10.2, 20) }
+    suite.assert_test("NS5b_nor_a_corner_with_a_hairline_gap", not has_edge(Graph.build_edges(near_corner, {}), 1, 2), "")
+    local short = { region("a", 0, 10, 0, 10), region("b", 10, 20, 9.8, 20) }
+    suite.assert_test("NS5c_nor_a_border_too_short_to_cross", not has_edge(Graph.build_edges(short, {}), 1, 2), "")
+    local door = { region("a", 0, 10, 0, 10), region("b", 10, 20, 9.5, 20) }
+    local through_door = has_edge(Graph.build_edges(door, {}), 1, 2)
+    suite.assert_test("NS5d_half_a_metre_of_border_joins",
+        through_door ~= nil and through_door.x == 10 and through_door.z == 9.75, "")
     local gap = { region("a", 0, 10, 0, 10), region("b", 10.2, 20, 0, 10) }
     suite.assert_test("NS6_a_hairline_gap_still_joins", has_edge(Graph.build_edges(gap, {}), 1, 2) ~= nil, "")
     local apart = { region("a", 0, 10, 0, 10), region("b", 11, 20, 0, 10) }

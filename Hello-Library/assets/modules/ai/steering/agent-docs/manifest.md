@@ -54,6 +54,6 @@ Query[{ changed = { "ai/steering/state" } }]
 ## Notes
 
 - `ai/steering/state` is written only when something changes, and its stall check is sampled, so a walking agent writes it twice a second at most.
-- While `"idle"` or `"blocked"` it stops writing `Velocity3d`, so the body keeps the last velocity until something else changes it: a new path, whatever asked for it, a wall. `"arrived"` stands it still.
+- Each of `"idle"` from an empty path, `"blocked"` and `"arrived"` stands it still, and then it stops writing `Velocity3d`, so whatever else moves the body can.
 - It reads positions from `Transform`, so an agent is a root, never a child of something that moves.
 - Separation looks at every other agent with a path, once per frame each: cost grows with the square of agents walking.

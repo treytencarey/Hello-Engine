@@ -13,7 +13,7 @@
 -- A node's volume says `scene = true`, so only those are taken off when this mod goes: a
 -- sub-component of this mod on a node would have `mod_registry` despawn the map's node with it.
 
-local Quat = require("bevy::math::Quat")
+local Mat3 = require("bevy::math::Mat3")
 
 app:add_systems(First, {
     Query[{ added = { "ai/nav/volumes/scene" } }],
@@ -58,16 +58,9 @@ app:add_systems(First, {
         local name = node:get("Name").name
         if include and string.find(name, include, 1, true) then
             local t = node.GlobalTransform:compute_transform()
-            local ax = Quat.mul_vec3(t.rotation, { x = t.scale.x, y = 0, z = 0 })
-            local ay = Quat.mul_vec3(t.rotation, { x = 0, y = t.scale.y, z = 0 })
-            local az = Quat.mul_vec3(t.rotation, { x = 0, y = 0, z = t.scale.z })
+            local half = Mat3.mul_vec3(Mat3.abs(Mat3.from_quat(t.rotation)), t.scale)
             commands:entity(node:id()):insert({
-                ["ai/nav/volume"] = {
-                    hx = math.abs(ax.x) + math.abs(ay.x) + math.abs(az.x),
-                    hy = math.abs(ax.y) + math.abs(ay.y) + math.abs(az.y),
-                    hz = math.abs(ax.z) + math.abs(ay.z) + math.abs(az.z),
-                    scene = true,
-                },
+                ["ai/nav/volume"] = { hx = half.x, hy = half.y, hz = half.z, scene = true },
             })
         end
     end

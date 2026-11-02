@@ -76,7 +76,7 @@ app:add_systems(Update, {
             added = { "ai/steering/state" },
             changed = { "ai/nav/path" },
         },
-        with = { "ai/steering", Mut["ai/steering/state"], "ai/nav/path", "Transform" },
+        with = { "ai/steering", Mut["ai/steering/state"], "ai/nav/path", "Transform", Mut["Velocity3d"] },
     }],
 }, function(time, paths)
     for _, e in ipairs(paths:iter_mut()) do
@@ -94,6 +94,10 @@ app:add_systems(Update, {
                     stall_t = time:elapsed_secs(),
                 },
             })
+            -- No way to go: it stands still rather than gliding on.
+            if #path.path == 0 then
+                e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
+            end
         end
     end
 end):in_set("ai/steering/start")
@@ -185,6 +189,7 @@ app:add_systems(Update, {
                     writes.stuck_for = moved < s.stall_distance and state.stuck_for + since or 0
                     if writes.stuck_for >= s.stall_timeout then
                         writes.status = "blocked"
+                        e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
                     end
                     writes.stall_x = at.x
                     writes.stall_z = at.z

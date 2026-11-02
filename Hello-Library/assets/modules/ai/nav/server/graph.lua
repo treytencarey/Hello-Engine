@@ -3,16 +3,14 @@
 -- regions, never over world cells, so a map with 400 rooms searches 400 nodes however large
 -- they are.
 --
--- region = { entity, min_x, max_x, min_z, max_z, y, cost, center = { x, y, z } }
+-- region = { entity, min_x, max_x, min_z, max_z, y, cost, center = { x, y } }
 -- edge = { to = <index>, cost, x, y, z, kind, capability, behavior }
+--
+-- A region's `center` is a `Vec2` on the ground: its `y` is the world's z.
 
-local Vec3 = require("bevy::math::Vec3")
+local Vec2 = require("bevy::math::Vec2")
 
 local M = {}
-
-local function dist_xz(a, b)
-    return Vec3.distance({ x = a.x, y = 0, z = a.z }, { x = b.x, y = 0, z = b.z })
-end
 
 local function index_of(regions, entity)
     for i, r in ipairs(regions) do
@@ -33,13 +31,13 @@ function M.build_edges(regions, links)
         local a = regions[i]
         for j = i + 1, #regions do
             local b = regions[j]
-            -- Closer than this counts as touching, at a corner too.
-            local min_x = math.max(a.min_x, b.min_x) - 0.35
-            local max_x = math.min(a.max_x, b.max_x) + 0.35
-            local min_z = math.max(a.min_z, b.min_z) - 0.35
-            local max_z = math.min(a.max_z, b.max_z) + 0.35
-            if min_x <= max_x and min_z <= max_z then
-                local cost = dist_xz(a.center, b.center) * (a.cost + b.cost) * 0.5
+            -- Closer than 0.35 m counts as touching, along a shared border of at least 0.5 m: a
+            -- corner alone is no way through.
+            local min_x, max_x = math.max(a.min_x, b.min_x), math.min(a.max_x, b.max_x)
+            local min_z, max_z = math.max(a.min_z, b.min_z), math.min(a.max_z, b.max_z)
+            local span_x, span_z = max_x - min_x, max_z - min_z
+            if span_x >= -0.35 and span_z >= -0.35 and math.max(span_x, span_z) >= 0.5 then
+                local cost = Vec2.distance(a.center, b.center) * (a.cost + b.cost) * 0.5
                 local x, y, z = (min_x + max_x) * 0.5, math.max(a.y, b.y), (min_z + max_z) * 0.5
                 edges[i][#edges[i] + 1] = { to = j, cost = cost, x = x, y = y, z = z, kind = "walk" }
                 edges[j][#edges[j] + 1] = { to = i, cost = cost, x = x, y = y, z = z, kind = "walk" }
@@ -53,10 +51,10 @@ function M.build_edges(regions, links)
             local a, b = regions[from], regions[to]
             local edge = {
                 to = to,
-                cost = link.cost or dist_xz(a.center, b.center),
+                cost = link.cost or Vec2.distance(a.center, b.center),
                 x = link.x or (a.center.x + b.center.x) * 0.5,
                 y = link.y or math.max(a.y, b.y),
-                z = link.z or (a.center.z + b.center.z) * 0.5,
+                z = link.z or (a.center.y + b.center.y) * 0.5,
                 kind = link.kind or "link",
                 capability = link.capability,
                 behavior = link.behavior,
@@ -83,12 +81,12 @@ end
 -- The region holding a point, the one with the nearest centre where they overlap; else the
 -- nearest within max_snap.
 function M.locate(regions, x, z, max_snap)
-    local point = { x = x, y = 0, z = z }
+    local point = { x = x, y = z }
     local best, best_d2
 
     for i, r in ipairs(regions) do
         if x >= r.min_x and x <= r.max_x and z >= r.min_z and z <= r.max_z then
-            local d2 = Vec3.distance_squared({ x = r.center.x, y = 0, z = r.center.z }, point)
+            local d2 = Vec2.distance_squared(r.center, point)
             if not best_d2 or d2 < best_d2 then
                 best, best_d2 = i, d2
             end
@@ -99,8 +97,8 @@ function M.locate(regions, x, z, max_snap)
     end
 
     for i, r in ipairs(regions) do
-        local nearest = Vec3.clamp(point, { x = r.min_x, y = 0, z = r.min_z }, { x = r.max_x, y = 0, z = r.max_z })
-        local d2 = Vec3.distance_squared(nearest, point)
+        local nearest = Vec2.clamp(point, { x = r.min_x, y = r.min_z }, { x = r.max_x, y = r.max_z })
+        local d2 = Vec2.distance_squared(nearest, point)
         if d2 <= max_snap * max_snap and (not best_d2 or d2 < best_d2) then
             best, best_d2 = i, d2
         end
@@ -158,7 +156,7 @@ function M.step(job, regions, edges, budget)
                     local tentative = job.g[current] + edge.cost
                     if not job.g[edge.to] or tentative < job.g[edge.to] then
                         job.g[edge.to] = tentative
-                        job.f[edge.to] = tentative + dist_xz(regions[edge.to].center, regions[job.goal].center)
+                        job.f[edge.to] = tentative + Vec2.distance(regions[edge.to].center, regions[job.goal].center)
                         job.came[edge.to] = current
                         job.came_edge[edge.to] = edge
                         job.open[#job.open + 1] = edge.to

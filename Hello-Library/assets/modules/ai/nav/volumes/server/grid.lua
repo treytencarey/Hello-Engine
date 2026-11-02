@@ -2,27 +2,22 @@
 -- floor heights. A 100x100 volume at 1 m is 10 000 cells but usually a handful of rectangles,
 -- which keeps the navigation graph small.
 --
--- grid = { min_x, min_z, cell, w, h, count, floor = { [<index>] = <y> or false }, walkable = { [<index>] = true } }
+-- grid = { min_x, min_z, cell, w, h, floor = { [iz] = { [ix] = <y> or false } }, walkable = { [iz] = { [ix] = true } } }
 
 local M = {}
-
-function M.index(g, ix, iz)
-    return (iz - 1) * g.w + ix
-end
 
 function M.new(min_x, min_z, max_x, max_z, cell)
     local w = math.max(1, math.ceil((max_x - min_x) / cell))
     local h = math.max(1, math.ceil((max_z - min_z) / cell))
-    return { min_x = min_x, min_z = min_z, cell = cell, w = w, h = h, count = w * h, floor = {}, walkable = {} }
+    local floor, walkable = {}, {}
+    for iz = 1, h do
+        floor[iz], walkable[iz] = {}, {}
+    end
+    return { min_x = min_x, min_z = min_z, cell = cell, w = w, h = h, floor = floor, walkable = walkable }
 end
 
 function M.cell_center(g, ix, iz)
     return g.min_x + (ix - 0.5) * g.cell, g.min_z + (iz - 0.5) * g.cell
-end
-
-function M.coords(g, i)
-    local iz = math.floor((i - 1) / g.w) + 1
-    return i - (iz - 1) * g.w, iz
 end
 
 -- A cell is walkable when it found a floor and every orthogonal neighbour that found one is
@@ -30,22 +25,17 @@ end
 -- not, and a cliff's edge is the boundary. A steep ramp and a wall look the same: both exceed
 -- the step.
 function M.mark_walkable(g, max_step)
-    for i = 1, g.count do
-        local y = g.floor[i]
-        if y then
-            local ix, iz = M.coords(g, i)
-            local level = true
-            for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
-                local nx, nz = ix + d[1], iz + d[2]
-                if nx >= 1 and nx <= g.w and nz >= 1 and nz <= g.h then
-                    local ny = g.floor[M.index(g, nx, nz)]
-                    if ny and math.abs(ny - y) > max_step then
-                        level = false
-                    end
-                end
-            end
-            if level then
-                g.walkable[i] = true
+    local function level(y, other)
+        return not other or math.abs(other - y) <= max_step
+    end
+
+    local none = {}
+    for iz = 1, g.h do
+        local row, before, after = g.floor[iz], g.floor[iz - 1] or none, g.floor[iz + 1] or none
+        for ix = 1, g.w do
+            local y = row[ix]
+            if y and level(y, row[ix + 1]) and level(y, row[ix - 1]) and level(y, before[ix]) and level(y, after[ix]) then
+                g.walkable[iz][ix] = true
             end
         end
     end
@@ -56,10 +46,12 @@ end
 -- rectangle's y is its average floor, so a gentle slope sits sensibly.
 function M.merge_rects(g)
     local used, rects = {}, {}
+    for iz = 1, g.h do
+        used[iz] = {}
+    end
 
     local function free(ix, iz)
-        local i = M.index(g, ix, iz)
-        return g.walkable[i] and not used[i]
+        return g.walkable[iz][ix] and not used[iz][ix]
     end
 
     for iz = 1, g.h do
@@ -86,9 +78,8 @@ function M.merge_rects(g)
                 local sum, n = 0, 0
                 for z = iz, z2 do
                     for x = ix, x2 do
-                        local i = M.index(g, x, z)
-                        used[i] = true
-                        sum, n = sum + g.floor[i], n + 1
+                        used[z][x] = true
+                        sum, n = sum + g.floor[z][x], n + 1
                     end
                 end
 

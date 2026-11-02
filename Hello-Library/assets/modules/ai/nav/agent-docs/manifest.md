@@ -8,7 +8,7 @@ exposes: [ai/nav, ai/nav/region, ai/nav/link, ai/nav/path, ai/nav/graph]
 
 Navigation for the agents that carry it. It builds a graph of what is walkable from the regions and links any level source publishes, and holds it in a resource. Search runs over regions, never over world cells: a map with 400 rooms searches 400 nodes however large they are. Server only; nothing syncs.
 
-Not yet here: answering path requests. The search itself is in `shared/graph.lua`, with its suite.
+Not yet here: answering path requests. The search itself is in `server/graph.lua`, with its suite.
 
 ## Components
 
@@ -19,7 +19,7 @@ Not yet here: answering path requests. The search itself is in `shared/graph.lua
 
 ## Resources
 
-- `ai/nav/graph = { regions, edges }`, there once a region is: `regions` is a list of `{ entity, min_x, max_x, min_z, max_z, y, cost, center = { x, y, z } }`, and `edges[<region index>]` lists that region's `{ to = <region index>, cost, x, y, z, kind, capability, behavior }`. Nothing keeps it current once the mod has unloaded with its last agent, and the next agent builds it again.
+- `ai/nav/graph = { regions, edges }`, there once a region is: `regions` is a list of `{ entity, min_x, max_x, min_z, max_z, y, cost, center = <a Vec2 on the ground, its y the world z> }`, and `edges[<region index>]` lists that region's `{ to = <region index>, cost, x, y, z, kind, capability, behavior }`. Nothing keeps it current once the mod has unloaded with its last agent, and the next agent builds it again.
 
 ## Systems
 
@@ -40,5 +40,5 @@ commands:entity(agent):patch({ ["ai/nav"] = { capabilities = { walk = true } } }
 
 ## Notes
 
-- Regions whose boxes come within 0.35 m are joined, at a corner too. That distance is fixed in `shared/graph.lua`: the graph is the world's, and `ai/nav` sits on each agent.
+- Regions whose boxes come within 0.35 m are joined when they share at least 0.5 m of border, so a corner alone is no way through: author a link where one should be. Both numbers are fixed in `server/graph.lua`: the graph is the world's, and `ai/nav` sits on each agent.
 - A rebuild costs the square of the regions, and happens only when the level changes.
