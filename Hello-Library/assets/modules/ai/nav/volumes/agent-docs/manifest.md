@@ -10,7 +10,7 @@ Turns the `ai/nav/volume`s on an entity and below it into `ai/nav/region`s, chil
 
 ## Components
 
-- `ai/nav/volumes = { sample, cell, max_step, headroom, cost, settle, rays_per_frame }`. Missing fields get defaults when it is added:
+- `ai/nav/volumes = { sample, cell, max_step, headroom, cost, settle }`. Missing fields get defaults when it is added:
 
   | Field | Meaning | Default |
   |-------|---------|---------|
@@ -20,7 +20,6 @@ Turns the `ai/nav/volume`s on an entity and below it into `ai/nav/region`s, chil
   | `headroom` | metres a floor needs under the surface above it | 2 |
   | `cost` | the regions' cost | 1 |
   | `settle` | seconds without new geometry before it bakes | 0.35 |
-  | `rays_per_frame` | rays per frame; a 100x100 volume at 1 m is 10 000 on one floor | 400 |
 
 - `ai/nav/volume = { hx, hy, hz }`, on the entity or anything below it, added by a child mod or by hand: half extents around that entity's world position. The lowest floor is at the bottom of the volume. To hold storeys, it must reach up past them: rays start 2 m above its top.
 - `ai/nav/volumes/due = { at }`: on while a bake is owed, `at` being `Time`'s elapsed seconds when it may start.
@@ -31,10 +30,10 @@ Turns the `ai/nav/volume`s on an entity and below it into `ai/nav/region`s, chil
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `ai/nav/volumes/watch` | When an `ai/nav/volume` is added, changed or removed, every carrier owes a new bake: `settle` from now, its job dropped |
-| First | `ai/nav/volumes/init` | On an added `ai/nav/volumes`, fill in missing fields and owe a bake |
+| First | `ai/nav/volumes/watch` | Runs only when an `ai/nav/volume` is added, changed or removed: every carrier owes a new bake, `settle` from now, its job dropped |
+| First | `ai/nav/volumes/init` | On an added `ai/nav/volumes`, owe a bake |
 | Observer | `On[SceneInstanceReady]` | A scene is ready, new or respawned after its file changed: the same |
-| Update | `ai/nav/volumes/bake` | Polls while a bake is owed: gather the volumes, sample `rays_per_frame` a frame, then replace its regions |
+| Update | `ai/nav/volumes/bake` | Polls while a bake is owed: gather the volumes, sample until `over_budget()`, then replace its regions |
 
 ## Use
 
@@ -52,6 +51,7 @@ commands:spawn({
 
 ## Notes
 
+- A bake stops when the system has spent its slice of the frame's budget, and carries on next frame, so it never makes a frame longer. A run works on one carrier while its slice lasts, and any new volume owes every carrier a bake. When the slice is already spent, a run casts two rays, the first poll of a run answering false: a 100x100 volume at 1 m is 10 000 rays on one floor, so it can take 5000 frames, nearly a minute and a half at 60 frames a second, and the regions it replaces stay until it is done.
 - A ray sees only fixed bodies, so something standing on the floor is neither floor nor a hole.
 - Every floor in a column counts, the rays going on down past each. A column on one floor costs one ray, and each storey above that three more: the hit, one to learn it is inside the slab, one to leave it. A floor whose top is within `headroom` of the volume's bottom ends the column, as nothing under it in the volume could have the headroom.
 - A floor is walkable when each neighbouring column that found a floor has one within `max_step` of it, and rectangles grow only through floors within `max_step` of the one they started from (`server/grid.lua`). So storeys carve apart, a ramp becomes a run of rectangles each a step high, and each rectangle records `min_y` and `max_y` with its average `y`.

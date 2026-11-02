@@ -51,7 +51,7 @@ end
 local function solve(regions, edges, from, to, capabilities)
     local center = regions[to].center
     local job = Graph.new_job(from, to, { x = center.x, y = 0, z = center.y }, capabilities)
-    while not Graph.step(job, regions, edges, 100) do end
+    while not Graph.step(job, regions, edges) do end
     return job
 end
 
@@ -135,10 +135,10 @@ app:add_systems(Update, {}, function()
 
     local sliced = Graph.new_job(WEST, EAST, { x = 16, y = 2, z = 0 }, {})
     local slices = 0
-    while not Graph.step(sliced, regions, edges, 1) and slices < 50 do
+    while not Graph.step(sliced, regions, edges) and slices < 50 do
         slices = slices + 1
     end
-    suite.assert_test("NS12_a_budget_of_one_takes_several_slices", sliced.done and slices >= 2, "slices " .. slices)
+    suite.assert_test("NS12_a_step_is_one_region", sliced.done and slices >= 2, "slices " .. slices)
     local waypoints, sequence = Graph.extract_path(sliced)
     suite.assert_test("NS13_the_route_goes_around",
         sliced.result == "found" and #sequence == 3 and sequence[1] == WEST and sequence[3] == EAST

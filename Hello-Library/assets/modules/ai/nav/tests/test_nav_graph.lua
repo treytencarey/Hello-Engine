@@ -3,6 +3,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+local MessageReader = require("bevy::prelude").MessageReader
 local Graph = require("modules/ai/nav/server/graph.lua")
 
 local suite = helpers.create_suite("NavGraphSuite")
@@ -76,16 +77,11 @@ local function has_kind(graph, from, kind)
     return false
 end
 
--- A reload refills `ai/nav`, which is how a case knows it ran.
+-- The watcher says when it saw the mod's file change: this is how a case knows the reload ran.
 local refills = 0
-app:add_systems(Update, {
-    Query[{
-        changed = { "ai/nav" },
-        with = { "zz/name" },
-    }],
-}, function(changed)
-    for _, e in ipairs(changed:iter()) do
-        if e:get("zz/name").name == "scout" then
+app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
+    for _, event in ipairs(changed:read()) do
+        if tostring(event.path):find("ai/nav/server/init.lua", 1, true) then
             refills = refills + 1
         end
     end
@@ -195,8 +191,17 @@ app:add_systems(Update, {
     elseif phase == "rebaking" and baked_regions:iter()[1] and baked_regions:iter()[1]:id() ~= baked_region and clock > 0.2 then
         suite.assert_test("G17_a_bake_respawning_its_region_keeps_the_link",
             count == 5 and joined(graph, "west", "baked", "hatch") and joined(graph, "baked", "west", "hatch"), "")
-        commands:entity(named(world, "bake"):id()):despawn()
+        step("settled")
+
+    -- Anything left over from the bake is over by now.
+    elseif phase == "settled" and clock > 0.5 then
         commands:entity(named(world, "hatch"):id()):despawn()
+        step("unhatched")
+
+    -- No region changes, so only the link's own removal can change the graph.
+    elseif phase == "unhatched" and not has_kind(graph, "west", "hatch") then
+        suite.assert_test("G17b_a_gone_link_leaves_the_graph", true, "")
+        commands:entity(named(world, "bake"):id()):despawn()
         step("unbaked")
 
     elseif phase == "unbaked" and count == 4 then

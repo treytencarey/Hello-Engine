@@ -24,7 +24,6 @@ One walkable box from numbers, for a map with no authored node to mark: a child 
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `ai/nav/volumes/box/init` | On an added `ai/nav/volumes/box`, fill in missing fields |
 | First | `ai/nav/volumes/box/spawn` | On a changed one (also on add), spawn its child, or write the one it has |
 
 ## Use

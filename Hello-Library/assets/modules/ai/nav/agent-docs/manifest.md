@@ -26,10 +26,10 @@ Navigation for the agents that carry it. It builds a graph of what is walkable f
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `ai/nav/init` | On an added `ai/nav`, fill in `capabilities`, add `ai/nav/request` and make the resource |
-| First | `ai/nav/index` | When a region or link is added, changed or removed, build the graph again and owe every served entry a new answer. Its first run sees every existing one as changed, so regions older than the mod count |
+| First | `ai/nav/init` | On an added `ai/nav`, add `ai/nav/request` and make the resource |
+| First | `ai/nav/index` | Runs only when a region or link is added, changed or removed: build the graph again and owe every served entry a new answer. Its condition's first run sees every existing one as changed, so regions older than the mod count |
 | PreUpdate | `ai/nav/serve` | On a changed `ai/nav/request`, choose the entry to serve: one that is new or goes somewhere new, else the one it is serving, else any, in key order. A new choice owes a search, the path goes with its entry, and no entries takes the path away |
-| PreUpdate | `ai/nav/solve` | Polls while a search is owed: spend the frame's budget of 200 regions across all searches, and write each answer whole |
+| PreUpdate | `ai/nav/solve` | Polls while a search is owed: one search at a time, until `over_budget()`, and write each answer whole |
 
 ## Use
 
@@ -57,5 +57,5 @@ commands:spawn({ ["ai/nav/link"] = { from = { x = 9, y = 0, z = 0 }, to = { x = 
 - The answer to a goal off the graph, more than 8 m from any region, is `"unreachable"`. An agent off the graph, or already in the goal's region, walks straight at the goal, as does every agent in a world with no regions at all.
 - While the served entry moves to a new place the old path stays until the new one is answered, so the agent keeps walking. An entry that goes takes its path at once.
 - Writing the same place again answers nothing new: to ask again, take the key out for a frame.
-- The frame's budget of 200 regions is not a field, because it is shared by every agent. A few hundred rooms normally finish in one frame; more take extra frames, never a longer frame.
+- A search stops when the system has spent its slice of the frame's budget, and carries on next frame, so more rooms take extra frames, never a longer frame. Searches go one at a time. When the slice is already spent, a run looks at two regions, the first poll of a run answering false, so a search over N regions can take N/2 frames after whatever is ahead of it: 400 regions is about 3.5 s at 60 frames a second.
 - A changed `capabilities` applies to the next search, not to the path it has.

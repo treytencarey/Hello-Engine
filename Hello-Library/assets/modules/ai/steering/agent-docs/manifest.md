@@ -36,7 +36,7 @@ It reads `ai/nav/path = { solved_id, path = { { x, z }, ... } }`; a new `solved_
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `ai/steering/init` | On an added `ai/steering`, fill in missing fields, and add `Velocity3d` and `ai/steering/state` if there are none |
+| First | `ai/steering/init` | On an added `ai/steering`, add `Velocity3d` and `ai/steering/state` if there are none |
 | First | `ai/steering/removed` | When `ai/steering` is removed from an entity that stays, stand it still |
 | Update | `ai/steering/start` | On a changed `ai/nav/path` with a new `solved_id`, or new state, start from the first waypoint |
 | Update | `ai/steering/walk` | Polls: walk to the next waypoint, write `Velocity3d` and the Transform's rotation, keep apart from neighbours, check for a stall |

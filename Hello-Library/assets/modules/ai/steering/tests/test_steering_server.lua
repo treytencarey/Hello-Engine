@@ -3,6 +3,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+local MessageReader = require("bevy::prelude").MessageReader
 local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("SteeringServerSuite")
@@ -134,16 +135,11 @@ app:add_systems(PreUpdate, { World, Commands }, function(world, commands)
     end
 end):in_set("zz/steering_suite_hand_insert"):after("zz/steering_suite_hand_remove")
 
--- A reload refills `ai/steering`, which is how a case knows it ran.
+-- The watcher says when it saw the mod's file change: this is how a case knows the reload ran.
 local refills = 0
-app:add_systems(Update, {
-    Query[{
-        changed = { "ai/steering" },
-        with = { "zz/name" },
-    }],
-}, function(changed)
-    for _, e in ipairs(changed:iter()) do
-        if e:get("zz/name").name == "pathless" then
+app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
+    for _, event in ipairs(changed:read()) do
+        if tostring(event.path):find("ai/steering/server/init.lua", 1, true) then
             refills = refills + 1
         end
     end

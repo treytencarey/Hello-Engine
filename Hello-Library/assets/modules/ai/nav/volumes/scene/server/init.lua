@@ -15,18 +15,6 @@
 
 local Mat3 = require("bevy::math::Mat3")
 
-app:add_systems(First, {
-    Query[{ added = { "ai/nav/volumes/scene" } }],
-    Commands,
-}, function(added, commands)
-    for _, e in ipairs(added:iter()) do
-        local s = e:get("ai/nav/volumes/scene")
-        commands:entity(e:id()):patch({
-            ["ai/nav/volumes/scene"] = { include = s.include or "_nav" },
-        })
-    end
-end):in_set("ai/nav/volumes/scene/init")
-
 -- A scene's nodes land over an unknown number of frames, and each is an added `Name`. A node
 -- that came first is found when this mod's component arrives or changes. First reads the world
 -- scale the last frame's propagation left, which a scene's new nodes already have.
@@ -64,7 +52,7 @@ app:add_systems(First, {
             })
         end
     end
-end):in_set("ai/nav/volumes/scene/tag"):after("ai/nav/volumes/scene/init")
+end):in_set("ai/nav/volumes/scene/tag")
 
 -- `ai/nav/volumes/scene` was taken off an entity that stays: its volumes go, and the nodes stay.
 app:add_systems(First, {
@@ -84,4 +72,9 @@ app:add_systems(First, {
     end
 end):in_set("ai/nav/volumes/scene/removed")
 
-return { base = "ai/nav/volumes" }
+return {
+    base = "ai/nav/volumes",
+    defaults = {
+        ["ai/nav/volumes/scene"] = { include = "_nav" },
+    },
+}

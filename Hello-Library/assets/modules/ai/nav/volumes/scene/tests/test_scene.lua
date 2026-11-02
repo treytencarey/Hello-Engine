@@ -3,6 +3,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+local MessageReader = require("bevy::prelude").MessageReader
 local Quat = require("bevy::math::Quat")
 local AssetServer = require("bevy::asset::AssetServer")
 
@@ -98,16 +99,13 @@ app:add_systems(Update, {
     end
 end):in_set("zz/scene_suite_count")
 
--- A reload refills `include`, which is how a case knows it ran.
+-- The watcher says when it saw the mod's file change: this is how a case knows the reload ran.
 local refills = 0
-app:add_systems(Update, {
-    Query[{
-        changed = { "ai/nav/volumes/scene" },
-        with = { "zz/name" },
-    }],
-}, function(changed)
-    for _ in ipairs(changed:iter()) do
-        refills = refills + 1
+app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
+    for _, event in ipairs(changed:read()) do
+        if tostring(event.path):find("ai/nav/volumes/scene/server/init.lua", 1, true) then
+            refills = refills + 1
+        end
     end
 end):in_set("zz/scene_suite_refills")
 

@@ -41,24 +41,7 @@ app:add_systems(First, {
     Commands,
 }, function(added, commands)
     for _, e in ipairs(added:iter()) do
-        local s = e:get("ai/steering")
         local entity = commands:entity(e:id())
-        entity:patch({
-            ["ai/steering"] = {
-                speed = s.speed or 2,
-                arrive_radius = s.arrive_radius or 0.9,
-                pass_radius = s.pass_radius or 0.7,
-                height_radius = s.height_radius or 1.5,
-                ease_radius = s.ease_radius or 2.25,
-                ease_floor = s.ease_floor or 0.25,
-                separation_radius = s.separation_radius or 1.5,
-                separation_strength = s.separation_strength or 1.2,
-                turn_speed = s.turn_speed or 6,
-                stall_sample = s.stall_sample or 0.5,
-                stall_distance = s.stall_distance or 0.25,
-                stall_timeout = s.stall_timeout or 1.5,
-            },
-        })
         if not e:has("Velocity3d") then
             entity:insert({ Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } } })
         end
@@ -235,3 +218,22 @@ app:add_systems(First, {
         e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
     end
 end):in_set("ai/steering/removed")
+
+return {
+    defaults = {
+        ["ai/steering"] = {
+            speed = 2,
+            arrive_radius = 0.9,
+            pass_radius = 0.7,
+            height_radius = 1.5,
+            ease_radius = 2.25,
+            ease_floor = 0.25,
+            separation_radius = 1.5,
+            separation_strength = 1.2,
+            turn_speed = 6,
+            stall_sample = 0.5,
+            stall_distance = 0.25,
+            stall_timeout = 1.5,
+        },
+    },
+}

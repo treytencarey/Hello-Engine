@@ -3,6 +3,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+local MessageReader = require("bevy::prelude").MessageReader
 
 local suite = helpers.create_suite("BoxSuite")
 
@@ -57,16 +58,11 @@ end
 
 local function near(a, b, tolerance) return a ~= nil and math.abs(a - b) < (tolerance or 0.01) end
 
--- A reload refills the box, which is how a case knows it ran.
+-- The watcher says when it saw the mod's file change: this is how a case knows the reload ran.
 local refills = 0
-app:add_systems(Update, {
-    Query[{
-        changed = { "ai/nav/volumes/box" },
-        with = { "zz/name" },
-    }],
-}, function(changed)
-    for _, e in ipairs(changed:iter()) do
-        if e:get("zz/name").name == "plain" then
+app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
+    for _, event in ipairs(changed:read()) do
+        if tostring(event.path):find("ai/nav/volumes/box/server/init.lua", 1, true) then
             refills = refills + 1
         end
     end

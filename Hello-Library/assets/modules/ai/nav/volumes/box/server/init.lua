@@ -14,18 +14,6 @@
 -- ai/nav/volumes/box/volume: marks its child
 
 app:add_systems(First, {
-    Query[{ added = { "ai/nav/volumes/box" } }],
-    Commands,
-}, function(added, commands)
-    for _, e in ipairs(added:iter()) do
-        local b = e:get("ai/nav/volumes/box")
-        commands:entity(e:id()):patch({
-            ["ai/nav/volumes/box"] = { hy = b.hy or 0, x = b.x or 0, y = b.y or 0, z = b.z or 0 },
-        })
-    end
-end):in_set("ai/nav/volumes/box/init")
-
-app:add_systems(First, {
     Query[{
         changed = { "ai/nav/volumes/box" },
         optional = { "Children" },
@@ -52,6 +40,11 @@ app:add_systems(First, {
             end
         end
     end
-end):in_set("ai/nav/volumes/box/spawn"):after("ai/nav/volumes/box/init")
+end):in_set("ai/nav/volumes/box/spawn")
 
-return { base = "ai/nav/volumes" }
+return {
+    base = "ai/nav/volumes",
+    defaults = {
+        ["ai/nav/volumes/box"] = { hy = 0, x = 0, y = 0, z = 0 },
+    },
+}

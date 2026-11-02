@@ -52,7 +52,6 @@ end
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
     building(commands, "map", 0, {})
-    building(commands, "slow", 1000, { rays_per_frame = 3 })
     agent(commands, "climber", 0, 1, 4)
     agent(commands, "descender", -5, 5, -3)
     -- one whose first floor overhead has no way up: only the ramp's region reaches it
@@ -110,20 +109,6 @@ local function baked(world, name)
         and #world:query({ iter_many = e:get("Children") or {}, with = { "ai/nav/volumes/region" } }) > 0
 end
 
-local function regions_of(world, name)
-    local out = {}
-    for _, r in ipairs(world:query({
-        iter_many = named(world, name):get("Children") or {},
-        with = { "ai/nav/region", "ai/nav/volumes/region" },
-    })) do
-        local v = r:get("ai/nav/region")
-        out[#out + 1] = string.format("%.0f %.0f %.0f %.0f %.2f %.2f %.2f", v.min_x % 1000, v.max_x % 1000, v.min_z, v.max_z, v.y,
-            v.min_y or -99, v.max_y or -99)
-    end
-    table.sort(out)
-    return table.concat(out, "|")
-end
-
 local reach_x = 0
 app:add_systems(Update, {
     Query[{ with = { "zz/name", "ai/steering/state", "Transform" } }],
@@ -142,7 +127,7 @@ app:add_systems(Update, { World, Res[Time], Res["ai/nav/graph"], Commands }, fun
     local function step(next_phase) phase, clock = next_phase, 0 end
     local ok, graph = pcall(function() return res:get() end)
 
-    if phase == "baking" and baked(world, "map") and baked(world, "slow") and clock > 0.5 and ok then
+    if phase == "baking" and baked(world, "map") and clock > 0.5 and ok then
         local ground, upper = at_height(graph, 0, 0, 0), at_height(graph, 0, 0, 4)
         suite.assert_test("F1_the_two_floors_are_each_a_region_over_the_same_point", ground ~= nil and upper ~= nil,
             string.format("ground %s upper %s, regions over it %d", tostring(ground), tostring(upper), #over(graph, 0, 0)))
@@ -153,8 +138,6 @@ app:add_systems(Update, { World, Res[Time], Res["ai/nav/graph"], Commands }, fun
         suite.assert_test("F4_the_top_of_the_lid_is_a_floor", at_height(graph, -20, 0, 2.5) ~= nil, "")
         suite.assert_test("F5_ground_under_a_high_enough_slab_runs_on_past_it", ground ~= nil
             and graph.regions[ground].max_z > 6, ground and tostring(graph.regions[ground].max_z) or "")
-        local a, b = regions_of(world, "map"), regions_of(world, "slow")
-        suite.assert_test("F6_a_small_frame_budget_gives_the_same_regions", a == b and #a > 0, "\n" .. a .. "\n" .. b)
         local spans_ok = true
         for _, r in ipairs(graph.regions) do
             spans_ok = spans_ok and r.min_y <= r.y and r.y <= r.max_y and r.max_y - r.min_y <= 0.46

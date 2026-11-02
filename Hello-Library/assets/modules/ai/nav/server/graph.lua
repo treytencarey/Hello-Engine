@@ -132,11 +132,11 @@ function M.new_job(start, goal, goal_pos, capabilities)
     }
 end
 
--- At most `budget` regions further. Answers whether the search is finished, `job.result` then
--- being "found" or "unreachable", and how many regions it looked at.
-function M.step(job, regions, edges, budget)
-    local steps = 0
-    while not job.done and steps < budget do
+-- One region further. Answers whether the search is finished, `job.result` then being "found" or
+-- "unreachable".
+function M.step(job, regions, edges)
+    local looked = false
+    while not job.done and not looked do
         -- The open node with the lowest f. A linear scan: region graphs are small enough that a
         -- heap costs more in table churn than it saves.
         local best_i, best_f
@@ -158,7 +158,7 @@ function M.step(job, regions, edges, budget)
             job.done, job.result = true, "found"
         elseif not job.closed[current] then
             job.closed[current] = true
-            steps = steps + 1
+            looked = true
             for _, edge in ipairs(edges[current]) do
                 local allowed = not edge.capability or job.capabilities[edge.capability]
                 if allowed and not job.closed[edge.to] then
@@ -174,7 +174,7 @@ function M.step(job, regions, edges, budget)
             end
         end
     end
-    return job.done, steps
+    return job.done
 end
 
 -- A found route as waypoints, the crossings between its regions and then the goal, and the

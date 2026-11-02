@@ -11,7 +11,6 @@
 --     headroom = <metres a floor needs under the surface above it>,
 --     cost = <the regions' cost>,
 --     settle = <seconds without new geometry before it bakes>,
---     rays_per_frame = <samples per frame>,
 -- }
 --
 -- ai/nav/volume = { hx, hy, hz }: half extents, on an entity whose transform places it
@@ -23,6 +22,9 @@
 
 local Grid = require("modules/ai/nav/volumes/server/grid.lua")
 local Time = require("bevy::time::Time")
+local LuaFrameBudget = require("bevy_lua_ecs::lua_frame_budget::LuaFrameBudget")
+local any_match_filter = require("bevy::ecs::schedule::common_conditions::any_match_filter")
+local any_component_removed = require("bevy::ecs::schedule::common_conditions::any_component_removed")
 local On = require("bevy::ecs::prelude::On")
 local SceneInstanceReady = require("bevy::scene::SceneInstanceReady")
 local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
@@ -34,18 +36,7 @@ app:add_systems(First, {
 }, function(time, added, commands)
     for _, e in ipairs(added:iter()) do
         local v = e:get("ai/nav/volumes")
-        commands:entity(e:id()):patch({
-            ["ai/nav/volumes"] = {
-                sample = v.sample ~= false,
-                cell = v.cell or 1,
-                max_step = v.max_step or 0.45,
-                headroom = v.headroom or 2,
-                cost = v.cost or 1,
-                settle = v.settle or 0.35,
-                rays_per_frame = v.rays_per_frame or 400,
-            },
-            ["ai/nav/volumes/due"] = { at = time:elapsed_secs() + (v.settle or 0.35) },
-        })
+        commands:entity(e:id()):insert({ ["ai/nav/volumes/due"] = { at = time:elapsed_secs() + v.settle } })
     end
 end):in_set("ai/nav/volumes/init")
 
@@ -55,28 +46,22 @@ local function owe(time, carriers, commands)
         local v = e:get("ai/nav/volumes")
         commands:entity(e:id()):try_remove("ai/nav/volumes/job")
         commands:entity(e:id()):try_insert({
-            ["ai/nav/volumes/due"] = { at = time:elapsed_secs() + (v.settle or 0) },
+            ["ai/nav/volumes/due"] = { at = time:elapsed_secs() + v.settle },
         })
     end
 end
 
--- A volume arriving, changing or going. Runs before the fill above, which replaces this for an
--- entity that has only just arrived.
+local volume_changed = any_match_filter[{ changed = { "ai/nav/volume" } }]
+
+-- A volume arriving, changing or going.
 app:add_systems(First, {
     Res[Time],
-    Query[{
-        ["or"] = {
-            changed = { "ai/nav/volume" },
-            removed = { "ai/nav/volume" },
-        },
-    }],
     Query[{ with = { "ai/nav/volumes" } }],
     Commands,
-}, function(time, touched, carriers, commands)
-    if not touched:is_empty() then
-        owe(time, carriers, commands)
-    end
-end):in_set("ai/nav/volumes/watch"):before("ai/nav/volumes/init")
+}, function(time, carriers, commands)
+    owe(time, carriers, commands)
+end):in_set("ai/nav/volumes/watch")
+    :run_if(volume_changed["or"](volume_changed, any_component_removed["ai/nav/volume"]))
 
 -- A scene ready, new or respawned after its file changed: its geometry may be what the rays hit.
 app:add_observer(On[SceneInstanceReady], {
@@ -87,9 +72,11 @@ app:add_observer(On[SceneInstanceReady], {
     owe(time, carriers, commands)
 end)
 
--- Timed, and a bake that samples runs over several frames, so it polls while one is owed.
+-- Timed, and a bake that samples runs over several frames, so it polls while one is owed, until
+-- the system's slice of the frame is spent.
 app:add_systems(Update, {
     Res[Time],
+    Res[LuaFrameBudget],
     Query[{
         with = { "ai/nav/volumes", "ai/nav/volumes/due" },
         optional = { "ai/nav/volumes/job", "Children" },
@@ -98,10 +85,11 @@ app:add_systems(Update, {
     Query[{ with = { "ai/nav/volumes/region" } }],
     ReadRapierContext,
     Commands,
-}, function(time, owed, volumes, baked, rapier, commands)
+}, function(time, budget, owed, volumes, baked, rapier, commands)
     local now = time:elapsed_secs()
+    local spent = false
     for _, e in ipairs(owed:iter()) do
-        if now >= e:get("ai/nav/volumes/due").at then
+        if not spent and now >= e:get("ai/nav/volumes/due").at then
             local v = e:get("ai/nav/volumes")
             local job = e:get("ai/nav/volumes/job")
             if job == nil then
@@ -120,8 +108,7 @@ app:add_systems(Update, {
                 job = { vols = vols, vi = 1, rects = {} }
             end
 
-            local budget = v.rays_per_frame
-            while job.vi <= #job.vols and budget > 0 do
+            while job.vi <= #job.vols and not spent do
                 local vol = job.vols[job.vi]
                 if not v.sample then
                     job.rects[#job.rects + 1] = {
@@ -140,40 +127,37 @@ app:add_systems(Update, {
                     -- from above the volume, down through it and a little under
                     local top = vol.floor_y + vol.hy * 2 + 2
                     local bottom = top - (vol.hy * 4 + 6)
-                    while job.iz <= job.grid.h and budget > 0 do
-                        local x, z = Grid.cell_center(job.grid, job.ix, job.iz)
-                        local y = job.y or top
-                        -- Something standing on the floor is not floor, so only fixed bodies count.
-                        -- A solid ray that starts inside a collider stops where it starts, at 0, and
-                        -- only a hollow one goes on to where it leaves. So the ray under a floor is
-                        -- solid, to find whether it is inside, and then a hollow one finds the way out.
-                        local hit = y > bottom and rapier:cast_ray({ x = x, y = y, z = z }, { x = 0, y = -1, z = 0 }, y - bottom,
-                            not job.inside, { flags = "ONLY_FIXED" }) or nil
-                        budget = budget - 1
+                    local x, z = Grid.cell_center(job.grid, job.ix, job.iz)
+                    local y = job.y or top
+                    -- Something standing on the floor is not floor, so only fixed bodies count. A
+                    -- solid ray that starts inside a collider stops where it starts, at 0, and only a
+                    -- hollow one goes on to where it leaves. So the ray under a floor is solid, to find
+                    -- whether it is inside, and then a hollow one finds the way out.
+                    local hit = y > bottom and rapier:cast_ray({ x = x, y = y, z = z }, { x = 0, y = -1, z = 0 }, y - bottom,
+                        not job.inside, { flags = "ONLY_FIXED" }) or nil
 
-                        local more = false
-                        if hit ~= nil and job.inside then
-                            job.ceiling = y - hit.toi
-                            job.y, job.inside, more = job.ceiling - 0.01, nil, true
-                        elseif hit ~= nil and job.y ~= nil and hit.toi < 0.005 then
-                            job.inside, more = true, true
-                        elseif hit ~= nil then
-                            local height = y - hit.toi
-                            if job.ceiling == nil or job.ceiling - height >= v.headroom then
-                                table.insert(job.grid.floor[job.iz][job.ix], height)
-                            end
-                            job.ceiling = height
-                            job.y = height - 0.01
-                            -- Anything lower, within the volume, could not have the headroom.
-                            more = height > vol.floor_y + v.headroom
+                    local more = false
+                    if hit ~= nil and job.inside then
+                        job.ceiling = y - hit.toi
+                        job.y, job.inside, more = job.ceiling - 0.01, nil, true
+                    elseif hit ~= nil and job.y ~= nil and hit.toi < 0.005 then
+                        job.inside, more = true, true
+                    elseif hit ~= nil then
+                        local height = y - hit.toi
+                        if job.ceiling == nil or job.ceiling - height >= v.headroom then
+                            table.insert(job.grid.floor[job.iz][job.ix], height)
                         end
+                        job.ceiling = height
+                        job.y = height - 0.01
+                        -- Anything lower, within the volume, could not have the headroom.
+                        more = height > vol.floor_y + v.headroom
+                    end
 
-                        if not more then
-                            job.y, job.inside, job.ceiling = nil, nil, nil
-                            job.ix = job.ix + 1
-                            if job.ix > job.grid.w then
-                                job.ix, job.iz = 1, job.iz + 1
-                            end
+                    if not more then
+                        job.y, job.inside, job.ceiling = nil, nil, nil
+                        job.ix = job.ix + 1
+                        if job.ix > job.grid.w then
+                            job.ix, job.iz = 1, job.iz + 1
                         end
                     end
                     if job.iz > job.grid.h then
@@ -185,6 +169,7 @@ app:add_systems(Update, {
                         job.vi = job.vi + 1
                     end
                 end
+                spent = budget:over_budget()
             end
 
             local entity = commands:entity(e:id())
@@ -215,3 +200,16 @@ app:add_systems(Update, {
         end
     end
 end):in_set("ai/nav/volumes/bake")
+
+return {
+    defaults = {
+        ["ai/nav/volumes"] = {
+            sample = true,
+            cell = 1,
+            max_step = 0.45,
+            headroom = 2,
+            cost = 1,
+            settle = 0.35,
+        },
+    },
+}

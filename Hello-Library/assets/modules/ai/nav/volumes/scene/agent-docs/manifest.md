@@ -17,7 +17,6 @@ Walkable volumes authored in a scene: every node at or below the entity whose na
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `ai/nav/volumes/scene/init` | On an added `ai/nav/volumes/scene`, fill in `include` |
 | First | `ai/nav/volumes/scene/tag` | For a new `Name`, or every node below a new or changed `ai/nav/volumes/scene`: a matching node with no volume gets one |
 | First | `ai/nav/volumes/scene/removed` | When `ai/nav/volumes/scene` is removed, take off its volumes |
 

@@ -39,76 +39,75 @@
 
 local Graph = require("modules/ai/nav/server/graph.lua")
 local Time = require("bevy::time::Time")
+local LuaFrameBudget = require("bevy_lua_ecs::lua_frame_budget::LuaFrameBudget")
+local any_match_filter = require("bevy::ecs::schedule::common_conditions::any_match_filter")
+local any_component_removed = require("bevy::ecs::schedule::common_conditions::any_component_removed")
 
 app:add_systems(First, {
     Query[{ added = { "ai/nav" } }],
     Commands,
 }, function(added, commands)
     for _, e in ipairs(added:iter()) do
-        local n = e:get("ai/nav")
         -- A patch, so a reload keeps the entries there.
-        commands:entity(e:id()):patch({
-            ["ai/nav"] = { capabilities = n.capabilities or {} },
-            ["ai/nav/request"] = {},
-        })
+        commands:entity(e:id()):patch({ ["ai/nav/request"] = {} })
         commands:init_resource("ai/nav/graph", { regions = {}, edges = {}, warned = {} })
     end
 end):in_set("ai/nav/init")
 
--- This system's first run sees every region as changed, so regions older than this mod count.
+local changed = any_match_filter[{
+    ["or"] = {
+        changed = { "ai/nav/region", "ai/nav/link" },
+    },
+}]
+local changed_or_region_gone = changed["or"](changed, any_component_removed["ai/nav/region"])
+
+-- The condition's first run sees every region as changed, so regions older than this mod count.
 -- Links name positions, so a region respawned where it was keeps its links. A changed graph owes
 -- every served entry a new answer.
 app:add_systems(First, {
-    Query[{
-        ["or"] = {
-            changed = { "ai/nav/region", "ai/nav/link" },
-            removed = { "ai/nav/region", "ai/nav/link" },
-        },
-    }],
     Query[{ with = { "ai/nav/region" } }],
     Query[{ with = { "ai/nav/link" } }],
     Query[{ with = { "ai/nav/serving" } }],
     Res["ai/nav/graph"],
     Commands,
-}, function(touched, regions, links, served, graph, commands)
-    if not touched:is_empty() then
-        local list, linked = {}, {}
-        for _, e in ipairs(regions:iter()) do
-            local r = e:get("ai/nav/region")
-            if r.min_x and r.max_x and r.min_z and r.max_z then
-                list[#list + 1] = {
-                    min_x = r.min_x,
-                    max_x = r.max_x,
-                    min_z = r.min_z,
-                    max_z = r.max_z,
-                    y = r.y or 0,
-                    min_y = r.min_y or r.y or 0,
-                    max_y = r.max_y or r.y or 0,
-                    cost = r.cost or 1,
-                    center = { x = (r.min_x + r.max_x) * 0.5, y = (r.min_z + r.max_z) * 0.5 },
-                }
-            end
-        end
-        for _, e in ipairs(links:iter()) do
-            linked[#linked + 1] = e:get("ai/nav/link")
-        end
-
-        local edges, missing = Graph.build_edges(list, linked)
-        local warned = graph:get().warned
-        for _, at in ipairs(missing) do
-            local where = string.format("%g,%g,%g", at.x, at.y or 0, at.z)
-            if not warned[where] then
-                warned[where] = true
-                print("[ai/nav] a link's end has no region near it: " .. where)
-            end
-        end
-        commands:insert_resource("ai/nav/graph", { regions = list, edges = edges, warned = warned })
-
-        for _, e in ipairs(served:iter()) do
-            commands:entity(e:id()):try_insert({ ["ai/nav/search"] = {} })
+}, function(regions, links, served, graph, commands)
+    local list, linked = {}, {}
+    for _, e in ipairs(regions:iter()) do
+        local r = e:get("ai/nav/region")
+        if r.min_x and r.max_x and r.min_z and r.max_z then
+            list[#list + 1] = {
+                min_x = r.min_x,
+                max_x = r.max_x,
+                min_z = r.min_z,
+                max_z = r.max_z,
+                y = r.y or 0,
+                min_y = r.min_y or r.y or 0,
+                max_y = r.max_y or r.y or 0,
+                cost = r.cost or 1,
+                center = { x = (r.min_x + r.max_x) * 0.5, y = (r.min_z + r.max_z) * 0.5 },
+            }
         end
     end
+    for _, e in ipairs(links:iter()) do
+        linked[#linked + 1] = e:get("ai/nav/link")
+    end
+
+    local edges, missing = Graph.build_edges(list, linked)
+    local warned = graph:get().warned
+    for _, at in ipairs(missing) do
+        local where = string.format("%g,%g,%g", at.x, at.y or 0, at.z)
+        if not warned[where] then
+            warned[where] = true
+            print("[ai/nav] a link's end has no region near it: " .. where)
+        end
+    end
+    commands:insert_resource("ai/nav/graph", { regions = list, edges = edges, warned = warned })
+
+    for _, e in ipairs(served:iter()) do
+        commands:entity(e:id()):try_insert({ ["ai/nav/search"] = {} })
+    end
 end):in_set("ai/nav/index"):after("ai/nav/init")
+    :run_if(changed_or_region_gone["or"](changed_or_region_gone, any_component_removed["ai/nav/link"]))
 
 local function same_place(a, b)
     return a.x == b.x and a.y == b.y and a.z == b.z
@@ -175,20 +174,21 @@ local function answer(commands, e, time, status, path, regions)
     commands:entity(e:id()):remove("ai/nav/search")
 end
 
--- Budgeted, so it polls while a search is owed: all searches together look at 200 regions a frame,
--- which a few hundred rooms normally finish in one. An off-graph start, or the goal's own region,
--- walks straight at the goal, as does a world with no regions at all.
+-- It polls while a search is owed, one at a time, until the system's slice of the frame is spent.
+-- An off-graph start, or the goal's own region, walks straight at the goal, as does a world with no
+-- regions at all.
 app:add_systems(PreUpdate, {
     Res[Time],
+    Res[LuaFrameBudget],
     Res["ai/nav/graph"],
     Query[{
         with = { "ai/nav", "ai/nav/serving", Mut["ai/nav/search"], "Transform" },
     }],
     Commands,
-}, function(time, graph, searching, commands)
-    local budget = 200
+}, function(time, budget, graph, searching, commands)
+    local spent = false
     for _, e in ipairs(searching:iter_mut()) do
-        if budget > 0 then
+        if not spent then
             local g = graph:get()
             local to = e:get("ai/nav/serving").to
             local job = e:get("ai/nav/search").job
@@ -209,15 +209,26 @@ app:add_systems(PreUpdate, {
             end
 
             if job ~= nil then
-                local done, spent = Graph.step(job, g.regions, g.edges, budget)
-                budget = budget - spent
+                local done
+                repeat
+                    done = Graph.step(job, g.regions, g.edges)
+                    spent = budget:over_budget()
+                until done or spent
                 if done then
                     local path, regions = Graph.extract_path(job)
                     answer(commands, e, time, path and "ready" or "unreachable", path or {}, regions or {})
                 else
                     e:set({ ["ai/nav/search"] = { job = job } })
                 end
+            else
+                spent = budget:over_budget()
             end
         end
     end
 end):in_set("ai/nav/solve"):after("ai/nav/serve")
+
+return {
+    defaults = {
+        ["ai/nav"] = { capabilities = {} },
+    },
+}
