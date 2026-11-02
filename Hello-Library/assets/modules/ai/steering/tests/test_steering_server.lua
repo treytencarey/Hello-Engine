@@ -63,6 +63,8 @@ app:add_systems(Startup, { Commands }, function(commands)
     agent(commands, "high", 0, 440, { speed = 3 }, { Transform = { translation = { x = 0, y = 30, z = 440 } } })
     -- Told there is no way on while it is still walking.
     agent(commands, "rerouted", 0, 480, { speed = 3 })
+    -- Its path goes and another arrives in one frame.
+    agent(commands, "handed", 0, 520, { speed = 3 })
     -- No body, and no velocity of its own.
     commands:spawn({ ["zz/name"] = { name = "bare" }, ["ai/steering"] = {}, Transform = {} })
 end)
@@ -111,6 +113,23 @@ app:add_systems(Update, {
         end
     end
 end):in_set("zz/steering_suite_writes")
+
+-- As `ai/nav` hands a path over: taken away in one system, and answered by one ordered after it,
+-- in the schedule before steering runs.
+local handing = nil
+app:add_systems(PreUpdate, { World, Commands }, function(world, commands)
+    if handing == "remove" then
+        commands:entity(named(world, "handed"):id()):remove("ai/nav/path")
+        handing = "insert"
+    end
+end):in_set("zz/steering_suite_hand_remove")
+
+app:add_systems(PreUpdate, { World, Commands }, function(world, commands)
+    if handing == "insert" then
+        walk(world, commands, "handed", path(2, { 200, 521 }))
+        handing = nil
+    end
+end):in_set("zz/steering_suite_hand_insert"):after("zz/steering_suite_hand_remove")
 
 -- A reload refills `ai/steering`, which is how a case knows it ran.
 local refills = 0
@@ -185,6 +204,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         walk(world, commands, "stuck", path(1, { 20, 200 }))
         walk(world, commands, "leaver", path(1, { 200, 280 }))
         walk(world, commands, "dropper", path(1, { 200, 320 }))
+        walk(world, commands, "handed", path(1, { 200, 520 }))
         walk(world, commands, "long", path(1, { 4, 360 }, { 200, 360 }))
         walk(world, commands, "high", path(1, { 200, 440 }))
         walk(world, commands, "rerouted", path(1, { 200, 480 }))
@@ -210,6 +230,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         named(world, "east"):patch({ ["ai/steering"] = { speed = 1 } })
         seen.writes, watching_writes = 0, true
         commands:entity(named(world, "dropper"):id()):remove("ai/nav/path")
+        handing = "remove"
         commands:entity(named(world, "leaver"):id()):remove("ai/nav")
         step("stops")
 
@@ -217,6 +238,9 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         suite.assert_test("S9_a_new_speed_applies_at_once", near(horizontal(named(world, "east")), 1, 0.2),
             "speed " .. horizontal(named(world, "east")))
         local dropper, leaver = named(world, "dropper"), named(world, "leaver")
+        suite.assert_test("S10b_a_path_replaced_in_the_frame_it_went_walks_on",
+            state_of(world, "handed").status == "moving" and state_of(world, "handed").for_solved == 2
+                and horizontal(named(world, "handed")) > 2, tostring(state_of(world, "handed").status))
         suite.assert_test("S10_with_its_path_gone_it_stands_still_and_idle",
             state_of(world, "dropper").status == "idle" and horizontal(dropper) < 0.2, "speed " .. horizontal(dropper))
         suite.assert_test("S11_ai_nav_leaving_takes_the_path_and_so_stands_it_still",

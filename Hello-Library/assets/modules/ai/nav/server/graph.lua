@@ -3,7 +3,7 @@
 -- regions, never over world cells, so a map with 400 rooms searches 400 nodes however large
 -- they are.
 --
--- region = { entity, min_x, max_x, min_z, max_z, y, cost, center = { x, y } }
+-- region = { min_x, max_x, min_z, max_z, y, cost, center = { x, y } }
 -- edge = { to = <index>, cost, x, y, z, kind, capability, behavior }
 --
 -- A region's `center` is a `Vec2` on the ground: its `y` is the world's z.
@@ -12,17 +12,10 @@ local Vec2 = require("bevy::math::Vec2")
 
 local M = {}
 
-local function index_of(regions, entity)
-    for i, r in ipairs(regions) do
-        if r.entity == entity then
-            return i
-        end
-    end
-end
-
--- The edges of each region: those whose boxes touch, then the links that name two regions.
+-- The edges of each region: those whose boxes touch, then the links between two positions. Also
+-- answers the positions no region is near: a link with one makes no edge.
 function M.build_edges(regions, links)
-    local edges = {}
+    local edges, missing = {}, {}
     for i = 1, #regions do
         edges[i] = {}
     end
@@ -46,15 +39,22 @@ function M.build_edges(regions, links)
     end
 
     for _, link in ipairs(links) do
-        local from, to = index_of(regions, link.from), index_of(regions, link.to)
+        local from = link.from and M.locate(regions, link.from.x, link.from.z)
+        local to = link.to and M.locate(regions, link.to.x, link.to.z)
+        if link.from and not from then
+            missing[#missing + 1] = link.from
+        end
+        if link.to and not to then
+            missing[#missing + 1] = link.to
+        end
         if from and to then
             local a, b = regions[from], regions[to]
             local edge = {
                 to = to,
                 cost = link.cost or Vec2.distance(a.center, b.center),
-                x = link.x or (a.center.x + b.center.x) * 0.5,
+                x = link.x or (link.from.x + link.to.x) * 0.5,
                 y = link.y or math.max(a.y, b.y),
-                z = link.z or (a.center.y + b.center.y) * 0.5,
+                z = link.z or (link.from.z + link.to.z) * 0.5,
                 kind = link.kind or "link",
                 capability = link.capability,
                 behavior = link.behavior,
@@ -75,12 +75,12 @@ function M.build_edges(regions, links)
         end
     end
 
-    return edges
+    return edges, missing
 end
 
 -- The region holding a point, the one with the nearest centre where they overlap; else the
--- nearest within max_snap.
-function M.locate(regions, x, z, max_snap)
+-- nearest within 8 m.
+function M.locate(regions, x, z)
     local point = { x = x, y = z }
     local best, best_d2
 
@@ -99,7 +99,7 @@ function M.locate(regions, x, z, max_snap)
     for i, r in ipairs(regions) do
         local nearest = Vec2.clamp(point, { x = r.min_x, y = r.min_z }, { x = r.max_x, y = r.max_z })
         local d2 = Vec2.distance_squared(nearest, point)
-        if d2 <= max_snap * max_snap and (not best_d2 or d2 < best_d2) then
+        if d2 <= 64 and (not best_d2 or d2 < best_d2) then
             best, best_d2 = i, d2
         end
     end
@@ -123,8 +123,8 @@ function M.new_job(start, goal, goal_pos, capabilities)
     }
 end
 
--- At most `budget` regions further. Answers whether the search is finished; `job.result` is
--- then "found" or "unreachable".
+-- At most `budget` regions further. Answers whether the search is finished, `job.result` then
+-- being "found" or "unreachable", and how many regions it looked at.
 function M.step(job, regions, edges, budget)
     local steps = 0
     while not job.done and steps < budget do
@@ -165,7 +165,7 @@ function M.step(job, regions, edges, budget)
             end
         end
     end
-    return job.done
+    return job.done, steps
 end
 
 -- A found route as waypoints, the crossings between its regions and then the goal, and the
