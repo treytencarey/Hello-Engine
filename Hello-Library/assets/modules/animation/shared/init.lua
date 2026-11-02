@@ -15,27 +15,19 @@
 -- animation/action = { state = <a clip's name>, speed = <playback speed> }: written by
 -- another mod; while present it is played instead of the motion's state.
 
-app:add_systems(First, {
-    Query[{ added = { "animation" } }],
-    Commands,
-}, function(added, commands)
-    for _, e in ipairs(added:iter()) do
-        local a = e:get("animation")
-        if a.model == nil or a.scene == nil or a.clips == nil or a.walk_speed == nil or a.offset == nil then
-            commands:entity(e:id()):patch({
-                animation = {
-                    model = a.model or "Placeholder-Character/Model",
-                    scene = a.scene or "-Idle.glb#Scene0",
-                    clips = a.clips or {
-                        idle = "-Idle.glb#Animation0",
-                        walk = "-Walk.glb#Animation0",
-                        jump = "-Jump.glb#Animation0",
-                        fall = "-Jump.glb#Animation0",
-                    },
-                    walk_speed = a.walk_speed or 6,
-                    offset = a.offset or { x = 0, y = -0.9, z = 0 },
-                },
-            })
-        end
-    end
-end):in_set("animation/init")
+return {
+    defaults = {
+        animation = {
+            model = "Placeholder-Character/Model",
+            scene = "-Idle.glb#Scene0",
+            clips = {
+                idle = "-Idle.glb#Animation0",
+                walk = "-Walk.glb#Animation0",
+                jump = "-Jump.glb#Animation0",
+                fall = "-Jump.glb#Animation0",
+            },
+            walk_speed = 6,
+            offset = { x = 0, y = -0.9, z = 0 },
+        },
+    },
+}

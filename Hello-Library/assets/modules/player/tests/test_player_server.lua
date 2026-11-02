@@ -1,4 +1,4 @@
--- --host
+-- --host (windowed: under --host --headless Rapier panics in parry3d after S11, with or without this work)
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerServerSuite")

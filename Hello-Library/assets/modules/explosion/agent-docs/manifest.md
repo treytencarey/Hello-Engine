@@ -27,8 +27,7 @@ A glowing ball at a point that grows to its radius and is gone after its duratio
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | `explosion/init` | On an added `explosion`, fill in missing fields |
-| First (both), after `explosion/init` | `explosion/place` | Place it at `at` and start its timer |
+| First (both) | `explosion/place` | Place it at `at` and start its timer |
 | First (both) | `explosion/removed` | When `explosion` is removed from an entity that stays, stop the timer |
 | First (both) | `explosion/ended` | When the timer ends, despawn it |
 | First (client), after `explosion/place` | `explosion/draw` | Add a glowing unit sphere of its color, scaled to nothing |

@@ -22,21 +22,6 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Scroll = require("bevy::picking::prelude::Scroll")
 
-app:add_systems(First, {
-    Query[{ added = { "sidebar/panel" } }],
-    Commands,
-}, function(panels, commands)
-    for _, e in ipairs(panels:iter()) do
-        local p = e:get("sidebar/panel")
-        commands:entity(e:id()):patch({
-            ["sidebar/panel"] = {
-                width = p.width or 280,
-                scroll_speed = p.scroll_speed or 20,
-            },
-        })
-    end
-end):in_set("sidebar/panel/init")
-
 -- Each part is spawned, then given its parent with `add_child` in the same flush, so no part
 -- is ever laid out as a UI root.
 app:add_systems(First, {
@@ -114,7 +99,7 @@ app:add_systems(First, {
         commands:entity(scroll:id()):add_child(loading)
         panel:add_child(header):add_child(scroll:id())
     end
-end):in_set("sidebar/panel/build"):after("sidebar/panel/init")
+end):in_set("sidebar/panel/build")
 
 -- Title and width follow the config, from the frame the panel is built: the header shows a
 -- non-empty title, and the loading text goes once there is a title.
@@ -153,3 +138,12 @@ app:add_systems(First, {
         commands:entity(e:id()):try_remove("Node", "ui/style")
     end
 end):in_set("sidebar/panel/removed")
+
+return {
+    defaults = {
+        ["sidebar/panel"] = {
+            width = 280,
+            scroll_speed = 20,
+        },
+    },
+}

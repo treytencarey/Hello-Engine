@@ -14,22 +14,6 @@
 -- camera/2d/eye = {}
 
 app:add_systems(First, {
-    Query[{ added = { Mut["camera/2d"] } }],
-}, function(added)
-    for _, e in ipairs(added:iter_mut()) do
-        local c2d = e:get("camera/2d")
-        e:patch({
-            ["camera/2d"] = {
-                zoom_step = c2d.zoom_step or 0.1,
-                min_distance = c2d.min_distance or 0.25,
-                max_distance = c2d.max_distance or 4,
-                z = c2d.z or 1000,
-            },
-        })
-    end
-end):in_set("camera/2d/init")
-
-app:add_systems(First, {
     Query[{
         ["or"] = {
             added = { "camera/2d", "camera", "core/net/local" },
@@ -175,4 +159,14 @@ app:add_systems(Update, {
     end
 end):in_set("camera/2d/aim"):after("camera/2d/zoom")
 
-return { base = "camera" }
+return {
+    base = "camera",
+    defaults = {
+        ["camera/2d"] = {
+            zoom_step = 0.1,
+            min_distance = 0.25,
+            max_distance = 4,
+            z = 1000,
+        },
+    },
+}

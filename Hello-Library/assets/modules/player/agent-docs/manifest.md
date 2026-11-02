@@ -31,7 +31,7 @@ The owning client drives its player's Transform until prediction returns with th
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | `player/init` | On an added `player`, fill in missing fields and add identity, the camera, movement and the abilities |
+| First (server) | `player/init` | On an added `player`, add identity, the camera, movement and the abilities |
 | Update (server) | `player/identity` | When the join ticket is verified, set `player.user_id` |
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`) |
 | First (server) | `player/removed` | When `player` is removed from an entity that stays, remove identity, the camera, movement and the abilities |

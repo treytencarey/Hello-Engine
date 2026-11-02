@@ -23,9 +23,7 @@ app:add_systems(First, {
     Commands,
 }, function(added, commands)
     for _, e in ipairs(added:iter()) do
-        local p = e:get("player")
         commands:entity(e:id()):patch({
-            player = { user_id = p.user_id or "", smoothing = p.smoothing or 15 },
             ["core/player/attest"] = {},
             ["camera/third_person"] = {},
             movement = {},
@@ -63,17 +61,13 @@ app:add_systems(Update, {
     for _, e in ipairs(players:iter_mut()) do
         local target = e:get("core/net/sync/Transform")
         local current = e:get("Transform")
-        -- `smoothing` is filled when the player is added; skip until then
-        local smoothing = e:get("player").smoothing
-        if smoothing ~= nil then
-            local t = math.min(1, smoothing * dt)
-            e:patch({
-                Transform = {
-                    translation = Vec3.lerp(current.translation, target.translation, t),
-                    rotation = Quat.slerp(current.rotation, target.rotation, t),
-                },
-            })
-        end
+        local t = math.min(1, e:get("player").smoothing * dt)
+        e:patch({
+            Transform = {
+                translation = Vec3.lerp(current.translation, target.translation, t),
+                rotation = Quat.slerp(current.rotation, target.rotation, t),
+            },
+        })
     end
 end):in_set("player/follow")
 
@@ -109,6 +103,12 @@ app:add_systems(First, {
 end):in_set("player/removed")
 
 return {
+    defaults = {
+        player = {
+            user_id = "",
+            smoothing = 15,
+        },
+    },
     ["core/net/sync"] = {
         authority = "server",
     },

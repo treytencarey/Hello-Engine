@@ -10,21 +10,20 @@
 -- Writes are `try_` commands: they land after the system, and a synced copy may be despawned
 -- by then (the server ended it).
 
+-- Adds only what the entity lacks: a reload runs this again, and a fresh `CollidingEntities3d`
+-- would read as everything having exited.
 app:add_systems(First, {
-    Query[{ added = { "collision_trigger" } }],
+    Query[{
+        added = { "collision_trigger" },
+        optional = { "Sensor3d", "CollidingEntities3d", "ActiveEvents3d" },
+    }],
     Commands,
 }, function(triggers, commands)
     for _, e in ipairs(triggers:iter()) do
-        commands:entity(e:id()):try_insert({
-            collision_trigger = {
-                entered = {},
-                exited = {},
-                inside = {},
-            },
-            Sensor3d = {},
-            CollidingEntities3d = {},
-            ActiveEvents3d = "COLLISION_EVENTS",
-        })
+        local entity = commands:entity(e:id())
+        if not e:has("Sensor3d") then entity:try_insert({ Sensor3d = {} }) end
+        if not e:has("CollidingEntities3d") then entity:try_insert({ CollidingEntities3d = {} }) end
+        if not e:has("ActiveEvents3d") then entity:try_insert({ ActiveEvents3d = "COLLISION_EVENTS" }) end
     end
 end):in_set("collision_trigger/init")
 
@@ -83,3 +82,13 @@ app:add_systems(First, {
         end
     end
 end):in_set("collision_trigger")
+
+return {
+    defaults = {
+        collision_trigger = {
+            entered = {},
+            exited = {},
+            inside = {},
+        },
+    },
+}

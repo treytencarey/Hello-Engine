@@ -34,7 +34,6 @@ A character's skeletal animation: its model, and the clip it plays for what it i
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | `animation/init` | On an added `animation`, fill in missing fields |
 | First (client) | `animation/model` | On a changed `animation` whose fields are filled: spawn the model child with `SceneRoot = asset_server:load(scene)`, or replace it when the scene differs from the one it holds |
 | First (client) | `animation/graph` | On a changed `animation`: build the graph from the clips' handles, or rebuild it when a clip's path changed or one was taken out, and give it to a player already linked |
 | First (client), after `animation/graph` | `animation/link` | On an added AnimationPlayer, find its character (the nearest ancestor with a graph), give the player the graph and mark it `animation/player` |

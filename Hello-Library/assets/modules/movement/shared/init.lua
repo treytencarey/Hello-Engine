@@ -20,28 +20,25 @@
 app:add_systems(First, {
     Query[{
         added = { "movement" },
-        optional = { "Velocity3d" },
+        without = { "Velocity3d" },
     }],
     Commands,
 }, function(added, commands)
     for _, e in ipairs(added:iter()) do
-        local m = e:get("movement")
-        commands:entity(e:id()):patch({
-            movement = {
-                speed = m.speed or 6,
-                jump = m.jump or 5,
-                turn = m.turn or 10,
-                ground = m.ground or 1,
-                smoothing = m.smoothing or 10,
-            },
-        })
-        if not e:has("Velocity3d") then
-            commands:entity(e:id()):insert({ Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } } })
-        end
+        commands:entity(e:id()):insert({ Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } } })
     end
 end):in_set("movement/init")
 
 return {
+    defaults = {
+        movement = {
+            speed = 6,
+            jump = 5,
+            turn = 10,
+            ground = 1,
+            smoothing = 10,
+        },
+    },
     ["core/net/sync"] = {
         authority = "server",
     },

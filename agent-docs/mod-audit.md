@@ -44,7 +44,9 @@ When two ratings fit, take the higher one.
    - change detection rather than polling;
    - nothing stored that names an entity;
    - no other mod's path required to call its API;
-   - no environment reads.
+   - no environment reads;
+   - static defaults declared in the mod's return value (`defaults`, State), not filled by a `<mod>/init` system, which is only for a fill computed from the world or an engine component the mod adds;
+   - no guard in the mod for a field it declares a default for (`if m.speed ~= nil then`). A child reading its base's fields keeps its guard: the base's mod may not have loaded yet.
 3. **Engine values in their real shape.** Read any engine component, resource or message the mod reads in the shape the standard's Engine notes give. For example, an enum's unit variant is its name, and a patch changes only what it names. A comparison against another shape is a must-fix: it fails silently.
 4. **The suites.**
    - Each case must fail when the rule it checks is removed. To prove it, put the bug back, see the case fail, and restore the fix.

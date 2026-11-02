@@ -26,7 +26,6 @@ A projectile fired by an ability. It is launched from a point, 1 m along a look 
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `abilities/projectile/init` | On an added `abilities/projectile`, fill in its missing `at`, `yaw`, `pitch` and `speed` |
 | First | `abilities/projectile/launch` | On an added `abilities/projectile`, add the `projectile`: 1 m along the look from `at`, at `speed` |
 | First | `abilities/projectile/removed` | When `abilities/projectile` is removed from an entity that stays, remove the `projectile` |
 

@@ -4,6 +4,7 @@ require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local On = require("bevy::ecs::prelude::On")
 local Time = require("bevy::time::Time")
+local MessageReader = require("bevy::prelude").MessageReader
 
 local suite = helpers.create_suite("NoisemakerServerSuite")
 
@@ -111,17 +112,12 @@ app:add_observer(On["ai/noisemaker/sound"], {
     })
 end)
 
--- A hot reload refills the defaults, which is a write to `ai/noisemaker`: this is how a case
--- knows the reload ran.
+-- The watcher says when it saw the mod's file change: this is how a case knows the reload ran. A
+-- reload writes nothing to a row that misses no field.
 local refills = 0
-app:add_systems(Update, {
-    Query[{
-        changed = { "ai/noisemaker" },
-        with = { "zz/name" },
-    }],
-}, function(changed)
-    for _, e in ipairs(changed:iter()) do
-        if e:get("zz/name").name == "hush" then
+app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
+    for _, event in ipairs(changed:read()) do
+        if tostring(event.path):find("ai/noisemaker/server/init.lua", 1, true) then
             refills = refills + 1
         end
     end

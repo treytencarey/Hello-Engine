@@ -16,22 +16,6 @@
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 
-app:add_systems(First, {
-    Query[{ added = { "player/spawner" } }],
-    Commands,
-}, function(added, commands)
-    for _, e in ipairs(added:iter()) do
-        local s = e:get("player/spawner")
-        commands:entity(e:id()):patch({
-            ["player/spawner"] = {
-                count = s.count or 8,
-                radius = s.radius or 3,
-                height = s.height or 5,
-            },
-        })
-    end
-end):in_set("player/spawner/init")
-
 -- A client that is not only watching gets a player, unless it has one already: a new
 -- connection (`changed` also fires when a component is added), or one that stopped only
 -- watching. A spawner added later serves the clients already connected: this mod loads
@@ -83,7 +67,7 @@ app:add_systems(First, {
             taken[index] = true
         end
     end
-end):in_set("player/spawner/spawn"):after("player/spawner/init")
+end):in_set("player/spawner/spawn")
 
 -- A client that left, or went back to only watching: its player goes. A connection whose
 -- entity is gone has no row in `connected`.
@@ -110,3 +94,13 @@ app:add_systems(PreUpdate, {
         end
     end
 end):in_set("player/spawner/left")
+
+return {
+    defaults = {
+        ["player/spawner"] = {
+            count = 8,
+            radius = 3,
+            height = 5,
+        },
+    },
+}

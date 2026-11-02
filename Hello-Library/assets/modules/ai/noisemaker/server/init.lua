@@ -21,36 +21,21 @@
 local Time = require("bevy::time::Time")
 local Vec3 = require("bevy::math::Vec3")
 
+-- Only when it has none: a reload runs this again, and the timer carries on.
 app:add_systems(First, {
     Query[{
         added = { "ai/noisemaker" },
-        optional = { "ai/noisemaker/state" },
+        without = { "ai/noisemaker/state" },
     }],
     Commands,
 }, function(added, commands)
     for _, e in ipairs(added:iter()) do
-        local n = e:get("ai/noisemaker")
-        commands:entity(e:id()):patch({
-            ["ai/noisemaker"] = {
-                interval = n.interval or 0.5,
-                loudness = n.loudness or 1,
-                kind = n.kind or "footstep",
-                quiet_speed = n.quiet_speed or 2.5,
-                run_speed = n.run_speed or 5,
-                min_loudness = n.min_loudness or 0.3,
-                run_interval = n.run_interval or 0.7,
-            },
-        })
-        -- A reload runs this again, and the timer carries on.
-        if not e:has("ai/noisemaker/state") then
-            commands:entity(e:id()):insert({ ["ai/noisemaker/state"] = { next_at = 0 } })
-        end
+        commands:entity(e:id()):insert({ ["ai/noisemaker/state"] = { next_at = 0 } })
     end
 end):in_set("ai/noisemaker/init")
 
 -- Walkers write `Velocity3d` in Update and physics after it, so this reads it in PostUpdate.
--- Only a change runs it: something standing still costs nothing. Its state lands with its
--- fields filled, so a row always has them.
+-- Only a change runs it: something standing still costs nothing.
 app:add_systems(PostUpdate, {
     Res[Time],
     Query[{
@@ -83,3 +68,17 @@ app:add_systems(PostUpdate, {
         end
     end
 end):in_set("ai/noisemaker/sound")
+
+return {
+    defaults = {
+        ["ai/noisemaker"] = {
+            interval = 0.5,
+            loudness = 1,
+            kind = "footstep",
+            quiet_speed = 2.5,
+            run_speed = 5,
+            min_loudness = 0.3,
+            run_interval = 0.7,
+        },
+    },
+}

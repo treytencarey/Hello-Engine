@@ -41,6 +41,7 @@ end):in_set("cooldown/tick")
 - A parameter works only during its own system's run, as a Bevy parameter cannot outlive it. Never keep one in a local for later.
 - A mod's systems declare their parameters. `World`, Bevy's exclusive world, is for the engine's own internals and for suites.
 - Gone, with no replacement under the old name: the old `register_system`, `spawn`, `despawn`, `load_asset`, `load_asset_async`, `reload_asset` and `create_asset` globals, the `world:call_*` methods, `world:query` in a mod, `app:init_resource` (resources are made through `Commands`, State), `app:add_message` (a Lua message exists from its first use, Queries and writes), `invoke_observer` (trigger the real event, Tests), and an entity's `bits()` (Entity values).
+- A mod file's return value declares what the mod is: `core/net/sync` (Components), `relationships` (Relationships), `base` (Mod boundaries) and `defaults` (State). The registry reads it when the file loads.
 - Besides the parameters, a mod uses `require` of its own stateless function file and of core's JSON library (State), `null` (a nested key taken out), and `world_id` (this VM's id). Forbidden in mods: `World`, `require_async`, `_raw_fns`, `_exec_ctx`, `__shared_*`, `vm.*`, `get_env`, `os.getenv`, `define_resource`, new globals, and any name of its own that starts with `_` (Formatting). If a mod needs one, ask for the missing word instead of reaching in.
 
 ## Components
@@ -64,7 +65,7 @@ end):in_set("cooldown/tick")
   - One exception, Bevy's required components: an engine component a mod's `<mod>/init` system adds because the mod needs it and the entity has none (`movement/init` adds `Velocity3d`) stays when the mod's component goes. Another mod may have added it on another side (the spawner gives the server's player its `Velocity3d`), so removing it would take what another mod added.
 - To use another mod, write a request entry into that mod's component (`cooldown = { [name] = { remaining = 3 } }`). The owning mod does the work and removes the entry.
   - A standing request, one that holds for as long as the asker wants it, is a keyed entry the asker removes: `ai/nav` adds `ai/nav/request` and takes it away when it goes, and `chase` writes and removes only `chase` inside it. Different keys don't collide, so one asker leaving and another arriving in the same frame need no ordering.
-- A provider gives its component its full shape when it sets up. Consumers tolerate fields a provider has not filled yet (`ct.entered or {}`).
+- A provider gives its component its full shape by declaring its defaults (State). Its own systems never see a field of it missing, and neither does a consumer once the provider's mod has loaded. A consumer allows only for a field the provider declares no default for, and for a provider that has not loaded yet (a base, Mod boundaries).
 - A write must never recreate something its owner removed.
 - Ownership follows the hierarchy: children go with their parent, whoever spawned them. A mod that puts its entity inside another mod's UI spawns it there when that UI appears (`Query[{ added = { "sidebar/bar" } }]`, the new entity spawned with `ChildOf` set to the bar), and spawns it again when a new one appears (a reload of the other mod). An entity moved under another mod's entity after its spawn frame becomes that mod's (a notification moved under its overlay).
 
@@ -138,15 +139,30 @@ return {
 - A base's systems process only the base's own component. A child configures the base by writing the base's fields. It never writes its own state into the base under its name, and a base is never told which child it serves.
 - A base has one child per entity: a second child of the same base replaces the first. Several of one kind on an entity (a player's abilities) are separate mods with no `base`. Each registers its own entry in a shared data component (`abilities = { fireball = { key, cooldown } }`), removes the entry when it goes, and does its own work on its own input action (`added = { "input/game/abilities/fireball" }`, `without = { "abilities/fireball/cooling" }`). Never on its cooldown starting: anything that starts the cooldown (a debuff) would fire it.
 - A child writes its base only once the base is there (`with = { "<base>" }`, and react to `added = { "<base>" }`). Writing it first puts the base on the entity directly, and it then stays when the child is removed. Two children of one base replace each other and the base stays, so a mode switch (first to third person) keeps what the base owns.
-- A base's fields can be missing for the first frames after it appears: the registry learns of the base when the child loads, adds it as `{}`, and the base's own mod fills its defaults once it loads. A child that reads them skips until they are there (`if cam.pitch ~= nil then`); the base filling them is a change, which runs the child again. A system that must act at once starts from a neutral value instead (an eye spawns level).
+- A base's fields can be missing only until the base's own mod has loaded: the registry learns of the base when the child loads, adds it as `{}`, and the base's declared defaults fill it when its mod loads, a frame or so after the child. A base whose mod is already loaded fills at once, however it arrives. A child that reads them skips until they are there (`if cam.pitch ~= nil then`); the base filling them is a change, which runs the child again. A system that must act at once starts from a neutral value instead (an eye spawns level). The base's own systems never see them missing.
 - Variants of one thing (input modes) are data components, not sub-mods that duplicate code. A field names the variant that applies, the code names none of them, and the query columns come from that data (`q:with_columns({ optional = columns })`).
 - A mod that depends on a mod not yet rewritten waits for it.
 
 ## State
 
 - Per-entity state lives on the entity, in the mod's components.
-- Tunable numbers (sensitivity, limits, distances) are configuration fields on the mod's own component, with defaults filled in for missing fields when it is added. Not module constants.
-- Defaults are filled by one system per mod, in the set `<mod>/init`, on the mod's component's `added` edge, in `First`: the missing fields of its own component, and any engine component the mod needs that the entity has none of (`movement/init` adds `Velocity3d`, with the value it starts from). What a mod takes off when its component goes is in the set `<mod>/removed`.
+- Tunable numbers (sensitivity, limits, distances) are configuration fields on the mod's own component, with declared defaults. Not module constants.
+- A mod declares the defaults of its own component and its own sub-components in its return value, as plain data:
+
+  ```lua
+  return {
+      defaults = {
+          ["ai/noisemaker"] = { interval = 0.5, kind = "footstep" },
+      },
+  }
+  ```
+
+  - `mod_registry` fills the missing top-level fields: every existing row when the file loads, before any of the mod's systems runs, then each new row as it gets the component, before the next system or the next command of the system that added it. So no system of the mod reads a row unfilled, and no system needs an ordering for it.
+  - A field a row was given stays, and a nested table it was given is not merged with the default. Each row gets its own copy of a nested table. A row missing nothing is not written.
+  - It goes when the mod unloads. A hot reload replaces it: a newly declared field fills, and a field a row holds stays, even if its default changed.
+  - It reaches where the file that declares it loads: `shared/` for both sides. Halves can land apart on a client, so a field a half's system reads with no other source is declared in that half or arrives on the row.
+  - Another mod's name, a sub-mod's name, or a value that is not plain data is refused, and the mod registry prints it. A row whose value is not a table is left alone.
+- A fill computed from the world (`Time`, another component) or adding an engine component the mod needs (`movement/init` adds `Velocity3d`, with the value it starts from) stays in one system per mod, in the set `<mod>/init`, on the component's `added` edge, in `First`. What a mod takes off when its component goes is in the set `<mod>/removed`.
 - No `define_resource` (suites included), no globals, and no state in a module that another mod requires.
 - Never mirror a component into a resource. A value that lives on a component is read there: a copy keyed by entity drifts from the component after the next `patch`. The same goes for links: find which buttons have a panel by querying the panels, not from a map kept beside them.
 - No table keyed by entity, not even a local one inside a system or one kept by a VM: state about an entity is a sub-component on it, a link is a relationship, and a lookup is a query.
@@ -165,6 +181,21 @@ return {
 - A system's first run sees every existing component as `added` and `changed`, so a mod's setup on its own component's `added` edge also covers carriers that existed before the mod loaded. Every `added` handler is safe to run again.
 - Systems react to `added`, `changed` and `removed`. Only timed work polls (retries, cooldowns, timeouts, camera follow).
 - A system's edge queries answer what changed since its last run, whether or not the run reads them. Returning early before reading one (on a timer, a budget or a flag) consumes its edges. Timed or budgeted work goes in its own system. A `:run_if` condition that is false skips the run and consumes nothing.
+- A system skips the way a Bevy system does, with a run condition from `bevy_ecs::schedule::common_conditions`, imported at its Bevy path:
+
+  ```lua
+  local any_match_filter = require("bevy::ecs::schedule::common_conditions::any_match_filter")
+  local any_component_removed = require("bevy::ecs::schedule::common_conditions::any_component_removed")
+
+  app:add_systems(First, { ... }, function(...) end)
+      :run_if(any_match_filter[{ changed = { "ai/nav/region" } }])
+  ```
+
+  - A condition has its own change ticks. A false one skips the run and leaves the system's own edges for its next run. Several `:run_if` calls all have to pass, and each is evaluated every time.
+  - `any_match_filter[{ ... }]` takes the filters `Query` takes: `with`, `without`, `changed`, `added` and `["or"]`. A removal is no filter in Bevy: `any_component_removed["<name>"]`.
+  - Conditions combine as in Rust's `a.or(b)`, and a method named after a Lua keyword is indexed: `local changed = any_match_filter[{ changed = { "x" } }]`, then `:run_if(changed["or"](changed, any_component_removed["x"]))`. It runs the second only when the first answered false. `nand`, `nor`, `xor` and `xnor` read `a:nor(b)`; `and` is `a["and"](a, b)`, and `not` is `require("bevy::ecs::schedule::common_conditions::not")`, called on a condition.
+  - A plain function works too (`:run_if(function() return ready end)`). Its last answer lives in the mod's memory, so a condition from the list above is the usual one.
+- A backlog too big for one frame stops when the system has spent its slice of the frame's budget, and carries on next frame: `Res[LuaFrameBudget]` (`local LuaFrameBudget = require("bevy_lua_ecs::lua_frame_budget::LuaFrameBudget")`), `repeat ... until budget:over_budget()`. The first poll of a run answers false, so a run makes at least one unit of progress, however little of the budget is left. Progress lives on an entity or in a resource, and each unit is safe to repeat. Nothing stops a system that does not ask.
 - Each edge is seen exactly once by every system, whatever its order relative to the writer. A system that errors re-sees everything since its last successful run, so reactions should be safe to repeat.
 - Schedules: set up and deliver in `First` or `PreUpdate`, consume another mod's output in `Update` or `PostUpdate`, clear delivered values in `Last`. A consumer never reads another mod's output in the schedule that mod writes it in.
 - Per-frame output (input actions) is delivered in `PreUpdate`, so a mod reading it in `Update` needs no ordering against the provider.
@@ -173,6 +204,7 @@ return {
 - Within a schedule, the only ordering is what `:after`, `:before` and `app:configure_sets` declare. Systems with no declared order may run at the same time; each sees the other's writes on its next run.
 - Everything a system writes lands together when its run ends: its `Commands` (spawns, inserts, patches, removals, despawns, parenting), its row writes, its resource writes and its messages. A system never sees its own writes during that run, and a run that errors drops all of them. The writes are seen by every system ordered after it in the same schedule (Bevy's sync point), and by the others once the schedule ends.
   - Today differs: a `MessageWriter` write and a `ResMut` `set` or `patch` apply at once, and survive a run that errors. Do not depend on either.
+- An observer's writes land sooner, as a Bevy observer's commands do: when the operation that raised its event ends, before the next system and before the next command of the system that wrote it. An observer that errors changes nothing.
 - A system that must see other systems' writes in the same frame names every one of them in `:after`, even when one already puts it in the right order today. The list is the contract; the order the scheduler happens to pick is not. A system that can read them a frame later names none.
 - A `shared/` half runs on both the server and the client on purpose: the client runs its own copy for display and prediction, and the server stays the authority through sync.
 - A timer the client needs (time left on screen, prediction) starts in the `shared/` half from synced data (`projectile.lifetime`), so it runs on both sides at once; `cooldown` never syncs.
@@ -190,8 +222,8 @@ return {
 
 ## Queries and writes
 
-- Setup happens on an `added` edge: one query, with `optional` columns for what the setup reads. Setup that a later change must redo reacts to `changed` (which also fires on add) in the same system. Fill missing config fields only when one is missing: the fill is itself a change, and an unconditional one would run every frame.
-- No early-return gates (`if q:is_empty() then return end`). The loop over the edge query is the gate.
+- Setup happens on an `added` edge: one query, with `optional` columns for what the setup reads. Setup that a later change must redo reacts to `changed` (which also fires on add) in the same system. A system that fills a computed field writes only when it is missing: the fill is itself a change, and an unconditional one would run every frame.
+- No early-return gates (`if q:is_empty() then return end`). The loop over the edge query is the gate. To skip a whole run on what changed, use a run condition (Systems).
 - Combine `changed` and `removed` handling in one query with `["or"]` where you can. `changed` also fires on add.
 - A query answers only the columns it names. `get()` and `has()` read the row, so a component the query did not list in `with`, `optional`, `any_of`, `added` or `changed` reads as absent even when the entity has it, and the failure is silent. Name what you read, even when it may be missing (`Query[{ changed = { "animation" }, optional = { "Children" } }]`). Read another entity's data through a declared query (`parents:get(e:get("ChildOf"))`); a mod has no world to read it from.
 - Read each column into a local first, then use the local (`local entered = e:get("collision_trigger").entered or {}`). Never iterate, index or compare through an inline `e:get(...)`.
@@ -234,7 +266,7 @@ return {
   - A **message** is a buffered stream that systems read: `MessageWriter[T]:write({ ... })`, `MessageReader[T]:read()` (what arrived since this system last read, each message once however far apart its runs). An engine message is read by its type (`MessageReader[KeyboardInput]`). A Lua message is read and written by its name, `MessageWriter["<mod>/<name>"]:write({ ... })` and `MessageReader["<mod>/<name>"]:read()`. It exists from its first use, by a reader or a writer, with nothing to add first, and a reader sees only that name's messages. A message holds data, entity values and handle values; not a function.
   - An **event** is a moment a mod tells others about, observed as it happens: `commands:trigger("<mod>/<name>", { entity = e, ... })`, observed with `On["<mod>/<name>"]`.
   - Neither persists the way components do, and both are local to a world. Anything that spawns reacts to a component edge instead: an entity survives a reload, and an `added` query is its reader.
-- An observer is Bevy's, declared with `On[...]` like a parameter: `commands:entity(e):observe(On[Pointer[Click]], { params }, function(event, ...) end)` for one entity's events (`On`, `Pointer`, `Click` imported at their Bevy paths), `app:add_observer(On[...], { params }, fn)` for every entity's. The callback gets the event (`event.entity`, its fields) and then its declared parameters. Component lifecycle is `On[Add]["<component>"]`.
+- An observer is Bevy's, declared with `On[...]` like a parameter: `commands:entity(e):observe(On[Pointer[Click]], { params }, function(event, ...) end)` for one entity's events (`On`, `Pointer`, `Click` imported at their Bevy paths), `app:add_observer(On[...], { params }, fn)` for every entity's. The callback gets the event (`event.entity`, its fields) and then its declared parameters. Component lifecycle is `On[Add]["<component>"]`. Its writes land before the next system (Systems).
 
 ## Formatting
 
@@ -268,7 +300,7 @@ return {
 - Drive an observer in a suite by triggering the real event, as Bevy's own tests do: `commands:trigger(Pointer[Scroll], { entity = scroll, ... })` in a system with `Commands` (the first argument is the type `On[...]` takes; fields left out take their type's default). Observers receive it, and it propagates, as a real one does.
 - A suite marks its own entities under `zz/` (`zz/zone`), never under the mod's name: `mod_registry` treats `<mod>/<data>` as the mod's parts and removes them with it.
 - A suite is green only if its log also has zero Lua errors. A windowed suite exits 0 even when it fails; read the verdict line.
-- A mod that renders (meshes, materials, cameras) runs a windowed suite: a headless server has no rendering.
+- Suites run headless. A mod that renders (meshes, materials, cameras) or reads the window's input runs a windowed suite, because a headless server has neither, and says so in its first ten lines: `-- windowed: <why>`, or `-- --host (windowed: <why>)` to host and play.
 - An engine effect Lua cannot read back (an asset's contents) is tested by recording the call that causes it, with the real call still made.
 - To prove a value is written once, count `added` and `changed` edges in a consumer system in the suite.
 - To prove where something is, read its world transform after propagation (`world:get_entity(id).GlobalTransform:compute_transform()`), not its local `Transform`.
@@ -323,6 +355,9 @@ Each was written by an agent and rejected. The wrong form is what to look for; t
 - **Looping a query to pick one entity.** Wrong: `for _, r in ipairs(overlays:iter()) do overlay = r:id() end`. Right: `overlays:iter()[1]`.
 - **A flag to run a loop body once.** Wrong: `local done = false` ... `if not done then done = true`. Right: `break` after the work.
 - **A local function used once.** Wrong: `local function apply(...)` called from one place. Right: write it where it is used.
+- **A system that only fills static defaults.** Wrong: a `<mod>/init` system on `added` writing `speed = m.speed or 6`, which a system ordered after the spawner and `PostUpdate` read unfilled until the next `First`, and a guard in the mod (`if m.speed ~= nil then`) for that window. Right: `return { defaults = { movement = { speed = 6 } } }`, and no guard (State).
+- **A gate inside the system.** Wrong: `if not touched:is_empty() then rebuild() end`, or an early return on a query, which consumes that query's edges and runs the system every frame to ask. Right: `:run_if(any_match_filter[{ changed = { "<name>" } }])`, and `any_component_removed["<name>"]` for a removal (Systems).
+- **All or nothing behind one `without`.** Wrong: `without = { "CollidingEntities3d" }` on a system that adds `Sensor3d`, `CollidingEntities3d` and `ActiveEvents3d`: an entity that already has that one gets none of the others. Right: name them as `optional` and add each the row lacks (`if not e:has("Sensor3d") then`), and what it already has stays, through a reload too.
 - **Spawning a default entity, then filling it in another system.** Wrong: `ui/style` spawning `ui/theme = {}` and a second system filling its colors. Right: a mod extends a base and fills it (`ui/theme/dark` with `base = "ui/theme"`), and the world adds the mod it wants.
 - **Counters an observer fills for a system.** Wrong: an observer adding to `clicks` or `wheel` and a system acting on them. Right: act in the observer; a suite drives it with `commands:trigger(...)`.
 - **Cleaning up what `mod_registry` already removes.** Wrong: despawning your own marked children, or removing your own sub-components, on your `removed` edge. Right: mark the children with your sub-component and let the registry take them (it also runs when your mod stops with its last carrier, when your own systems do not).
@@ -374,7 +409,7 @@ Before a design is shown, check it against every item, and list the earlier ruli
 21. The mod has its `agent-docs/manifest.md`, matching the code.
 22. Entities the mod spawns are children of what they belong to and carry the mod's own marker; no stored ids. An entity inside another mod's UI is spawned there on that UI's `added` edge, and again for a new one. A body that moves on its own is a root, never a child of something that moves. An entity that must outlive the entity spawning it is `["core/script/owner"] = false`.
 23. Tunable numbers are configuration on the mod's component, and query columns are read into locals first.
-24. A child reading its base's fields allows for them being missing until the base fills them.
+24. A child reading its base's fields allows for them being missing until the base's mod has loaded.
 25. Every system whose writes a system needs in the same frame is named in its `:after`.
 26. Rotations and directions use Bevy's math, and constant values are written where they are used.
 27. A mod that reads another mod's data across the network declares that data's sync in its server half.
@@ -382,7 +417,7 @@ Before a design is shown, check it against every item, and list the earlier ruli
 29. An event a client can detect for itself is reacted to on every side in the `shared/` half; the `server/` half holds only what the server alone decides.
 30. A mod that spawns or adds on an edge, loads assets, or keeps its own markers has a suite case for its hot reload (and for a changed asset file), checking nothing is lost or doubled.
 31. Hierarchy lookups use Bevy's walks and `iter_many` on a declared query; no hand walk through `ChildOf`.
-32. Defaults are filled in the `<mod>/init` set, including any engine component the mod needs that is missing, and what goes with the component in the `<mod>/removed` set.
+32. Static defaults are declared in the return value. A fill computed from the world and any engine component the mod needs that is missing are in the `<mod>/init` set, and what goes with the component in the `<mod>/removed` set.
 33. Every system declares its parameters (no `World` in a mod), and is added at the file's top level; the mod spawns from an `added` edge or `Startup`, never at its top level, and uses nothing on the forbidden list (`require_async`, `define_resource`, names starting with `_`).
 34. A component two systems write in the same frame is patched key by key, never replaced whole; no system reads back its own writes in the same run, and nothing depends on a write surviving a run that errors.
 35. Every `require` is a top-of-file local (fixture strings included), every component and set name is a literal, and every `:after`/`:before` names a declared set.

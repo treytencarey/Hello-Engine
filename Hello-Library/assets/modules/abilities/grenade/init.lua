@@ -21,19 +21,7 @@ app:add_systems(First, {
 }, function(players, commands)
     for _, e in ipairs(players:iter()) do
         local g = e:get("abilities/grenade")
-        if g.key == nil or g.cooldown == nil or g.speed == nil or g.radius == nil or g.color == nil then
-            commands:entity(e:id()):patch({
-                ["abilities/grenade"] = {
-                    key = g.key or "KeyG",
-                    cooldown = g.cooldown or 1,
-                    speed = g.speed or 20,
-                    radius = g.radius or 0.2,
-                    color = g.color or { r = 0.4, g = 0.9, b = 0.3 },
-                },
-            })
-        else
-            commands:entity(e:id()):patch({ abilities = { grenade = { key = g.key, cooldown = g.cooldown } } })
-        end
+        commands:entity(e:id()):patch({ abilities = { grenade = { key = g.key, cooldown = g.cooldown } } })
     end
 end):in_set("abilities/grenade/init")
 
@@ -77,3 +65,15 @@ app:add_systems(First, {
         end
     end
 end):in_set("abilities/grenade/removed")
+
+return {
+    defaults = {
+        ["abilities/grenade"] = {
+            key = "KeyG",
+            cooldown = 1,
+            speed = 20,
+            radius = 0.2,
+            color = { r = 0.4, g = 0.9, b = 0.3 },
+        },
+    },
+}

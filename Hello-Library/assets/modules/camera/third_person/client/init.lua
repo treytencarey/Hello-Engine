@@ -16,24 +16,6 @@ local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 
 app:add_systems(First, {
-    Query[{ added = { Mut["camera/third_person"] } }],
-}, function(added)
-    for _, e in ipairs(added:iter_mut()) do
-        local tp = e:get("camera/third_person")
-        e:patch({
-            ["camera/third_person"] = {
-                sensitivity = tp.sensitivity or 0.003,
-                min_pitch = tp.min_pitch or -1.2,
-                max_pitch = tp.max_pitch or 0.2,
-                zoom_step = tp.zoom_step or 0.5,
-                min_distance = tp.min_distance or 2,
-                max_distance = tp.max_distance or 20,
-            },
-        })
-    end
-end):in_set("camera/third_person/init")
-
-app:add_systems(First, {
     Query[{
         ["or"] = {
             added = { "camera/third_person", "core/net/local", "input" },
@@ -151,4 +133,16 @@ end):in_set("camera/third_person/aim")
     :after("camera/third_person/zoom")
     :before("camera/3d/aim")
 
-return { base = "camera/3d" }
+return {
+    base = "camera/3d",
+    defaults = {
+        ["camera/third_person"] = {
+            sensitivity = 0.003,
+            min_pitch = -1.2,
+            max_pitch = 0.2,
+            zoom_step = 0.5,
+            min_distance = 2,
+            max_distance = 20,
+        },
+    },
+}

@@ -19,7 +19,6 @@ Camera mods that look through a 3D eye (`camera/first_person`, `camera/third_per
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `camera/3d/init` | On an added `camera/3d`, fill in a missing offset |
 | First | `camera/3d/spawn` | On the local carrier, spawn the eye already aimed, or turn the existing eye back on |
 | First | `camera/3d/teardown` | When the player leaves for another world (`core/net/local` removed), turn the eye off |
 | Update | `camera/3d/aim` | When `camera` or `camera/3d` changes, set the eye's `transform/follow` rotation (yaw, then pitch) and offset. The camera mods extending this one order their writers `:before` it |

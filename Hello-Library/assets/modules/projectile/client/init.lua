@@ -22,7 +22,7 @@ app:add_systems(First, {
             }),
         })
     end
-end):in_set("projectile/draw"):after("projectile/init")
+end):in_set("projectile/draw")
 
 -- `projectile` was taken off an entity that stays: take off what this mod added. A despawned
 -- projectile is in the `removed` rows too, which `try_remove` passes by.

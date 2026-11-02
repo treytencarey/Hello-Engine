@@ -31,12 +31,11 @@ A ball launched from a point at a velocity, flying under scaled gravity. The ser
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (both) | `projectile/init` | On an added `projectile`, fill in missing fields |
-| First (both), after `projectile/init` | `projectile/launch` | Place it at `from` and add the body with its collider and velocity |
-| First (both), after `projectile/init` | `projectile/flying` | Start the lifetime timer |
+| First (both) | `projectile/launch` | Place it at `from` and add the body with its collider and velocity |
+| First (both) | `projectile/flying` | Start the lifetime timer |
 | First (both) | `projectile/removed` | When `projectile` is removed from an entity that stays, remove the body and stop the timer |
 | First (server) | `projectile/landed` | When the lifetime timer ends, despawn the projectile |
-| First (client), after `projectile/init` | `projectile/draw` | Add a glowing sphere of its radius and color |
+| First (client) | `projectile/draw` | Add a glowing sphere of its radius and color |
 | First (client) | `projectile/undraw` | When `projectile` is removed from an entity that stays, remove the mesh and material |
 
 ## Use

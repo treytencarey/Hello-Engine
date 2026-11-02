@@ -25,21 +25,7 @@ app:add_systems(First, {
 }, function(players, commands)
     for _, e in ipairs(players:iter()) do
         local f = e:get("abilities/fireball")
-        if f.key == nil or f.cooldown == nil or f.speed == nil or f.radius == nil
-            or f.blast == nil or f.color == nil then
-            commands:entity(e:id()):patch({
-                ["abilities/fireball"] = {
-                    key = f.key or "KeyQ",
-                    cooldown = f.cooldown or 1,
-                    speed = f.speed or 25,
-                    radius = f.radius or 0.25,
-                    blast = f.blast or 1.5,
-                    color = f.color or { r = 1, g = 0.3, b = 0.1 },
-                },
-            })
-        else
-            commands:entity(e:id()):patch({ abilities = { fireball = { key = f.key, cooldown = f.cooldown } } })
-        end
+        commands:entity(e:id()):patch({ abilities = { fireball = { key = f.key, cooldown = f.cooldown } } })
     end
 end):in_set("abilities/fireball/init")
 
@@ -90,3 +76,16 @@ app:add_systems(First, {
         end
     end
 end):in_set("abilities/fireball/removed")
+
+return {
+    defaults = {
+        ["abilities/fireball"] = {
+            key = "KeyQ",
+            cooldown = 1,
+            speed = 25,
+            radius = 0.25,
+            blast = 1.5,
+            color = { r = 1, g = 0.3, b = 0.1 },
+        },
+    },
+}

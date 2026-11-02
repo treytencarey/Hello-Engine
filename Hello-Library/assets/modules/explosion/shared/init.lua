@@ -19,28 +19,11 @@ app:add_systems(First, {
     for _, e in ipairs(added:iter()) do
         local x = e:get("explosion")
         commands:entity(e:id()):patch({
-            explosion = {
-                at = x.at or { x = 0, y = 0, z = 0 },
-                radius = x.radius or 1.5,
-                duration = x.duration or 0.4,
-                color = x.color or { r = 1, g = 0.5, b = 0.1 },
-            },
-        })
-    end
-end):in_set("explosion/init")
-
-app:add_systems(First, {
-    Query[{ added = { "explosion" } }],
-    Commands,
-}, function(added, commands)
-    for _, e in ipairs(added:iter()) do
-        local x = e:get("explosion")
-        commands:entity(e:id()):patch({
             Transform = { translation = x.at },
             cooldown = { ["explosion/burning"] = { remaining = x.duration } },
         })
     end
-end):in_set("explosion/place"):after("explosion/init")
+end):in_set("explosion/place")
 
 -- Its timer ended: it is gone. One already despawned has no row in `live`.
 app:add_systems(First, {
@@ -78,5 +61,13 @@ end):in_set("explosion/removed")
 
 -- Local on each side: never synced.
 return {
+    defaults = {
+        explosion = {
+            at = { x = 0, y = 0, z = 0 },
+            radius = 1.5,
+            duration = 0.4,
+            color = { r = 1, g = 0.5, b = 0.1 },
+        },
+    },
     ["core/net/sync"] = false,
 }

@@ -22,7 +22,7 @@ Makes noise when its entity moves, for whatever listens (AI hearing). Generic: p
   | `min_loudness` | the share of `loudness` it never drops below | 0.3 |
   | `run_interval` | the share of `interval` it waits at `run_speed` or faster | 0.7 |
 
-- `ai/noisemaker/state = { next_at }`: `Time`'s elapsed seconds at which it may sound again. Added with the defaults; goes with `ai/noisemaker` by `mod_registry`.
+- `ai/noisemaker/state = { next_at }`: `Time`'s elapsed seconds at which it may sound again. Added with `ai/noisemaker`, unless it has one; goes with `ai/noisemaker` by `mod_registry`.
 
 ## Events
 
@@ -32,7 +32,7 @@ Makes noise when its entity moves, for whatever listens (AI hearing). Generic: p
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `ai/noisemaker/init` | On an added `ai/noisemaker`, fill in missing fields and add its state, unless it has one |
+| First | `ai/noisemaker/init` | On an added `ai/noisemaker`, add its state, unless it has one |
 | PostUpdate | `ai/noisemaker/sound` | On a changed `Velocity3d`, trigger the sound if it is moving fast enough and its wait is over |
 
 ## Use

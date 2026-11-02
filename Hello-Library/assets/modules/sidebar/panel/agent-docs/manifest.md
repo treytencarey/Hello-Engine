@@ -21,8 +21,7 @@ The base of every sidebar panel: a column with a header holding the title, and a
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `sidebar/panel/init` | On an added `sidebar/panel`, fill in missing config |
-| First, after `sidebar/panel/init` | `sidebar/panel/build` | Style the panel and spawn its header, title, scroll area and loading text |
+| First | `sidebar/panel/build` | Style the panel and spawn its header, title, scroll area and loading text |
 | First, after `sidebar/panel/build` | `sidebar/panel/title` | When the config changes, from the frame the panel is built: width, header shown for a non-empty title, title text, loading text gone once there is a title |
 | First | `sidebar/panel/removed` | When `sidebar/panel` is removed from an entity that stays, remove its `Node` and style (its marked parts go by `mod_registry`, even when this mod stops with its last carrier) |
 

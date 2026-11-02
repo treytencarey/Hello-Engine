@@ -24,8 +24,7 @@ Players for a world's server: one for each connected client, at a free spawn poi
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `player/spawner/init` | On an added `player/spawner`, fill in missing fields |
-| First, after `player/spawner/init` | `player/spawner/spawn` | On a changed connection, a client that is not only watching and has no player gets one, at the lowest free point (point 0, the centre, when all are taken) |
+| First | `player/spawner/spawn` | On a changed connection, a client that is not only watching and has no player gets one, at the lowest free point (point 0, the centre, when all are taken) |
 | PreUpdate | `player/spawner/left` | When a connection goes, or turns to only watching, its client's player is despawned |
 
 ## Use

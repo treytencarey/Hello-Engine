@@ -97,23 +97,20 @@ app:add_systems(Update, {
         local right = e:get("input/game/movement/right")
         local x = (right and right.value or 0) - (left and left.value or 0)
         local z = (backward and backward.value or 0) - (forward and forward.value or 0)
-        -- `movement` is filled when it is added; skip until then
-        if m.speed ~= nil then
-            local along = Quat.mul_vec3(Quat.from_rotation_y(camera.yaw or 0),
-                Vec3.normalize_or_zero({ x = x, y = 0, z = z }))
-            -- analog input moves slower; two keys at once no faster than one
-            local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
-            e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
-            -- opposite keys cancel out: no direction to face
-            if x ~= 0 or z ~= 0 then
-                e:patch({
-                    Transform = {
-                        rotation = Quat.slerp(rotation,
-                            Quat.from_rotation_arc({ x = 0, y = 0, z = 1 }, along),
-                            math.min(1, m.turn * dt)),
-                    },
-                })
-            end
+        local along = Quat.mul_vec3(Quat.from_rotation_y(camera.yaw or 0),
+            Vec3.normalize_or_zero({ x = x, y = 0, z = z }))
+        -- analog input moves slower; two keys at once no faster than one
+        local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
+        e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
+        -- opposite keys cancel out: no direction to face
+        if x ~= 0 or z ~= 0 then
+            e:patch({
+                Transform = {
+                    rotation = Quat.slerp(rotation,
+                        Quat.from_rotation_arc({ x = 0, y = 0, z = 1 }, along),
+                        math.min(1, m.turn * dt)),
+                },
+            })
         end
     end
 end):in_set("movement/walk")
@@ -169,15 +166,13 @@ app:add_systems(Update, {
         local m = e:get("movement")
         local target = e:get("core/net/sync/Transform")
         local current = e:get("Transform")
-        if m.smoothing ~= nil then
-            local t = math.min(1, m.smoothing * dt)
-            e:patch({
-                Transform = {
-                    translation = Vec3.lerp(current.translation, target.translation, t),
-                    rotation = Quat.slerp(current.rotation, target.rotation, t),
-                },
-            })
-        end
+        local t = math.min(1, m.smoothing * dt)
+        e:patch({
+            Transform = {
+                translation = Vec3.lerp(current.translation, target.translation, t),
+                rotation = Quat.slerp(current.rotation, target.rotation, t),
+            },
+        })
     end
 end):in_set("movement/follow")
 

@@ -22,19 +22,6 @@ local function follow(cam, c3d)
     }
 end
 
-app:add_systems(First, {
-    Query[{ added = { Mut["camera/3d"] } }],
-}, function(added)
-    for _, e in ipairs(added:iter_mut()) do
-        local c3d = e:get("camera/3d")
-        e:patch({
-            ["camera/3d"] = {
-                offset = c3d.offset or { x = 0, y = 0, z = 0 },
-            },
-        })
-    end
-end):in_set("camera/3d/init")
-
 -- `camera` arrives as `{}` and its own mod may load a frame later, so a new eye can be
 -- spawned before `camera` has its defaults. It starts level; filling them is a change to
 -- `camera`, and `camera/3d/aim` turns the eye then.
@@ -113,4 +100,11 @@ app:add_systems(Update, {
     end
 end):in_set("camera/3d/aim")
 
-return { base = "camera" }
+return {
+    base = "camera",
+    defaults = {
+        ["camera/3d"] = {
+            offset = { x = 0, y = 0, z = 0 },
+        },
+    },
+}

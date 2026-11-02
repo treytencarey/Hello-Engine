@@ -7,20 +7,6 @@
 -- }
 
 app:add_systems(First, {
-    Query[{ added = { Mut["camera/first_person"] } }],
-}, function(added)
-    for _, e in ipairs(added:iter_mut()) do
-        local fp = e:get("camera/first_person")
-        e:patch({
-            ["camera/first_person"] = {
-                sensitivity = fp.sensitivity or 0.0025,
-                pitch_limit = fp.pitch_limit or 1.4,
-            },
-        })
-    end
-end):in_set("camera/first_person/init")
-
-app:add_systems(First, {
     Query[{
         ["or"] = {
             added = { "camera/first_person", "core/net/local", "input" },
@@ -102,4 +88,12 @@ app:add_systems(Update, {
     end
 end):in_set("camera/first_person/aim"):before("camera/3d/aim")
 
-return { base = "camera/3d" }
+return {
+    base = "camera/3d",
+    defaults = {
+        ["camera/first_person"] = {
+            sensitivity = 0.0025,
+            pitch_limit = 1.4,
+        },
+    },
+}

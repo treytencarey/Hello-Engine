@@ -2,6 +2,7 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
+local MessageReader = require("bevy::prelude").MessageReader
 
 local suite = helpers.create_suite("CollisionTriggerSuite")
 
@@ -59,6 +60,33 @@ app:add_systems(Update, { World }, function(world)
         end
     end
 end):in_set("zz/collision_trigger_suite_consumer")
+
+-- T6 to T8: what a reload of the mod writes on a zone that came with its own list, and that the
+-- watcher has seen the file change.
+local reloads, rewrites = 0, 0
+app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
+    for _, event in ipairs(changed:read()) do
+        if tostring(event.path):find("collision_trigger/shared/init.lua", 1, true) then
+            reloads = reloads + 1
+        end
+    end
+end):in_set("zz/collision_trigger_suite_reloads")
+app:add_systems(Update, {
+    Query[{
+        changed = { "Sensor3d" },
+        with = { "zz/carried" },
+    }],
+    Query[{
+        changed = { "ActiveEvents3d" },
+        with = { "zz/carried" },
+    }],
+    Query[{
+        changed = { "CollidingEntities3d" },
+        with = { "zz/carried" },
+    }],
+}, function(sensors, events, lists)
+    rewrites = rewrites + #sensors:iter() + #events:iter() + #lists:iter()
+end):in_set("zz/collision_trigger_suite_rewrites")
 
 local function zones(world)
     local found = {}
@@ -137,6 +165,43 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "despawned" and clock > 0.5 and not z.spare then
         suite.assert_test("T5_a_despawned_trigger_leaves_nothing_behind", true, "")
+        commands:spawn({
+            Transform = { translation = { x = 200, y = 0, z = 0 } },
+            RigidBody3d = "Fixed",
+            Collider3d = { ball = { radius = 1.0 } },
+            CollidingEntities3d = {},
+            collision_trigger = {},
+            ["zz/zone"] = { name = "carried" },
+            ["zz/carried"] = {},
+            ["core/net/sync"] = false,
+        })
+        body(commands, 200, "zz/probe", { name = "five" })
+        step("carried")
+
+    elseif phase == "carried" and z.carried and z.carried:has("Sensor3d") and z.carried:has("ActiveEvents3d")
+        and #(z.carried:get("CollidingEntities3d") or {}) == 1
+        and #(z.carried:get("collision_trigger").inside or {}) == 1 then
+        suite.assert_test("T6_an_entity_with_its_own_list_gets_the_other_two", true, "")
+        -- Let the first writes settle: the case below counts only the reload's.
+        step("carried settled")
+
+    elseif phase == "carried settled" and clock > 0.5 then
+        log, rewrites, reloads = {}, 0, 0
+        -- The mod's own file is written again with the same bytes: the watcher reloads it.
+        local path = "assets/modules/collision_trigger/shared/init.lua"
+        write_file_bytes(path, read_file_bytes(path))
+        step("reloading")
+
+    elseif phase == "reloading" and reloads > 0 then
+        step("reloaded")
+
+    elseif phase == "reloaded" and clock > 1 then
+        local list = z.carried:get("CollidingEntities3d") or {}
+        local inside = z.carried:get("collision_trigger").inside or {}
+        suite.assert_test("T7_it_keeps_its_list_through_a_reload", #list == 1 and #inside == 1,
+            string.format("list %d inside %d", #list, #inside))
+        expect("T7_and_nothing_reads_as_exited", "")
+        suite.assert_test("T8_a_reload_writes_none_of_the_three", rewrites == 0, "writes " .. rewrites)
         phase = "done"
         suite.finish("CollisionTriggerSuite")
     end

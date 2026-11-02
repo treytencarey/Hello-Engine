@@ -25,7 +25,6 @@ A top-down 2D camera. Extends `camera` (`base = "camera"`). The local player's c
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `camera/2d/init` | On an added `camera/2d`, fill in missing config fields |
 | First | `camera/2d/spawn` | On the local carrier, spawn the eye already placed and scaled, or turn the existing eye back on |
 | First | `camera/2d/bind` | On the local carrier, bind the scroll wheel (again when `input` is added back) |
 | First | `camera/2d/teardown` | When the player leaves for another world (`core/net/local` removed), turn the eye off |
