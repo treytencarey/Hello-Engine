@@ -8,6 +8,7 @@
 --     sample = <false to trust the volumes as they are>,
 --     cell = <metres between samples>,
 --     max_step = <metres of height between neighbouring cells that is still walkable>,
+--     headroom = <metres a floor needs under the surface above it>,
 --     cost = <the regions' cost>,
 --     settle = <seconds without new geometry before it bakes>,
 --     rays_per_frame = <samples per frame>,
@@ -16,7 +17,8 @@
 -- ai/nav/volume = { hx, hy, hz }: half extents, on an entity whose transform places it
 --
 -- ai/nav/volumes/due = { at = <Time's elapsed seconds when the bake may start> }: while a bake is owed
--- ai/nav/volumes/job = { vols, vi, grid, ix, iz, rects }: a sampling bake in progress
+-- ai/nav/volumes/job = { vols, vi, grid, ix, iz, y, inside, ceiling, rects }: a sampling bake in
+-- progress, `y`, `inside` and `ceiling` being how far down this column it has got
 -- ai/nav/volumes/region: marks a region this mod spawned
 
 local Grid = require("modules/ai/nav/volumes/server/grid.lua")
@@ -37,6 +39,7 @@ app:add_systems(First, {
                 sample = v.sample ~= false,
                 cell = v.cell or 1,
                 max_step = v.max_step or 0.45,
+                headroom = v.headroom or 2,
                 cost = v.cost or 1,
                 settle = v.settle or 0.35,
                 rays_per_frame = v.rays_per_frame or 400,
@@ -136,22 +139,46 @@ app:add_systems(Update, {
                     end
                     -- from above the volume, down through it and a little under
                     local top = vol.floor_y + vol.hy * 2 + 2
+                    local bottom = top - (vol.hy * 4 + 6)
                     while job.iz <= job.grid.h and budget > 0 do
                         local x, z = Grid.cell_center(job.grid, job.ix, job.iz)
+                        local y = job.y or top
                         -- Something standing on the floor is not floor, so only fixed bodies count.
-                        local hit = rapier:cast_ray({ x = x, y = top, z = z }, { x = 0, y = -1, z = 0 }, vol.hy * 4 + 6, true, {
-                            flags = "ONLY_FIXED",
-                        })
-                        job.grid.floor[job.iz][job.ix] = hit ~= nil and top - hit.toi or false
-                        job.ix = job.ix + 1
-                        if job.ix > job.grid.w then
-                            job.ix, job.iz = 1, job.iz + 1
-                        end
+                        -- A solid ray that starts inside a collider stops where it starts, at 0, and
+                        -- only a hollow one goes on to where it leaves. So the ray under a floor is
+                        -- solid, to find whether it is inside, and then a hollow one finds the way out.
+                        local hit = y > bottom and rapier:cast_ray({ x = x, y = y, z = z }, { x = 0, y = -1, z = 0 }, y - bottom,
+                            not job.inside, { flags = "ONLY_FIXED" }) or nil
                         budget = budget - 1
+
+                        local more = false
+                        if hit ~= nil and job.inside then
+                            job.ceiling = y - hit.toi
+                            job.y, job.inside, more = job.ceiling - 0.01, nil, true
+                        elseif hit ~= nil and job.y ~= nil and hit.toi < 0.005 then
+                            job.inside, more = true, true
+                        elseif hit ~= nil then
+                            local height = y - hit.toi
+                            if job.ceiling == nil or job.ceiling - height >= v.headroom then
+                                table.insert(job.grid.floor[job.iz][job.ix], height)
+                            end
+                            job.ceiling = height
+                            job.y = height - 0.01
+                            -- Anything lower, within the volume, could not have the headroom.
+                            more = height > vol.floor_y + v.headroom
+                        end
+
+                        if not more then
+                            job.y, job.inside, job.ceiling = nil, nil, nil
+                            job.ix = job.ix + 1
+                            if job.ix > job.grid.w then
+                                job.ix, job.iz = 1, job.iz + 1
+                            end
+                        end
                     end
                     if job.iz > job.grid.h then
                         Grid.mark_walkable(job.grid, v.max_step)
-                        for _, r in ipairs(Grid.merge_rects(job.grid)) do
+                        for _, r in ipairs(Grid.merge_rects(job.grid, v.max_step)) do
                             job.rects[#job.rects + 1] = r
                         end
                         job.grid = nil
@@ -173,6 +200,8 @@ app:add_systems(Update, {
                             min_z = r.min_z,
                             max_z = r.max_z,
                             y = r.y,
+                            min_y = r.min_y,
+                            max_y = r.max_y,
                             cost = v.cost,
                         },
                         ["ai/nav/volumes/region"] = {},

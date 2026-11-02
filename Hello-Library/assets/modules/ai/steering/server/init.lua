@@ -6,6 +6,7 @@
 --     speed = <metres per second>,
 --     arrive_radius = <metres from the last waypoint that count as there>,
 --     pass_radius = <metres from any other waypoint that count as past it>,
+--     height_radius = <metres of height from a waypoint that count as on its floor>,
 --     ease_radius = <metres from the last waypoint at which it starts slowing>,
 --     ease_floor = <the share of its speed it slows to>,
 --     separation_radius = <metres within which a neighbour pushes it away>,
@@ -47,6 +48,7 @@ app:add_systems(First, {
                 speed = s.speed or 2,
                 arrive_radius = s.arrive_radius or 0.9,
                 pass_radius = s.pass_radius or 1.44,
+                height_radius = s.height_radius or 1.5,
                 ease_radius = s.ease_radius or 2.25,
                 ease_floor = s.ease_floor or 0.25,
                 separation_radius = s.separation_radius or 1.5,
@@ -138,8 +140,10 @@ app:add_systems(Update, {
             local along, distance = towards(at, path[cursor])
             local writes = {}
 
-            -- Waypoints on the way only need brushing past; the last must be reached.
-            if distance <= (cursor < #path and s.pass_radius or s.arrive_radius) then
+            -- Waypoints on the way only need brushing past; the last must be reached. One straight
+            -- overhead or underfoot is on another floor, and is not reached until it stops being so.
+            if distance <= (cursor < #path and s.pass_radius or s.arrive_radius)
+                and math.abs(at.y - path[cursor].y) <= s.height_radius then
                 cursor = cursor + 1
                 writes.cursor = cursor
                 if path[cursor] ~= nil then

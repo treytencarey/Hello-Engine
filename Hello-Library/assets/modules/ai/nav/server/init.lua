@@ -28,11 +28,11 @@
 --     job = <a search in progress, none before it starts>,
 -- }: while an answer is owed
 --
--- ai/nav/region = { min_x, max_x, min_z, max_z, y, cost }, on any entity
+-- ai/nav/region = { min_x, max_x, min_z, max_z, y, min_y, max_y, cost }, on any entity
 -- ai/nav/link = { from = { x, y, z }, to = { x, y, z }, x, y, z, cost, kind, capability, behavior, one_way }, on any entity
 --
 -- The resource ai/nav/graph = {
---     regions = { { min_x, max_x, min_z, max_z, y, cost, center = <a Vec2, its y the world's z> }, ... },
+--     regions = { { min_x, max_x, min_z, max_z, y, min_y, max_y, cost, center = <a Vec2, its y the world's z> }, ... },
 --     edges = { [<region index>] = { { to, cost, x, y, z, kind, capability, behavior }, ... } },
 --     warned = { [<"x,y,z">] = true }: link ends already warned about,
 -- }
@@ -82,6 +82,8 @@ app:add_systems(First, {
                     min_z = r.min_z,
                     max_z = r.max_z,
                     y = r.y or 0,
+                    min_y = r.min_y or r.y or 0,
+                    max_y = r.max_y or r.y or 0,
                     cost = r.cost or 1,
                     center = { x = (r.min_x + r.max_x) * 0.5, y = (r.min_z + r.max_z) * 0.5 },
                 }
@@ -196,7 +198,7 @@ app:add_systems(PreUpdate, {
                 answer(commands, e, time, "ready", straight, {})
             elseif job == nil then
                 local at = e:get("Transform").translation
-                local start, goal = Graph.locate(g.regions, at.x, at.z), Graph.locate(g.regions, to.x, to.z)
+                local start, goal = Graph.locate(g.regions, at.x, at.y, at.z), Graph.locate(g.regions, to.x, to.y, to.z)
                 if goal == nil then
                     answer(commands, e, time, "unreachable", {}, {})
                 elseif start == nil or start == goal then

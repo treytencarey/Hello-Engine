@@ -15,13 +15,15 @@ local Graph = require("modules/ai/nav/server/graph.lua")
 
 local suite = helpers.create_suite("NavSearchSuite")
 
-local function region(min_x, max_x, min_z, max_z, cost)
+local function region(min_x, max_x, min_z, max_z, cost, y, min_y, max_y)
     return {
+        y = y or 0,
+        min_y = min_y or y or 0,
+        max_y = max_y or y or 0,
         min_x = min_x,
         max_x = max_x,
         min_z = min_z,
         max_z = max_z,
-        y = 0,
         cost = cost or 1,
         center = { x = (min_x + max_x) * 0.5, y = (min_z + max_z) * 0.5 },
     }
@@ -92,12 +94,44 @@ app:add_systems(Update, {}, function()
     suite.assert_test("NS7_a_real_gap_does_not", not has_edge(Graph.build_edges(apart, {}), 1, 2), "")
 
     suite.assert_test("NS8_a_point_inside_locates_its_region",
-        Graph.locate(regions, -16, 0) == WEST and Graph.locate(regions, 16, 0) == EAST, "")
+        Graph.locate(regions, -16, 0, 0) == WEST and Graph.locate(regions, 16, 0, 0) == EAST, "")
     suite.assert_test("NS9_a_point_off_the_graph_snaps_to_the_nearest",
-        Graph.locate(regions, -7, 0) == WEST, tostring(Graph.locate(regions, -7, 0)))
-    suite.assert_test("NS10_a_point_too_far_locates_nothing", Graph.locate(regions, 500, 500) == nil, "")
+        Graph.locate(regions, -7, 0, 0) == WEST, tostring(Graph.locate(regions, -7, 0, 0)))
+    suite.assert_test("NS10_a_point_too_far_locates_nothing", Graph.locate(regions, 500, 0, 500) == nil, "")
     local nested = { region(-100, 100, -100, 100), region(40, 60, 40, 60) }
-    suite.assert_test("NS11_overlapping_regions_pick_the_nearest_centre", Graph.locate(nested, 50, 50) == 2, "")
+    suite.assert_test("NS11_overlapping_regions_pick_the_nearest_centre", Graph.locate(nested, 50, 0, 50) == 2, "")
+
+    -- Two floors over one place, 3 m apart.
+    local storeys = { region(0, 10, 0, 10, 1, 0), region(0, 10, 0, 10, 1, 3) }
+    suite.assert_test("NS11b_a_point_on_a_floor_is_on_that_floor",
+        Graph.locate(storeys, 5, 0, 5) == 1 and Graph.locate(storeys, 5, 3, 5) == 2, "")
+    suite.assert_test("NS11c_a_tall_agents_centre_nearer_the_floor_above_is_still_on_the_one_below",
+        Graph.locate(storeys, 5, 2.5, 5) == 1, tostring(Graph.locate(storeys, 5, 2.5, 5)))
+    suite.assert_test("NS11d_an_agent_on_the_upper_floor_is_on_it", Graph.locate(storeys, 5, 3.9, 5) == 2, "")
+    suite.assert_test("NS11e_a_point_a_hair_under_a_floor_is_on_it", Graph.locate(storeys, 5, 2.95, 5) == 2, "")
+    suite.assert_test("NS11f_a_point_under_every_floor_takes_the_nearest", Graph.locate(storeys, 5, -2, 5) == 1, "")
+    suite.assert_test("NS11g_the_snap_counts_height",
+        Graph.locate(storeys, 15, 3, 5) == 2 and Graph.locate({ storeys[1] }, 15, 7, 5) == nil
+            and Graph.locate({ storeys[1] }, 15, 3, 5) == 1, "")
+    local spans = { region(0, 10, 0, 10, 1, 2, 0, 4), region(20, 30, 0, 10, 1, 0) }
+    suite.assert_test("NS11h_within_a_span_it_is_on_that_region", Graph.locate(spans, 5, 3, 5) == 1, "")
+    local two_high = { region(0, 10, 0, 10, 1, 0), region(10, 20, 0, 10, 1, 0.5), region(10, 20, 0, 10, 1, 0.6) }
+    suite.assert_test("NS11i_the_step_is_half_a_metre",
+        has_edge(Graph.build_edges(two_high, {}), 1, 2) ~= nil and not has_edge(Graph.build_edges(two_high, {}), 1, 3), "")
+    suite.assert_test("NS11j_overlapping_storeys_do_not_join", not has_edge(Graph.build_edges(storeys, {}), 1, 2), "")
+    local ramped = { region(0, 10, 0, 10, 1, 0), region(0, 10, 0, 10, 1, 4), region(10, 20, 0, 10, 1, 2, 0, 4) }
+    local ramped_edges = Graph.build_edges(ramped, {})
+    local foot, head = has_edge(ramped_edges, 1, 3), has_edge(ramped_edges, 2, 3)
+    suite.assert_test("NS11k_a_ramp_spanning_two_storeys_joins_each", foot ~= nil and head ~= nil
+        and not has_edge(ramped_edges, 1, 2), "")
+    suite.assert_test("NS11l_a_crossings_height_is_on_the_shared_border", foot ~= nil and foot.y == 0 and head.y == 4,
+        string.format("%s %s", tostring(foot and foot.y), tostring(head and head.y)))
+    local stepped = has_edge(Graph.build_edges({ region(0, 10, 0, 10, 1, 0), region(10, 20, 0, 10, 1, 0.4) }, {}), 1, 2)
+    suite.assert_test("NS11m_across_a_small_step_it_is_halfway", stepped ~= nil and math.abs(stepped.y - 0.2) < 1e-6,
+        tostring(stepped and stepped.y))
+    local ladder = Graph.build_edges(storeys, { { from = { x = 1, y = 0, z = 1 }, to = { x = 9, y = 3, z = 9 } } })
+    suite.assert_test("NS11n_a_link_ends_on_the_floor_at_its_height",
+        has_edge(ladder, 1, 2) ~= nil and has_edge(ladder, 2, 1) ~= nil, "")
 
     local sliced = Graph.new_job(WEST, EAST, { x = 16, y = 2, z = 0 }, {})
     local slices = 0

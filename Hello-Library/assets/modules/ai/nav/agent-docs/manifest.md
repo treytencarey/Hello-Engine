@@ -11,8 +11,8 @@ Navigation for the agents that carry it. It builds a graph of what is walkable f
 ## Components
 
 - `ai/nav = { capabilities = { <capability> = true, ... } }`, on each agent. A link that needs a capability the agent lacks is closed to it. `capabilities` defaults to none.
-- `ai/nav/region = { min_x, max_x, min_z, max_z, y, cost }`, on any entity: a walkable XZ box, added by a level source (`ai/nav/volumes`, or by hand). `y` defaults to 0 and `cost` to 1. A region with a side missing is left out until it has one.
-- `ai/nav/link = { from = { x, y, z }, to = { x, y, z }, x, y, z, cost, kind, capability, behavior, one_way }`, on any entity: a way between two regions that do not touch (a door, a vent, a jump). `from` and `to` are positions, each resolved to the region at or within 8 m of it whenever the graph is built, so a level that respawns its regions keeps its links. Only those two are required: the crossing `x`, `y`, `z` defaults to between them on the ground, at the higher region's height, and `cost` to the distance between the regions' centres. It runs both ways unless `one_way`. An end no region is near makes no edge, with one warning in the log for each such position, ever: a link that lands before its regions warns once, then works.
+- `ai/nav/region = { min_x, max_x, min_z, max_z, y, min_y, max_y, cost }`, on any entity: a walkable XZ box, added by a level source (`ai/nav/volumes`, or by hand). `y` defaults to 0 and `cost` to 1, and `min_y` and `max_y`, the heights it spans, to `y`. A region with a side missing is left out until it has one.
+- `ai/nav/link = { from = { x, y, z }, to = { x, y, z }, x, y, z, cost, kind, capability, behavior, one_way }`, on any entity: a way between two regions that do not touch (a door, a vent, a jump). `from` and `to` are positions, each resolved to the floor there, or within 8 m, whenever the graph is built, so a level that respawns its regions keeps its links. Only those two are required: the crossing `x`, `y`, `z` defaults to between them on the ground, at the higher region's height, and `cost` to the distance between the regions' centres. It runs both ways unless `one_way`. An end no region is near makes no edge, with one warning in the log for each such position, ever: a link that lands before its regions warns once, then works.
 - `ai/nav/request = { <asker> = { to = { x, y, z } }, ... }`: what the agent is asked to go to. `ai/nav` adds it empty when it sets up, and it goes with `ai/nav`, by `mod_registry`; nothing else adds or removes the component. An asker waits for it to be there, then writes and removes only its own key, so askers need no order between them. An entry with no `to` is not served.
 - `ai/nav/path = { solved_id, status, path = { { x, y, z, kind, behavior }, ... }, regions = { <region index>, ... } }`: the answer to the entry being served. `status` is `"ready"` or `"unreachable"`, an unreachable path being empty. `solved_id` is `Time`'s elapsed seconds when it was answered, so it changes with each new path and never repeats. `regions` indexes `ai/nav/graph` as it was then, and is empty for a straight walk. Replaced whole, never patched: a patch would leave the old route's trailing waypoints. It goes when the entry it answers goes, and with `ai/nav`.
 - `ai/nav/serving = { key, to, entries, answered }`: the entry being served, the entries as last seen, and the entry the path answers. On while there is an entry.
@@ -20,7 +20,7 @@ Navigation for the agents that carry it. It builds a graph of what is walkable f
 
 ## Resources
 
-- `ai/nav/graph = { regions, edges, warned }`: `regions` is a list of `{ min_x, max_x, min_z, max_z, y, cost, center = <a Vec2 on the ground, its y the world z> }`, `edges[<region index>]` lists that region's `{ to = <region index>, cost, x, y, z, kind, capability, behavior }`, and `warned` the link ends already warned about. Nothing keeps it current once the mod has unloaded with its last agent, and the next agent builds it again.
+- `ai/nav/graph = { regions, edges, warned }`: `regions` is a list of `{ min_x, max_x, min_z, max_z, y, min_y, max_y, cost, center = <a Vec2 on the ground, its y the world z> }`, `edges[<region index>]` lists that region's `{ to = <region index>, cost, x, y, z, kind, capability, behavior }`, and `warned` the link ends already warned about. Nothing keeps it current once the mod has unloaded with its last agent, and the next agent builds it again.
 
 ## Systems
 
@@ -50,7 +50,8 @@ commands:spawn({ ["ai/nav/link"] = { from = { x = 9, y = 0, z = 0 }, to = { x = 
 
 ## Notes
 
-- Regions whose boxes come within 0.35 m are joined when they share at least 0.5 m of border, so a corner alone is no way through: author a link where one should be. Both numbers are fixed in `server/graph.lua`: the graph is the world's, and `ai/nav` sits on each agent.
+- Regions whose boxes come within 0.35 m are joined when they share at least 0.5 m of border and their heights come within a 0.5 m step, so a corner alone is no way through, and neither is the storey overhead: author a link where one should be. The numbers are fixed in `server/graph.lua`: the graph is the world's, and `ai/nav` sits on each agent. A bake with a `max_step` over 0.5 would leave its ramp's rectangles apart.
+- A point's region, an agent's or a goal's, is the floor over or under it at or just below its height, however near the floor above: it stands on the one below. Over no floor, it is the nearest within 8 m, measured in three dimensions.
 - A rebuild costs the square of the regions, and happens only when the level changes.
 - The path is delivered in PreUpdate, so `ai/steering` in Update reads it with no ordering.
 - The answer to a goal off the graph, more than 8 m from any region, is `"unreachable"`. An agent off the graph, or already in the goal's region, walks straight at the goal, as does every agent in a world with no regions at all.
@@ -58,4 +59,3 @@ commands:spawn({ ["ai/nav/link"] = { from = { x = 9, y = 0, z = 0 }, to = { x = 
 - Writing the same place again answers nothing new: to ask again, take the key out for a frame.
 - The frame's budget of 200 regions is not a field, because it is shared by every agent. A few hundred rooms normally finish in one frame; more take extra frames, never a longer frame.
 - A changed `capabilities` applies to the next search, not to the path it has.
-- `y` plays no part in finding a region: regions stacked over one another resolve by their centres on the ground.

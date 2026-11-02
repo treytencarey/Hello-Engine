@@ -17,6 +17,7 @@ Walks an agent along its path from `ai/nav/path`, keeps it apart from its neighb
   | `speed` | metres per second | 2 |
   | `arrive_radius` | metres from the last waypoint that count as there | 0.9 |
   | `pass_radius` | metres from any other waypoint that count as past it | 1.44 |
+  | `height_radius` | metres of height from a waypoint that count as on its floor | 1.5 |
   | `ease_radius` | metres from the last waypoint at which it starts slowing | 2.25 |
   | `ease_floor` | the share of its speed it slows to | 0.25 |
   | `separation_radius` | metres within which a neighbour pushes it away | 1.5 |
@@ -55,5 +56,6 @@ Query[{ changed = { "ai/steering/state" } }]
 
 - `ai/steering/state` is written only when something changes, and its stall check is sampled, so a walking agent writes it twice a second at most.
 - Each of `"idle"` from an empty path, `"blocked"` and `"arrived"` stands it still, and then it stops writing `Velocity3d`, so whatever else moves the body can.
+- It moves the body by `linvel` x and z only, and Rapier handles height. A waypoint on another floor is not reached until the height is within `height_radius`, so one it cannot get to ends in `"blocked"`, not `"arrived"`. A storey needs to be further than `height_radius` plus the height of an agent's centre above its floor.
 - It reads positions from `Transform`, so an agent is a root, never a child of something that moves.
 - Separation looks at every other agent with a path, once per frame each: cost grows with the square of agents walking.

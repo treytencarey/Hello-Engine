@@ -1,14 +1,15 @@
 -- The navigation graph and its search, in plain functions: no systems, no components. Regions
--- are XZ boxes in a list, and a node of the graph is an index into it. Search runs over
--- regions, never over world cells, so a map with 400 rooms searches 400 nodes however large
--- they are.
+-- are XZ boxes in a list, each at a range of heights, and a node of the graph is an index into
+-- it. Search runs over regions, never over world cells, so a map with 400 rooms searches 400 nodes
+-- however large they are.
 --
--- region = { min_x, max_x, min_z, max_z, y, cost, center = { x, y } }
+-- region = { min_x, max_x, min_z, max_z, y, min_y, max_y, cost, center = { x, y } }
 -- edge = { to = <index>, cost, x, y, z, kind, capability, behavior }
 --
 -- A region's `center` is a `Vec2` on the ground: its `y` is the world's z.
 
 local Vec2 = require("bevy::math::Vec2")
+local Vec3 = require("bevy::math::Vec3")
 
 local M = {}
 
@@ -25,13 +26,16 @@ function M.build_edges(regions, links)
         for j = i + 1, #regions do
             local b = regions[j]
             -- Closer than 0.35 m counts as touching, along a shared border of at least 0.5 m: a
-            -- corner alone is no way through.
+            -- corner alone is no way through. Heights more than a 0.5 m step apart are not touching
+            -- at all, so overlapping storeys stay apart.
             local min_x, max_x = math.max(a.min_x, b.min_x), math.min(a.max_x, b.max_x)
             local min_z, max_z = math.max(a.min_z, b.min_z), math.min(a.max_z, b.max_z)
+            local low, high = math.max(a.min_y, b.min_y), math.min(a.max_y, b.max_y)
             local span_x, span_z = max_x - min_x, max_z - min_z
-            if span_x >= -0.35 and span_z >= -0.35 and math.max(span_x, span_z) >= 0.5 then
+            if span_x >= -0.35 and span_z >= -0.35 and math.max(span_x, span_z) >= 0.5 and high - low >= -0.5 then
                 local cost = Vec2.distance(a.center, b.center) * (a.cost + b.cost) * 0.5
-                local x, y, z = (min_x + max_x) * 0.5, math.max(a.y, b.y), (min_z + max_z) * 0.5
+                -- Where their heights meet, or halfway across the step between them.
+                local x, y, z = (min_x + max_x) * 0.5, (low + high) * 0.5, (min_z + max_z) * 0.5
                 edges[i][#edges[i] + 1] = { to = j, cost = cost, x = x, y = y, z = z, kind = "walk" }
                 edges[j][#edges[j] + 1] = { to = i, cost = cost, x = x, y = y, z = z, kind = "walk" }
             end
@@ -39,8 +43,8 @@ function M.build_edges(regions, links)
     end
 
     for _, link in ipairs(links) do
-        local from = link.from and M.locate(regions, link.from.x, link.from.z)
-        local to = link.to and M.locate(regions, link.to.x, link.to.z)
+        local from = link.from and M.locate(regions, link.from.x, link.from.y, link.from.z)
+        local to = link.to and M.locate(regions, link.to.x, link.to.y, link.to.z)
         if link.from and not from then
             missing[#missing + 1] = link.from
         end
@@ -78,17 +82,21 @@ function M.build_edges(regions, links)
     return edges, missing
 end
 
--- The region holding a point, the one with the nearest centre where they overlap; else the
--- nearest within 8 m.
-function M.locate(regions, x, z)
-    local point = { x = x, y = z }
-    local best, best_d2
+-- The region holding a point: among those over it, the floor at or just below its height, because
+-- something standing on a floor is above it by an amount only it knows, and a tall one's centre can
+-- be nearer the floor overhead. Where those overlap, the nearest centre. Else the nearest within
+-- 8 m, in three dimensions.
+function M.locate(regions, x, y, z)
+    local ground = { x = x, y = z }
+    local best, best_above, best_d2
 
     for i, r in ipairs(regions) do
-        if x >= r.min_x and x <= r.max_x and z >= r.min_z and z <= r.max_z then
-            local d2 = Vec2.distance_squared(r.center, point)
-            if not best_d2 or d2 < best_d2 then
-                best, best_d2 = i, d2
+        -- a hair's grace: a point on a floor can read a little under it
+        if x >= r.min_x and x <= r.max_x and z >= r.min_z and z <= r.max_z and y >= r.min_y - 0.1 then
+            local above = math.max(0, y - r.max_y)
+            local d2 = Vec2.distance_squared(r.center, ground)
+            if not best or above < best_above or (above == best_above and d2 < best_d2) then
+                best, best_above, best_d2 = i, above, d2
             end
         end
     end
@@ -96,9 +104,10 @@ function M.locate(regions, x, z)
         return best
     end
 
+    local point = { x = x, y = y, z = z }
     for i, r in ipairs(regions) do
-        local nearest = Vec2.clamp(point, { x = r.min_x, y = r.min_z }, { x = r.max_x, y = r.max_z })
-        local d2 = Vec2.distance_squared(nearest, point)
+        local nearest = Vec3.clamp(point, { x = r.min_x, y = r.min_y, z = r.min_z }, { x = r.max_x, y = r.max_y, z = r.max_z })
+        local d2 = Vec3.distance_squared(nearest, point)
         if d2 <= 64 and (not best_d2 or d2 < best_d2) then
             best, best_d2 = i, d2
         end

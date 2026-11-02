@@ -81,6 +81,33 @@ app:add_systems(Startup, { Commands, Res[AssetServer] }, function(commands, asse
 
     carrier(commands, "late", 10, 2, {})
 
+    -- A budget of one ray a frame, so its frames count its rays: one floor, then one under a slab.
+    floor_at(commands, 14, 20)
+    carrier(commands, "one storey", 14, 2, { rays_per_frame = 1 })
+    floor_at(commands, 15, 20)
+    commands:spawn({
+        Transform = { translation = { x = 3000, y = 3, z = 0 } },
+        RigidBody3d = "Fixed",
+        Collider3d = { cuboid = { hx = 15, hy = 0.1, hz = 15 } },
+    })
+    carrier(commands, "two storeys", 15, 2, { rays_per_frame = 1 })
+    -- A plate thinner than the ray's step under a floor: the ray is under it, not in it.
+    floor_at(commands, 16, 20)
+    commands:spawn({
+        Transform = { translation = { x = 3200, y = 3, z = 0 } },
+        RigidBody3d = "Fixed",
+        Collider3d = { cuboid = { hx = 15, hy = 0.002, hz = 15 } },
+    })
+    carrier(commands, "plate", 16, 2, {})
+    -- A headroom of its own: the same slab, too low for this one.
+    floor_at(commands, 17, 20)
+    commands:spawn({
+        Transform = { translation = { x = 3400, y = 3, z = 0 } },
+        RigidBody3d = "Fixed",
+        Collider3d = { cuboid = { hx = 15, hy = 0.1, hz = 15 } },
+    })
+    carrier(commands, "tall", 17, 2, { headroom = 3 })
+
     -- Changed while it samples.
     floor_at(commands, 12, 40)
     carrier(commands, "midway", 12, 10, { rays_per_frame = 5 })
@@ -145,6 +172,7 @@ app:add_systems(Update, {
 end):in_set("zz/volumes_suite_count")
 
 local slow_early, midway_changed = nil, false
+local job_frames = { ["one storey"] = 0, ["two storeys"] = 0 }
 local phase, clock = "settling", 0
 local added_before = 0
 
@@ -155,6 +183,13 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Res["ai/nav/graph"
     local sliced = named(world, "sliced")
     if sliced and sliced:has("ai/nav/volumes/job") then
         job_seen = job_seen + 1
+    end
+
+    for name in pairs(job_frames) do
+        local counted = named(world, name)
+        if counted and counted:has("ai/nav/volumes/job") then
+            job_frames[name] = job_frames[name] + 1
+        end
     end
 
     local midway = named(world, "midway")
@@ -172,7 +207,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Res["ai/nav/graph"
         step("baked")
 
     elseif phase == "baked" and #regions_of(world, "sliced") > 0 and #regions_of(world, "slow") > 0
-        and #regions_of(world, "midway") > 0 then
+        and #regions_of(world, "midway") > 0 and #regions_of(world, "two storeys") > 0 and #regions_of(world, "one storey") > 0 then
         local cfg = named(world, "open"):get("ai/nav/volumes")
         local given = named(world, "sliced"):get("ai/nav/volumes")
         suite.assert_test("V1_missing_fields_get_defaults_and_given_ones_stay",
@@ -186,6 +221,15 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Res["ai/nav/graph"
         suite.assert_test("V3_a_region_has_the_cost_given", open[1].cost == 3, tostring(open[1].cost))
 
         local holed = regions_of(world, "holed")
+        local answer = {}
+        for _, r in ipairs(holed) do
+            answer[#answer + 1] = string.format("%g %g %g %g %.3f", r.min_x, r.max_x, r.min_z, r.max_z, r.y)
+        end
+        table.sort(answer)
+        -- As it stood before floors were counted: a single-floor map gives exactly this.
+        suite.assert_test("V4b_a_single_floor_map_gives_what_it_always_gave", table.concat(answer, "|")
+            == "395 398 -1 5 0.000|395 399 -2 -1 0.000|395 405 -5 -2 0.000|398 399 1 5 0.000|399 401 2 5 0.000|401 402 1 5 0.000|401 405 -2 -1 0.000|402 405 -1 5 0.000",
+            table.concat(answer, "|"))
         suite.assert_test("V4_an_obstacle_is_a_hole_the_ground_around_it_stays",
             #holed >= 2 and not covers(holed, 400, 0) and covers(holed, 396, 0) and covers(holed, 404, 4),
             "regions " .. #holed)
@@ -204,6 +248,22 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Res["ai/nav/graph"
         local itself = regions_of(world, "itself")
         suite.assert_test("V9_a_volume_on_the_entity_itself_counts", #itself == 1 and itself[1].min_x == 1398, "")
 
+        suite.assert_test("V7b_a_column_on_one_floor_costs_one_ray", job_frames["one storey"] >= 15 and job_frames["one storey"] <= 17,
+            "frames " .. job_frames["one storey"])
+        suite.assert_test("V7c_a_storey_above_it_costs_three_more", job_frames["two storeys"] >= 63 and job_frames["two storeys"] <= 65,
+            "frames " .. job_frames["two storeys"])
+        local floors_of = function(name)
+            local ys = {}
+            for _, r in ipairs(regions_of(world, name)) do
+                ys[#ys + 1] = string.format("%.1f", r.y)
+            end
+            table.sort(ys)
+            return table.concat(ys, " ")
+        end
+        suite.assert_test("V7d_it_finds_each_floor_under_a_slab", floors_of("two storeys") == "0.0 3.1", floors_of("two storeys"))
+        suite.assert_test("V7e_and_under_a_plate_too_thin_to_be_inside", floors_of("plate") == "0.0 3.0", floors_of("plate"))
+        suite.assert_test("V7f_headroom_is_a_field", floors_of("tall") == "3.1", floors_of("tall"))
+        suite.assert_test("V7g_headroom_defaults_to_two_metres", named(world, "open"):get("ai/nav/volumes").headroom == 2, "")
         local mid = regions_of(world, "midway")
         suite.assert_test("V10b_a_change_while_it_samples_starts_it_again",
             #mid == 1 and mid[1].min_x == 2395 and mid[1].max_x == 2405,

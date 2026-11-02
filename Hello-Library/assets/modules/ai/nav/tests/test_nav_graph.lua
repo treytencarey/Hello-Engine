@@ -54,7 +54,7 @@ local POINTS = {
 }
 
 local function index_at(graph, name)
-    return Graph.locate(graph.regions, POINTS[name][1], POINTS[name][2])
+    return Graph.locate(graph.regions, POINTS[name][1], 0, POINTS[name][2])
 end
 
 local function joined(graph, from, to, kind)

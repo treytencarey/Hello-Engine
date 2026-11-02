@@ -10,20 +10,21 @@ Turns the `ai/nav/volume`s on an entity and below it into `ai/nav/region`s, chil
 
 ## Components
 
-- `ai/nav/volumes = { sample, cell, max_step, cost, settle, rays_per_frame }`. Missing fields get defaults when it is added:
+- `ai/nav/volumes = { sample, cell, max_step, headroom, cost, settle, rays_per_frame }`. Missing fields get defaults when it is added:
 
   | Field | Meaning | Default |
   |-------|---------|---------|
   | `sample` | `false` trusts the volumes as they are, for one you know is clear | `true` |
   | `cell` | metres between samples | 1 |
   | `max_step` | metres of height between neighbouring cells that is still walkable | 0.45 |
+  | `headroom` | metres a floor needs under the surface above it | 2 |
   | `cost` | the regions' cost | 1 |
   | `settle` | seconds without new geometry before it bakes | 0.35 |
-  | `rays_per_frame` | samples per frame; a 100x100 volume at 1 m is 10 000 | 400 |
+  | `rays_per_frame` | rays per frame; a 100x100 volume at 1 m is 10 000 on one floor | 400 |
 
-- `ai/nav/volume = { hx, hy, hz }`, on the entity or anything below it, added by a child mod or by hand: half extents around that entity's world position. The floor is at the bottom of the volume, and agents walk there.
+- `ai/nav/volume = { hx, hy, hz }`, on the entity or anything below it, added by a child mod or by hand: half extents around that entity's world position. The lowest floor is at the bottom of the volume. To hold storeys, it must reach up past them: rays start 2 m above its top.
 - `ai/nav/volumes/due = { at }`: on while a bake is owed, `at` being `Time`'s elapsed seconds when it may start.
-- `ai/nav/volumes/job = { vols, vi, grid, ix, iz, rects }`: a sampling bake in progress.
+- `ai/nav/volumes/job = { vols, vi, grid, ix, iz, y, inside, ceiling, rects }`: a sampling bake in progress, with how far down the current column it has got.
 - `ai/nav/volumes/region`: marks a region it spawned. They go with this mod, by `mod_registry`.
 
 ## Systems
@@ -51,7 +52,10 @@ commands:spawn({
 
 ## Notes
 
-- Each cell is one ray down. A ray sees only fixed bodies, so something standing on the floor is neither floor nor a hole. Cells within `max_step` of their neighbours are walkable, and they merge into as few rectangles as it can (`server/grid.lua`).
+- A ray sees only fixed bodies, so something standing on the floor is neither floor nor a hole.
+- Every floor in a column counts, the rays going on down past each. A column on one floor costs one ray, and each storey above that three more: the hit, one to learn it is inside the slab, one to leave it. A floor whose top is within `headroom` of the volume's bottom ends the column, as nothing under it in the volume could have the headroom.
+- A floor is walkable when each neighbouring column that found a floor has one within `max_step` of it, and rectangles grow only through floors within `max_step` of the one they started from (`server/grid.lua`). So storeys carve apart, a ramp becomes a run of rectangles each a step high, and each rectangle records `min_y` and `max_y` with its average `y`.
+- A floor with less than `headroom` under the surface above it is left out. Rays under a floor assume nothing about what is there: inside something solid they go on through it, and under a plate thinner than 1 cm they find what is below.
 - A floor that comes later with no scene and no volume changing is not seen, as a plain collider arriving or going rebakes nothing. Add it before the bake, or touch the volume.
 - Removing the last volume takes the regions. With no regions, `ai/nav` has no graph to route over.
 - A reload reaps its regions and bakes them again.

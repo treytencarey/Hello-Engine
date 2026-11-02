@@ -63,6 +63,9 @@ app:add_systems(Startup, { Commands }, function(commands)
     agent(commands, "high", 0, 440, { speed = 3 }, { Transform = { translation = { x = 0, y = 30, z = 440 } } })
     -- Told there is no way on while it is still walking.
     agent(commands, "rerouted", 0, 480, { speed = 3 })
+    -- A waypoint straight overhead, as the last and as one on the way.
+    agent(commands, "overhead", 0, 560, { speed = 3 })
+    agent(commands, "overpass", 0, 600, { speed = 3 })
     -- Its path goes and another arrives in one frame.
     agent(commands, "handed", 0, 520, { speed = 3 })
     -- No body, and no velocity of its own.
@@ -203,6 +206,17 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         walk(world, commands, "control", path(1, { 12, 160 }))
         walk(world, commands, "stuck", path(1, { 20, 200 }))
         walk(world, commands, "leaver", path(1, { 200, 280 }))
+        commands:entity(named(world, "overhead"):id()):insert({
+            ["ai/nav/path"] = { solved_id = 1, status = "ready", regions = {}, path = { { x = 0, y = 10, z = 560 } } },
+        })
+        commands:entity(named(world, "overpass"):id()):insert({
+            ["ai/nav/path"] = {
+                solved_id = 1,
+                status = "ready",
+                regions = {},
+                path = { { x = 0, y = 10, z = 600 }, { x = 30, y = 0, z = 600 } },
+            },
+        })
         walk(world, commands, "dropper", path(1, { 200, 320 }))
         walk(world, commands, "handed", path(1, { 200, 520 }))
         walk(world, commands, "long", path(1, { 4, 360 }, { 200, 360 }))
@@ -235,6 +249,11 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         step("stops")
 
     elseif phase == "stops" and clock > 0.5 then
+        suite.assert_test("S9b_a_last_waypoint_on_another_floor_is_not_arrived_at", state_of(world, "overhead").status ~= "arrived",
+            tostring(state_of(world, "overhead").status))
+        suite.assert_test("S9c_nor_one_on_the_way_passed", state_of(world, "overpass").cursor == 1,
+            "cursor " .. tostring(state_of(world, "overpass").cursor))
+        suite.assert_test("S9d_height_radius_defaults", near(named(world, "overhead"):get("ai/steering").height_radius, 1.5), "")
         suite.assert_test("S9_a_new_speed_applies_at_once", near(horizontal(named(world, "east")), 1, 0.2),
             "speed " .. horizontal(named(world, "east")))
         local dropper, leaver = named(world, "dropper"), named(world, "leaver")
