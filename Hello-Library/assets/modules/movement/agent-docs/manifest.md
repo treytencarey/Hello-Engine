@@ -30,6 +30,7 @@ Walking and jumping. The owning client moves its own player from input, relative
 |----------|-------|---------|
 | First (both) | `movement/init` | On an added `movement` with no `Velocity3d`, add one |
 | First (client) | `movement/bind` | When the player is this client's (`core/net/local` arrives frames after the player), bind its keys; again when `input` is added back |
+| First (client) | `movement/copy` | A copy that isn't this client's own is kinematic, as it only follows the server; a player's arrives so and is left alone, and a body dynamic on the server turns kinematic here |
 | First (client) | `movement/shadow` | For another client's player, seed the shadow its Transform arrives in |
 | Update (client) | `movement/walk` | While a key is held (`any_of`), it polls: horizontal velocity from the held keys, turned by `camera.yaw`, and a turn to face that way. Letting go of a key (its `removed` edge) stands it still, and keys still held walk on. Vertical velocity is left to gravity and jumps |
 | Update (client) | `movement/ground` | Polls: a ray down from the origin, skipping the player's own body, adds or removes `movement/grounded` |

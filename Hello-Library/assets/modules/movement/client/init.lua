@@ -47,6 +47,26 @@ app:add_systems(First, {
     end
 end):in_set("movement/shadow")
 
+-- A copy that isn't this client's own only follows what the server sends, so nothing may push it: a
+-- body arrives as the server has it, and one that is dynamic there stays kinematic here, whenever the
+-- server says otherwise. It only changes type, as it arrived with its collider.
+app:add_systems(First, {
+    Query[{
+        ["or"] = {
+            added = { "movement" },
+            changed = { "RigidBody3d" },
+        },
+        with = { "movement", Mut["RigidBody3d"] },
+        without = { "core/net/local" },
+    }],
+}, function(copies)
+    for _, e in ipairs(copies:iter_mut()) do
+        if e:get("RigidBody3d") ~= "KinematicPositionBased" then
+            e:set({ RigidBody3d = "KinematicPositionBased" })
+        end
+    end
+end):in_set("movement/copy")
+
 -- Walking: while a key is held, the horizontal velocity follows the keys, turned by the
 -- camera's yaw, and the player turns to face that way. It polls while a key is held (ground
 -- friction would slow a single push). Letting go of the last key stands it still; vertical

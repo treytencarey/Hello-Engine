@@ -1,5 +1,5 @@
 ---
-depends_on: [core/player/attest, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, input, sidebar]
+depends_on: [core/player/attest, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar]
 conflicts_with: []
 exposes: [player]
 ---
@@ -22,7 +22,7 @@ The owning client drives its player's Transform until prediction returns with th
   | `smoothing` | how fast the server's Transform follows the owner's, per second | 15 |
 
 - What each player gets, by side. Names are written in the code; a mod joins this list when it is rewritten:
-  - server: `core/player/attest` (identity, as today), `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q) and `abilities/grenade` (a grenade on G);
+  - server: `core/player/attest` (identity, as today), `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for) and `ai/noisemaker` (for them to hear);
   - the owning client: `input = { mode = "input/game" }`, `sidebar`, and its `RigidBody3d` switched to `Dynamic`.
 
   If `player` is removed from an entity that stays, each half removes what it added.

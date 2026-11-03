@@ -30,6 +30,8 @@ app:add_systems(First, {
             animation = {},
             ["abilities/fireball"] = {},
             ["abilities/grenade"] = {},
+            ["ai/perception/target"] = {},
+            ["ai/noisemaker"] = {},
         })
     end
 end):in_set("player/init")
@@ -83,6 +85,8 @@ app:add_systems(First, {
             "animation",
             "abilities/fireball",
             "abilities/grenade",
+            "ai/perception/target",
+            "ai/noisemaker",
         },
     }],
     Commands,
@@ -98,7 +102,9 @@ app:add_systems(First, {
             "movement",
             "animation",
             "abilities/fireball",
-            "abilities/grenade")
+            "abilities/grenade",
+            "ai/perception/target",
+            "ai/noisemaker")
     end
 end):in_set("player/removed")
 
