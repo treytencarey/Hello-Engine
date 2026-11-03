@@ -67,6 +67,19 @@ app:add_systems(First, {
     end
 end):in_set("movement/copy")
 
+-- This client's own body arrives a frame before it is marked as its own, so the system above has
+-- made it kinematic by then. It is simulated here, so it turns back.
+app:add_systems(First, {
+    Query[{
+        added = { "core/net/local" },
+        with = { "movement", Mut["RigidBody3d"] },
+    }],
+}, function(own)
+    for _, e in ipairs(own:iter_mut()) do
+        e:set({ RigidBody3d = "Dynamic" })
+    end
+end):in_set("movement/own"):after("movement/copy")
+
 -- Walking: while a key is held, the horizontal velocity follows the keys, turned by the
 -- camera's yaw, and the player turns to face that way. It polls while a key is held (ground
 -- friction would slow a single push). Letting go of the last key stands it still; vertical
