@@ -93,6 +93,7 @@ app:add_systems(First, {
     end
 
     local edges, missing = Graph.build_edges(list, linked)
+    Graph.mark_islands(list, edges)
     local warned = graph:get().warned
     for _, at in ipairs(missing) do
         local where = string.format("%g,%g,%g", at.x, at.y or 0, at.z)
@@ -198,7 +199,8 @@ app:add_systems(PreUpdate, {
                 answer(commands, e, time, "ready", straight, {})
             elseif job == nil then
                 local at = e:get("Transform").translation
-                local start, goal = Graph.locate(g.regions, at.x, at.y, at.z), Graph.locate(g.regions, to.x, to.y, to.z)
+                local start = Graph.locate(g.regions, at.x, at.y, at.z)
+                local goal = Graph.locate(g.regions, to.x, to.y, to.z, start and g.regions[start].island)
                 if goal == nil then
                     answer(commands, e, time, "unreachable", {}, {})
                 elseif start == nil or start == goal then

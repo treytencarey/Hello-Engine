@@ -40,4 +40,5 @@ commands:entity(player):insert({ ["abilities/grenade"] = { speed = 30 } })
 
 ## Notes
 
+- Its ball ends itself, by lifetime or by what it hits. It is marked `core/script/owner = false`, so a reload of this mod, or its last carrier leaving, does not take a ball in flight, and nothing throws another.
 - Its cooling component is its own part (`abilities/grenade/cooling`), so `mod_registry` also strips it when `abilities/grenade` goes.

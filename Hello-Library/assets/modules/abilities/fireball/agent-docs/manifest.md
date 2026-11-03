@@ -41,4 +41,5 @@ commands:entity(player):insert({ ["abilities/fireball"] = { key = "KeyF", cooldo
 
 ## Notes
 
+- Its ball ends itself, by lifetime or by what it hits. It is marked `core/script/owner = false`, so a reload of this mod, or its last carrier leaving, does not take a ball in flight, and nothing throws another.
 - Its projectile carries `projectile/caster = { entity = <the player> }`, so it passes through the player who cast it, even fired straight down; the player lists it in `projectile/casts` while it flies. The fireball spawns it with `["core/net/sync"] = { ["projectile/caster"] = { authority = "server" } }`, so every client has the caster from the shot's first spawn and tells its own hits apart from the first frame (the spawn site declares it, an exception to the reader declaring).

@@ -3,7 +3,7 @@
 -- it. Search runs over regions, never over world cells, so a map with 400 rooms searches 400 nodes
 -- however large they are.
 --
--- region = { min_x, max_x, min_z, max_z, y, min_y, max_y, cost, center = { x, y } }
+-- region = { min_x, max_x, min_z, max_z, y, min_y, max_y, cost, center = { x, y }, island }
 -- edge = { to = <index>, cost, x, y, z, kind, capability, behavior }
 --
 -- A region's `center` is a `Vec2` on the ground: its `y` is the world's z.
@@ -82,11 +82,35 @@ function M.build_edges(regions, links)
     return edges, missing
 end
 
+-- Numbers each region's `island`: the regions its edges join, whichever way round. A floor nothing
+-- joins can't be left out, as an agent may stand on it and which floors matter depends on where it is.
+function M.mark_islands(regions, edges)
+    local parent = {}
+    local function root(i)
+        while parent[i] ~= nil do
+            i = parent[i]
+        end
+        return i
+    end
+    for i, list in ipairs(edges) do
+        for _, edge in ipairs(list) do
+            local a, b = root(i), root(edge.to)
+            if a ~= b then
+                parent[a] = b
+            end
+        end
+    end
+    for i, region in ipairs(regions) do
+        region.island = root(i)
+    end
+end
+
 -- The region holding a point: among those over it, the floor at or just below its height, because
 -- something standing on a floor is above it by an amount only it knows, and a tall one's centre can
 -- be nearer the floor overhead. Where those overlap, the nearest centre. Else the nearest within
--- 8 m, in three dimensions.
-function M.locate(regions, x, y, z)
+-- 8 m, in three dimensions, on `island` if one is given: a goal over no floor is as near as the asker
+-- can get, not the top of the ceiling above it.
+function M.locate(regions, x, y, z, island)
     local ground = { x = x, y = z }
     local best, best_above, best_d2
 
@@ -108,7 +132,7 @@ function M.locate(regions, x, y, z)
     for i, r in ipairs(regions) do
         local nearest = Vec3.clamp(point, { x = r.min_x, y = r.min_y, z = r.min_z }, { x = r.max_x, y = r.max_y, z = r.max_z })
         local d2 = Vec3.distance_squared(nearest, point)
-        if d2 <= 64 and (not best_d2 or d2 < best_d2) then
+        if d2 <= 64 and (not best_d2 or d2 < best_d2) and (island == nil or r.island == island) then
             best, best_d2 = i, d2
         end
     end

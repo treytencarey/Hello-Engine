@@ -97,6 +97,19 @@ app:add_systems(Update, {}, function()
         Graph.locate(regions, -16, 0, 0) == WEST and Graph.locate(regions, 16, 0, 0) == EAST, "")
     suite.assert_test("NS9_a_point_off_the_graph_snaps_to_the_nearest",
         Graph.locate(regions, -7, 0, 0) == WEST, tostring(Graph.locate(regions, -7, 0, 0)))
+    -- A floor overhead of nothing joined: the goal is nearer it than the ground it could walk to.
+    local under_roof = { region(0, 10, 0, 10), region(14, 24, 0, 10), region(0, 24, 0, 10, 1, 3) }
+    local under_edges = Graph.build_edges(under_roof, { { from = { x = 9, y = 0, z = 5 }, to = { x = 15, y = 0, z = 5 } } })
+    Graph.mark_islands(under_roof, under_edges)
+    suite.assert_test("NS9b_edges_and_links_make_an_island_and_nothing_else_does",
+        under_roof[1].island == under_roof[2].island and under_roof[3].island ~= under_roof[1].island, "")
+    suite.assert_test("NS9c_a_point_off_every_floor_alone_takes_the_nearest", Graph.locate(under_roof, 12, 1, 5) == 3, "")
+    suite.assert_test("NS9d_for_an_asker_the_nearest_it_can_reach", Graph.locate(under_roof, 12, 1, 5, under_roof[1].island) ~= 3, "")
+    suite.assert_test("NS9e_a_point_on_a_floor_stays_on_it_whoever_asks", Graph.locate(under_roof, 5, 3.5, 5, under_roof[1].island) == 3, "")
+    local one_way = { region(0, 10, 0, 10), region(14, 24, 0, 10) }
+    local one_way_edges = Graph.build_edges(one_way, { { from = { x = 15, y = 0, z = 5 }, to = { x = 9, y = 0, z = 5 }, one_way = true } })
+    Graph.mark_islands(one_way, one_way_edges)
+    suite.assert_test("NS9f_a_link_one_way_still_joins_an_island", one_way[1].island == one_way[2].island, "")
     suite.assert_test("NS10_a_point_too_far_locates_nothing", Graph.locate(regions, 500, 0, 500) == nil, "")
     local nested = { region(-100, 100, -100, 100), region(40, 60, 40, 60) }
     suite.assert_test("NS11_overlapping_regions_pick_the_nearest_centre", Graph.locate(nested, 50, 0, 50) == 2, "")

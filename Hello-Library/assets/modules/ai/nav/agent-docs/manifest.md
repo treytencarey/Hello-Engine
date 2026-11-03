@@ -20,7 +20,7 @@ Navigation for the agents that carry it. It builds a graph of what is walkable f
 
 ## Resources
 
-- `ai/nav/graph = { regions, edges, warned }`: `regions` is a list of `{ min_x, max_x, min_z, max_z, y, min_y, max_y, cost, center = <a Vec2 on the ground, its y the world z> }`, `edges[<region index>]` lists that region's `{ to = <region index>, cost, x, y, z, kind, capability, behavior }`, and `warned` the link ends already warned about. Nothing keeps it current once the mod has unloaded with its last agent, and the next agent builds it again.
+- `ai/nav/graph = { regions, edges, warned }`: `regions` is a list of `{ min_x, max_x, min_z, max_z, y, min_y, max_y, cost, center = <a Vec2 on the ground, its y the world z>, island = <the same for regions edges join> }`, `edges[<region index>]` lists that region's `{ to = <region index>, cost, x, y, z, kind, capability, behavior }`, and `warned` the link ends already warned about. Nothing keeps it current once the mod has unloaded with its last agent, and the next agent builds it again.
 
 ## Systems
 
@@ -51,7 +51,7 @@ commands:spawn({ ["ai/nav/link"] = { from = { x = 9, y = 0, z = 0 }, to = { x = 
 ## Notes
 
 - Regions whose boxes come within 0.35 m are joined when they share at least 0.5 m of border and their heights come within a 0.5 m step, so a corner alone is no way through, and neither is the storey overhead: author a link where one should be. The numbers are fixed in `server/graph.lua`: the graph is the world's, and `ai/nav` sits on each agent. A bake with a `max_step` over 0.5 would leave its ramp's rectangles apart.
-- A point's region, an agent's or a goal's, is the floor over or under it at or just below its height, however near the floor above: it stands on the one below. Over no floor, it is the nearest within 8 m, measured in three dimensions.
+- A point's region, an agent's or a goal's, is the floor over or under it at or just below its height, however near the floor above: it stands on the one below. Over no floor, it is the nearest within 8 m, measured in three dimensions, and for a goal only among the floors joined to the agent's own, whichever way a link runs: so a goal inside a block walks up to the block, rather than answering `"unreachable"` for the top of the ceiling above it. A goal over a floor nothing joins to the agent, a ceiling's top included, is still `"unreachable"`.
 - A rebuild costs the square of the regions, and happens only when the level changes.
 - The path is delivered in PreUpdate, so `ai/steering` in Update reads it with no ordering.
 - The answer to a goal off the graph, more than 8 m from any region, is `"unreachable"`. An agent off the graph, or already in the goal's region, walks straight at the goal, as does every agent in a world with no regions at all.

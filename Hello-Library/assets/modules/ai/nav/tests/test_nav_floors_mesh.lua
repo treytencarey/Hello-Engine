@@ -208,6 +208,26 @@ app:add_systems(Startup, { Commands, ResMut[Assets[Mesh]] }, function(commands, 
         Collider3d = { cuboid = { hx = 4, hy = 1.5, hz = 0.1 } },
     })
     volume(commands, "roofed wall", 1600, 8, 8, 3, 3)
+    -- A room with a roof and a block in it from floor to roof, too wide to reach across: the roof's top
+    -- is nearer the block's middle than any floor the room has.
+    ground(1700)
+    commands:spawn({
+        Transform = { translation = { x = 1700, y = 3.05, z = 0 } },
+        RigidBody3d = "Fixed",
+        Collider3d = { cuboid = { hx = 12, hy = 0.05, hz = 12 } },
+    })
+    commands:spawn({
+        Transform = { translation = { x = 1700, y = 1.5, z = 0 } },
+        RigidBody3d = "Fixed",
+        Collider3d = { cuboid = { hx = 4, hy = 1.5, hz = 4 } },
+    })
+    volume(commands, "roofed room", 1700, 12, 12, 2, 2)
+    agent(commands, "to the block", 1708, 1, 8)
+    commands:spawn({
+        ["zz/name"] = { name = "to the roof" },
+        ["ai/nav"] = {},
+        Transform = { translation = { x = 1708, y = 1, z = 7 } },
+    })
 end)
 
 app:add_systems(First, { Commands }, function(commands)
@@ -342,7 +362,7 @@ app:add_systems(Update, { World, Res[Time], ReadRapierContext, Commands }, funct
         end
         return baked(world, "closed block") and baked(world, "hull block") and baked(world, "cuboid block")
             and baked(world, "thin wall") and baked(world, "sheet") and baked(world, "crate")
-            and baked(world, "four walls") and baked(world, "roofed wall")
+            and baked(world, "four walls") and baked(world, "roofed wall") and baked(world, "roofed room")
     end
 
     if phase == "baking" and clock > 1 and all_baked() then
@@ -406,6 +426,9 @@ app:add_systems(Update, { World, Res[Time], ReadRapierContext, Commands }, funct
                 and floor_at(world, "four walls", 1494.5, -4.5, 0) ~= nil and floor_at(world, "four walls", 1505.5, 4.5, 0) ~= nil, "")
         suite.assert_test("M23_ground_runs_on_past_the_ends_of_the_wall", floor_at(world, "thin wall", 1205, 0.5, 0) ~= nil, "")
         suite.assert_test("M24_what_a_step_could_climb_is_no_wall", floor_at(world, "thin wall", 1205.5, 5.5, 0) ~= nil, "")
+        suite.assert_test("M25b_a_roofs_top_is_baked_all_the_same", floor_at(world, "roofed room", 1700, 0, 3.1, 0.1) ~= nil, "")
+        ask(commands, world, "to the block", 1700, 1, 0)
+        ask(commands, world, "to the roof", 1700, 3.5, 0)
         suite.assert_test("M25_something_loose_is_no_wall", floor_at(world, "crate", 1400.5, 0.5, 0) ~= nil, "")
         ask(commands, world, "round the wall", 1200, 0, 3)
         ask(commands, world, "round the sheet", 1300, 0, 3)
@@ -438,6 +461,13 @@ app:add_systems(Update, { World, Res[Time], ReadRapierContext, Commands }, funct
             arrived = arrived and status_of(world, name .. " descender") == "arrived"
         end
         if arrived or clock > 25 then
+            local to_block = named(world, "to the block")
+            local at_block = to_block:get("Transform").translation
+            suite.assert_test("M27_a_goal_inside_a_block_is_walked_up_to_not_given_up_on_for_the_roof_over_it",
+                to_block:get("ai/nav/path") ~= nil and to_block:get("ai/nav/path").status == "ready"
+                    and math.sqrt((at_block.x - 1700) ^ 2 + at_block.z ^ 2) < 7.5,
+                string.format("%s at %.1f %.1f", tostring((to_block:get("ai/nav/path") or {}).status), at_block.x - 1700, at_block.z))
+            suite.assert_test("M28_a_goal_on_the_roof_itself_has_no_way_there", named(world, "to the roof"):get("ai/nav/path").status == "unreachable", "")
             suite.assert_test("M16c_so_nothing_outside_finds_a_way_in", named(world, "outside the block"):get("ai/nav/path").status == "unreachable", "")
             for _, kind in ipairs({ { "round the wall", 1200 }, { "round the sheet", 1300 } }) do
                 local at = named(world, kind[1]):get("Transform").translation

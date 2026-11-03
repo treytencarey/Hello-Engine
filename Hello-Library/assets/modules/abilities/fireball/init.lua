@@ -59,6 +59,8 @@ app:add_systems(Update, {
             -- Every client tells its own hit from its caster from the first frame, so the
             -- caster rides the projectile's first spawn.
             ["core/net/sync"] = { ["projectile/caster"] = { authority = "server" } },
+            -- It ends itself: a reload of this mod, or its last carrier leaving, does not take it.
+            ["core/script/owner"] = false,
         })
     end
 end):in_set("abilities/fireball/fire")
