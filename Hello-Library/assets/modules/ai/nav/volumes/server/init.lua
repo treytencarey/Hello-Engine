@@ -9,6 +9,7 @@
 --     cell = <metres between samples>,
 --     max_step = <metres of height between neighbouring cells that is still walkable>,
 --     headroom = <metres a floor needs under the surface above it>,
+--     wall_height = <metres above a floor at which something in its cell is in the way>,
 --     cost = <the regions' cost>,
 --     settle = <seconds without new geometry before it bakes>,
 -- }
@@ -72,6 +73,17 @@ app:add_observer(On[SceneInstanceReady], {
     owe(time, carriers, commands)
 end)
 
+-- Whether something stands in a cell, looked for sideways from its centre, above what a step could
+-- climb. A little past the cell's edge, as a wall lined up with the grid has its faces on those edges.
+local function blocked(rapier, x, y, z, cell)
+    for _, dir in ipairs({ { x = 1, y = 0, z = 0 }, { x = -1, y = 0, z = 0 }, { x = 0, y = 0, z = 1 }, { x = 0, y = 0, z = -1 } }) do
+        if rapier:cast_ray({ x = x, y = y, z = z }, dir, cell * 0.55, true, { flags = "ONLY_FIXED" }) ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
 -- Timed, and a bake that samples runs over several frames, so it polls while one is owed, until
 -- the system's slice of the frame is spent.
 app:add_systems(Update, {
@@ -132,7 +144,11 @@ app:add_systems(Update, {
                     -- Something standing on the floor is not floor, so only fixed bodies count. A
                     -- solid ray that starts inside a collider stops where it starts, at 0, and only a
                     -- hollow one goes on to where it leaves. So the ray under a floor is solid, to find
-                    -- whether it is inside, and then a hollow one finds the way out.
+                    -- whether it is inside, and then a hollow one finds the way out. A trimesh is only a
+                    -- surface, with no inside: the ray goes on to its underside and reads that as the next
+                    -- height, which is not a floor unless the mesh is thicker than `headroom`. Then only
+                    -- its sides tell, in the cells they pass through, which keeps anything from walking
+                    -- into what is left inside it.
                     local hit = y > bottom and rapier:cast_ray({ x = x, y = y, z = z }, { x = 0, y = -1, z = 0 }, y - bottom,
                         not job.inside, { flags = "ONLY_FIXED" }) or nil
 
@@ -145,7 +161,11 @@ app:add_systems(Update, {
                     elseif hit ~= nil then
                         local height = y - hit.toi
                         if job.ceiling == nil or job.ceiling - height >= v.headroom then
-                            table.insert(job.grid.floor[job.iz][job.ix], height)
+                            local floors = job.grid.floor[job.iz][job.ix]
+                            table.insert(floors, height)
+                            if blocked(rapier, x, height + v.wall_height, z, v.cell) then
+                                job.grid.blocked[job.iz][job.ix][#floors] = true
+                            end
                         end
                         job.ceiling = height
                         job.y = height - 0.01
@@ -208,6 +228,7 @@ return {
             cell = 1,
             max_step = 0.45,
             headroom = 2,
+            wall_height = 0.6,
             cost = 1,
             settle = 0.35,
         },

@@ -5,6 +5,7 @@
 -- grid = {
 --     min_x, min_z, cell, w, h,
 --     floor = { [iz] = { [ix] = { <y>, ... } } }: a cell's floors, the highest first,
+--     blocked = { [iz] = { [ix] = { [<index in floor>] = true } } }: something stands on it,
 --     walkable = { [iz] = { [ix] = { [<index in floor>] = true } } },
 -- }
 
@@ -13,14 +14,14 @@ local M = {}
 function M.new(min_x, min_z, max_x, max_z, cell)
     local w = math.max(1, math.ceil((max_x - min_x) / cell))
     local h = math.max(1, math.ceil((max_z - min_z) / cell))
-    local floor, walkable = {}, {}
+    local floor, blocked, walkable = {}, {}, {}
     for iz = 1, h do
-        floor[iz], walkable[iz] = {}, {}
+        floor[iz], blocked[iz], walkable[iz] = {}, {}, {}
         for ix = 1, w do
-            floor[iz][ix], walkable[iz][ix] = {}, {}
+            floor[iz][ix], blocked[iz][ix], walkable[iz][ix] = {}, {}, {}
         end
     end
-    return { min_x = min_x, min_z = min_z, cell = cell, w = w, h = h, floor = floor, walkable = walkable }
+    return { min_x = min_x, min_z = min_z, cell = cell, w = w, h = h, floor = floor, blocked = blocked, walkable = walkable }
 end
 
 function M.cell_center(g, ix, iz)
@@ -28,9 +29,10 @@ function M.cell_center(g, ix, iz)
 end
 
 -- A floor is walkable when every orthogonal neighbour that found a floor has one within
--- `max_step` of it. So the flat ground around an obstacle stays, the slope up it does not, and a
--- cliff's edge is the boundary, with a storey overhead or underfoot making no difference. A steep
--- ramp and a wall look the same: both exceed the step.
+-- `max_step` of it, and nothing stands on it. So the flat ground around an obstacle stays, the slope
+-- up it does not, and a cliff's edge is the boundary, with a storey overhead or underfoot making no
+-- difference. A steep ramp and a wall look the same: both exceed the step. A floor something stands
+-- on is still a level to its neighbours, so a thin wall takes only the cells it passes through.
 function M.mark_walkable(g, max_step)
     local function level(y, floors)
         if floors == nil or #floors == 0 then
@@ -49,7 +51,7 @@ function M.mark_walkable(g, max_step)
         local row, before, after = g.floor[iz], g.floor[iz - 1] or none, g.floor[iz + 1] or none
         for ix = 1, g.w do
             for k, y in ipairs(row[ix]) do
-                if level(y, row[ix + 1]) and level(y, row[ix - 1]) and level(y, before[ix]) and level(y, after[ix]) then
+                if not g.blocked[iz][ix][k] and level(y, row[ix + 1]) and level(y, row[ix - 1]) and level(y, before[ix]) and level(y, after[ix]) then
                     g.walkable[iz][ix][k] = true
                 end
             end
