@@ -46,6 +46,7 @@ When two ratings fit, take the higher one.
    - no other mod's path required to call its API;
    - no environment reads;
    - static defaults declared in the mod's return value (`defaults`, State), not filled by a `<mod>/init` system, which is only for a fill computed from the world or an engine component the mod adds;
+   - a cleanup on a `removed` edge, or anything that edge sets off, writes into another mod's component only while what owns that component stays, read from a column it declares on the row: a write landing after the owner has gone brings the component back, a `null` patch included;
    - no guard in the mod for a field it declares a default for (`if m.speed ~= nil then`). A child reading its base's fields keeps its guard: the base's mod may not have loaded yet.
 3. **Engine values in their real shape.** Read any engine component, resource or message the mod reads in the shape the standard's Engine notes give. For example, an enum's unit variant is its name, and a patch changes only what it names. A comparison against another shape is a must-fix: it fails silently.
 4. **The suites.**

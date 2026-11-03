@@ -8,7 +8,8 @@ app:add_systems(First, {
             added = { "abilities", "core/net/local", "input" },
             changed = { "abilities" },
         },
-        with = { "abilities", "core/net/local" },
+        -- An ability going changes `abilities`, perhaps as `input` goes too: its bindings go with `input`.
+        with = { "abilities", "core/net/local", "input" },
         optional = { "input/game" },
     }],
     Commands,
@@ -24,18 +25,20 @@ app:add_systems(First, {
     end
 end):in_set("abilities/bind")
 
--- `abilities` was taken off an entity that stays: its keys are unbound. A despawned player is
--- in the `removed` rows too.
+-- `abilities` was taken off an entity that stays: its keys are unbound, unless `input` went too, as
+-- its bindings go with it and a patch landing after that would bring them back. A despawned player
+-- is in the `removed` rows too.
 app:add_systems(First, {
     Query[{
         ["or"] = { removed = { "abilities" } },
         with = { "core/net/local" },
+        optional = { "input" },
     }],
     Query[{ with = { "input/game" } }],
     Commands,
 }, function(removed, bound, commands)
     for _, e in ipairs(removed:iter()) do
-        if bound:contains(e:id()) then
+        if e:has("input") and bound:contains(e:id()) then
             commands:entity(e:id()):patch({ ["input/game"] = { abilities = null } })
         end
     end

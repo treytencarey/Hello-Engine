@@ -40,8 +40,6 @@
 local Graph = require("modules/ai/nav/server/graph.lua")
 local Time = require("bevy::time::Time")
 local LuaFrameBudget = require("bevy_lua_ecs::lua_frame_budget::LuaFrameBudget")
-local any_match_filter = require("bevy::ecs::schedule::common_conditions::any_match_filter")
-local any_component_removed = require("bevy::ecs::schedule::common_conditions::any_component_removed")
 
 app:add_systems(First, {
     Query[{ added = { "ai/nav" } }],
@@ -53,13 +51,6 @@ app:add_systems(First, {
         commands:init_resource("ai/nav/graph", { regions = {}, edges = {}, warned = {} })
     end
 end):in_set("ai/nav/init")
-
-local changed = any_match_filter[{
-    ["or"] = {
-        changed = { "ai/nav/region", "ai/nav/link" },
-    },
-}]
-local changed_or_region_gone = changed["or"](changed, any_component_removed["ai/nav/region"])
 
 -- The condition's first run sees every region as changed, so regions older than this mod count.
 -- Links name positions, so a region respawned where it was keeps its links. A changed graph owes
@@ -108,7 +99,16 @@ app:add_systems(First, {
         commands:entity(e:id()):try_insert({ ["ai/nav/search"] = {} })
     end
 end):in_set("ai/nav/index"):after("ai/nav/init")
-    :run_if(changed_or_region_gone["or"](changed_or_region_gone, any_component_removed["ai/nav/link"]))
+    :run_if({
+        Query[{
+            ["or"] = {
+                changed = { "ai/nav/region", "ai/nav/link" },
+                removed = { "ai/nav/region", "ai/nav/link" },
+            },
+        }],
+    }, function(touched)
+        return not touched:is_empty()
+    end)
 
 local function same_place(a, b)
     return a.x == b.x and a.y == b.y and a.z == b.z

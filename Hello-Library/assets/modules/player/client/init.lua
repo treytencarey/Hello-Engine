@@ -16,7 +16,8 @@ app:add_systems(First, {
 }, function(owned, commands)
     for _, e in ipairs(owned:iter_mut()) do
         commands:entity(e:id()):patch({
-            input = { mode = "input/game" },
+            input = {},
+            ["input/mode"] = { mode = "input/game" },
             sidebar = {},
         })
         if e:has("RigidBody3d") then
@@ -37,6 +38,6 @@ app:add_systems(First, {
         gone[#gone + 1] = e:id()
     end
     for _, e in ipairs(parts:iter_many(gone)) do
-        commands:entity(e:id()):remove("input", "sidebar")
+        commands:entity(e:id()):remove("input", "input/mode", "sidebar")
     end
 end):in_set("player/removed")

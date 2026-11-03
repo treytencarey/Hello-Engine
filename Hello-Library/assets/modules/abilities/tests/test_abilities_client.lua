@@ -40,7 +40,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["zz/player"] = {},
             ["core/net/local"] = {},
             ["core/net/sync"] = false,
-            input = { mode = "input/game" },
+            input = {},
+            ["input/mode"] = { mode = "input/game" },
             abilities = {
                 fireball = { key = "KeyQ", cooldown = 5 },
                 slow = { key = "KeyE" },
@@ -50,7 +51,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:spawn({
             ["zz/other"] = {},
             ["core/net/sync"] = false,
-            input = { mode = "input/game" },
+            input = {},
+            ["input/mode"] = { mode = "input/game" },
             abilities = { fireball = { key = "KeyQ" } },
         })
         step("bound")
@@ -77,7 +79,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "input_gone" then
         if clock < 0.2 then return end
-        world:get_entity(player_id):patch({ input = { mode = "input/game" } })
+        world:get_entity(player_id):patch({ input = {}, ["input/mode"] = { mode = "input/game" } })
         step("input_back")
 
     elseif phase == "input_back" then

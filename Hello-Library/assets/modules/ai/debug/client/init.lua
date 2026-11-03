@@ -67,19 +67,19 @@ app:add_systems(Update, {
         end
 
         local before = { x = at.x, y = at.y + LIFT, z = at.z }
-        for i = 1, d.path_count or 0 do
-            local p = { x = d.path[i].x, y = d.path[i].y + LIFT, z = d.path[i].z }
+        for _, step in ipairs(d.path or {}) do
+            local p = { x = step.x, y = step.y + LIFT, z = step.z }
             gizmos:line(before, p, PATH)
             gizmos:line({ x = p.x - 0.25, y = p.y, z = p.z }, { x = p.x + 0.25, y = p.y, z = p.z }, WAYPOINT)
             gizmos:line({ x = p.x, y = p.y, z = p.z - 0.25 }, { x = p.x, y = p.y, z = p.z + 0.25 }, WAYPOINT)
             before = p
         end
 
-        for i = 1, d.seen_count or 0 do
-            post(gizmos, d.seen[i], SEEN)
+        for _, at_seen in ipairs(d.seen or {}) do
+            post(gizmos, at_seen, SEEN)
         end
-        for i = 1, d.sound_count or 0 do
-            post(gizmos, d.sound[i], SOUND)
+        for _, at_heard in ipairs(d.sound or {}) do
+            post(gizmos, at_heard, SOUND)
         end
     end
 end):in_set("ai/debug/draw")
@@ -96,7 +96,7 @@ app:add_systems(Update, {
 }, function(agents, labels, commands)
     for _, e in ipairs(agents:iter()) do
         local chosen = e:get("ai/debug").chosen
-        local text = tostring(e:id()) .. ": " .. ((chosen == nil or chosen == "") and "nothing" or chosen)
+        local text = tostring(e:id()) .. ": " .. (chosen or "nothing")
         local label = labels:iter_many(e:get("ai/debug/labels") or {})[1]
         if label ~= nil then
             commands:entity(label:id()):patch({ Text = { text = text } })

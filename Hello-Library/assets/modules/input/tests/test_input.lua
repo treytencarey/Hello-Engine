@@ -54,7 +54,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["zz/player"] = {},
             ["core/net/local"] = {},
             ["core/net/sync"] = false,
-            input = { sensitivity = 2.0, mode = "input/game" },
+            input = { sensitivity = 2.0 }, ["input/mode"] = { mode = "input/game" },
             ["input/game"] = {
                 movement = {
                     forward = { key = "KeyW" },
@@ -97,7 +97,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("I5_an_analog_value_replaces_the_press",
             p:get("input/game/movement/forward").value == 0.5,
             "value=" .. tostring(p:get("input/game/movement/forward").value))
-        p:patch({ input = { mode = "input/ui", show_cursor = true } })
+        p:patch({ input = {}, ["input/mode"] = { mode = "input/ui", show_cursor = true } })
         step("ui")
 
     elseif phase == "ui" and clock > 0.2 then
@@ -116,7 +116,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "e pressed" and clock > 0.2 then
         suite.assert_test("I6b_a_key_pressed_again_acts_in_the_new_mode",
             p:has("input/ui/menu/pick") and p:has("input/ui/menu/point"), "")
-        p:patch({ input = { mode = "input/game", show_cursor = false } })
+        p:patch({ input = {}, ["input/mode"] = { mode = "input/game", show_cursor = false } })
         step("game again")
 
     elseif phase == "game again" and clock > 0.2 then

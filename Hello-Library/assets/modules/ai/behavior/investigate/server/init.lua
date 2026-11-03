@@ -47,7 +47,7 @@ app:add_systems(First, {
             commands:spawn({
                 ["ai/agent/option"] = { entity = a:id(), score = 0 },
                 ["ai/behavior/investigate/option"] = {},
-                Name = { name = "investigate" },
+                Name = "investigate",
                 ["core/script/owner"] = false,
             })
         end
@@ -178,7 +178,8 @@ app:add_systems(Update, {
         removed = { "ai/agent/chosen" },
         with = { "ai/behavior/investigate/option", "ai/agent/option" },
     }],
-    Query[{ with = { "ai/behavior/investigate", "ai/nav/request" } }],
+    -- Only while `ai/nav` stays: going with it, its request is about to be taken off.
+    Query[{ with = { "ai/behavior/investigate", "ai/nav", "ai/nav/request" } }],
     Commands,
 }, function(unchosen, agents, commands)
     for _, o in ipairs(unchosen:iter()) do

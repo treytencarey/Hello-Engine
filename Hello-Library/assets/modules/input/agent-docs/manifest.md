@@ -10,10 +10,10 @@ Keys, mouse buttons, motion and scroll, turned into one component per bound acti
 
 ## Components
 
-- `input = { mode, show_cursor, sensitivity }` on each local player:
+- `input = { sensitivity }` on each local player: `sensitivity` scales motion and scroll. A server's `input` crosses, and its update overwrites the whole value, so what the client decides lives apart:
+- `input/mode = { mode, show_cursor }`, written on the client, never synced:
   - `mode` names the component holding the bindings that apply, such as `"input/game"` or `"input/ui"`. With no mode set, nothing is active.
   - `show_cursor` shows the cursor when true and confines it when false.
-  - `sensitivity` scales motion and scroll.
 - `input/game`, `input/ui` (or any other mode component): bindings, `{ <group> = { <action> = <binding> } }`, where a binding is `{ key = <KeyCode> }`, `{ button = <MouseButton> }`, `{ motion = true }` or `{ scroll = true }`. Each mod writes its own group.
 - `<mode>/<group>/<action>`: present while the action is active. `{ value = <1, or the analog strength> }` for keys and buttons; `{ dx, dy }` for motion and scroll, present only on frames with movement. Added, updated and removed by `input`.
 - `input/held`, `input/actions`: `input`'s own state (held keys and buttons; which action components it added).
@@ -33,7 +33,7 @@ Input that does not come from a device, written by any mod (a suite, a replay, a
 |----------|-------|---------|
 | First | `input/held` | Fold keys, buttons (Bevy's and the synthetic messages) and `input/analog` into `input/held` |
 | PreUpdate | `input` | Turn the active mode's bindings into action components; write only what changed |
-| PreUpdate | `input/cursor` | On a changed `input`, apply `show_cursor` |
+| PreUpdate | `input/cursor` | On a changed `input/mode`, apply `show_cursor` |
 
 ## Use
 
@@ -54,7 +54,7 @@ app:add_systems(Update, {
 end)
 
 -- switch a player, for example when a menu opens
-commands:entity(player):patch({ input = { mode = "input/ui", show_cursor = true } })
+commands:entity(player):patch({ ["input/mode"] = { mode = "input/ui", show_cursor = true } })
 
 -- unbind
 commands:entity(player):patch({ ["input/game"] = { movement = null } })

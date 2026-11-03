@@ -1,4 +1,3 @@
--- --host (windowed: a headless run has no gizmos, so its draw systems report errors)
 -- What crosses over a real connection, and what the client makes of it: an isolated server world
 -- has a real agent, its drawn ground and a region, and this VM is a client of it.
 require("modules/core/init.lua")
@@ -129,14 +128,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("DN5_with_nothing_of_the_nav_entities", #world:query({ with = { "ai/nav/region" } }) == 0, "")
         suite.assert_test("DN6_a_region_is_a_slab", #(ground(world):get("ai/debug/world/slabs") or {}) == 2,
             "slabs " .. #(ground(world):get("ai/debug/world/slabs") or {}))
-        -- Local ones, as a removal on the server stays on its copies.
+        -- Local ones, which nothing replicates.
         local_debug = commands:spawn({
             ["ai/debug"] = { chosen = "local" },
             Transform = {},
             ["core/net/sync"] = false,
         }):id()
         local_world = commands:spawn({
-            ["ai/debug/world"] = { regions = { { min_x = 0, max_x = 1, min_z = 0, max_z = 1, y = 0 } }, region_count = 1 },
+            ["ai/debug/world"] = { regions = { { min_x = 0, max_x = 1, min_z = 0, max_z = 1, y = 0 } } },
             ["core/net/sync"] = false,
         }):id()
         ts.drop_patrol = true
@@ -147,7 +146,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local labels = world:query({ iter_many = a:get("ai/debug/labels") or {}, with = { "ai/debug/label", "Text" } })
         suite.assert_test("DN7_the_label_follows_what_is_chosen",
             #labels == 1 and tostring(labels[1]:get("Text")):find("nothing", 1, true) ~= nil, labels[1] and tostring(labels[1]:get("Text")) or "")
-        local shown = ground(world):get("ai/debug/world").region_count
+        local shown = #(ground(world):get("ai/debug/world").regions or {})
         suite.assert_test("DN7b_a_region_gone_on_the_server_goes_here", shown == 1, "regions " .. tostring(shown))
         suite.assert_test("DN8_a_local_one_has_its_label_too", #world:query({ with = { "ai/debug/label" } }) == 2, "")
         suite.assert_test("DN9_and_its_slab", #world:query({ with = { "ai/debug/world/slab" } }) == 2, "slabs " .. #world:query({ with = { "ai/debug/world/slab" } }))

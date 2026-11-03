@@ -73,6 +73,15 @@ app:add_systems(Update, { Query[{ with = { "zz/copy", Mut["Velocity3d"], Mut["Ri
     end
     ts.srv_ready = true
 end):in_set("zz/movement_net_server")
+-- What sends the server's value again: a write of it, here its own tuning field.
+app:add_systems(Update, { Query[{ with = { "player", Mut["camera/third_person"] } }] }, function(players)
+    if not ts.flip then return end
+    for _, e in ipairs(players:iter_mut()) do
+        if e:get("camera/third_person").zoom_step ~= 0.75 then
+            e:patch({ ["camera/third_person"] = { zoom_step = 0.75 } })
+        end
+    end
+end):in_set("zz/movement_net_resend")
 ]=])
 helpers.spawn_vm("modules/test_fixtures/gen_movement_net_vm1.lua", {
     DEFAULTS = DEFAULTS,
@@ -176,6 +185,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local flips = copy(world, "flips")
         suite.assert_test("MN8_a_body_that_turns_dynamic_later_stays_kinematic_here", flips:get("RigidBody3d") == "KinematicPositionBased",
             tostring(flips:get("RigidBody3d")))
+        -- A value is whole: what crossed has every field the look system reads, and a server's write reaches it.
+        local tuning = world:get_entity(mine(world):id()):get("camera/third_person")
+        suite.assert_test("MN9_the_cameras_tuning_crosses_whole", tuning ~= nil and tuning.sensitivity == 0.003 and tuning.max_distance == 20,
+            tuning and tostring(tuning.sensitivity) or "none")
+        suite.assert_test("MN10_a_servers_write_of_it_arrives", tuning ~= nil and tuning.zoom_step == 0.75, tuning and tostring(tuning.zoom_step) or "none")
+        local look = world:get_entity(mine(world):id()):get("camera")
+        suite.assert_test("MN11_the_owners_camera_keeps_what_it_holds", look ~= nil and look.yaw ~= nil and look.distance ~= nil,
+            look and tostring(look.yaw) or "none")
         phase = "done"
         suite.finish("MovementNetSuite")
     end

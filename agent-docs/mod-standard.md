@@ -54,6 +54,8 @@ end):in_set("cooldown/tick")
   - An entry key inside a component is data, not a component name, and is exempt: `cooldown = { [name] = { remaining = 3 } }` and `patch({ ["cooldown/left"] = { [name] = secs - dt } })` key by a variable.
 - An entity is stored only as an entity value (what `id()` gives), never as a number. A link with a reverse side is `ChildOf` or a declared relationship; a single shared entity is the first row of a declared query (`overlays:iter()[1]`). See Links between entities.
 - Nothing syncs unless the mod's return value declares `core/net/sync`.
+- An update overwrites the whole value, as `bevy_replicon`'s does: a list that shrinks shrinks, and a field that goes absent is gone. A field the client writes for itself on a component the server sends is wiped by the next update, so it lives in a sub-component of its own, unsynced (`input/mode`), and a default both sides need is declared in `shared/`, so the server's value is whole. An owner keeps what it holds of a client-authority component: the server's copy only stands in for one it does not have.
+- A synced component taken off on the server leaves the clients its audience reaches, and the entity stays. So does a name dropped from `core/net/sync`, told to those its old policy reached; the server keeps its copy. A client-authority component stays on its owner, and leaves the others.
 - The mod that reads another mod's data across the network declares that data's sync, in its server half, on the entity: `abilities` adds `["input/game/abilities/<name>"] = { authority = "client", target = "owner" }` to the player's `core/net/sync`. The mod that produces the data stays unaware of the network. `target = "owner"` lets only the owner learn the entry and only the server receive the value.
   - One exception: data a mod writes onto an entity it spawns, which clients need from that entity's first frame, is declared in the spawn itself, so it rides the first spawn: `abilities/fireball` spawns its projectile with `["core/net/sync"] = { ["projectile/caster"] = { authority = "server" } }`. A sync added later by a system can reach clients a frame or two after the entity.
 - A sub-component (`<mod>/<data>`, no directory of its own) is data, and it syncs only when a mod's server half declares it by hand, as above: it is never synced by default. Data other mods write for the client to use, such as input bindings, is written in their client half.
@@ -68,6 +70,8 @@ end):in_set("cooldown/tick")
   - A standing request, one that holds for as long as the asker wants it, is a keyed entry the asker removes: `ai/nav` adds `ai/nav/request` and takes it away when it goes, and `chase` writes and removes only `chase` inside it. Different keys don't collide, so one asker leaving and another arriving in the same frame need no ordering.
 - A provider gives its component its full shape by declaring its defaults (State). Its own systems never see a field of it missing, and neither does a consumer once the provider's mod has loaded. A consumer allows only for a field the provider declares no default for, and for a provider that has not loaded yet (a base, Mod boundaries).
 - A write must never recreate something its owner removed.
+- A cleanup, and anything its write sets off, writes into another mod's component only while what owns that component stays, read from a column it declares on its row: a write landing after the owner has gone brings the component back, a `null` patch included.
+- A system that writes into another mod's component on an edge names that component's owner in its `with`, so it waits for the owner and fires again when the owner returns.
 - Ownership follows the hierarchy: children go with their parent, whoever spawned them. A mod that puts its entity inside another mod's UI spawns it there when that UI appears (`Query[{ added = { "sidebar/bar" } }]`, the new entity spawned with `ChildOf` set to the bar), and spawns it again when a new one appears (a reload of the other mod). An entity moved under another mod's entity after its spawn frame becomes that mod's (a notification moved under its overlay).
 
 ## Links between entities
@@ -183,20 +187,18 @@ return {
 - A system's first run sees every existing component as `added` and `changed`, so a mod's setup on its own component's `added` edge also covers carriers that existed before the mod loaded. Every `added` handler is safe to run again.
 - Systems react to `added`, `changed` and `removed`. Only timed work polls (retries, cooldowns, timeouts, camera follow).
 - A system's edge queries answer what changed since its last run, whether or not the run reads them. Returning early before reading one (on a timer, a budget or a flag) consumes its edges. Timed or budgeted work goes in its own system. A `:run_if` condition that is false skips the run and consumes nothing.
-- A system skips the way a Bevy system does, with a run condition from `bevy_ecs::schedule::common_conditions`, imported at its Bevy path:
+- A system skips the way a Bevy system does, with a run condition: a read-only system, in the same shape as `app:add_systems`.
 
   ```lua
-  local any_match_filter = require("bevy::ecs::schedule::common_conditions::any_match_filter")
-  local any_component_removed = require("bevy::ecs::schedule::common_conditions::any_component_removed")
-
   app:add_systems(First, { ... }, function(...) end)
-      :run_if(any_match_filter[{ changed = { "ai/nav/region" } }])
+      :run_if({ Query[{ ["or"] = { changed = { "ai/nav/region" }, removed = { "ai/nav/region" } } }] }, function(regions)
+          return not regions:is_empty()
+      end)
   ```
 
   - A condition has its own change ticks. A false one skips the run and leaves the system's own edges for its next run. Several `:run_if` calls all have to pass, and each is evaluated every time.
-  - `any_match_filter[{ ... }]` takes the filters `Query` takes: `with`, `without`, `changed`, `added` and `["or"]`. A removal is no filter in Bevy: `any_component_removed["<name>"]`.
-  - Conditions combine as in Rust's `a.or(b)`, and a method named after a Lua keyword is indexed: `local changed = any_match_filter[{ changed = { "x" } }]`, then `:run_if(changed["or"](changed, any_component_removed["x"]))`. It runs the second only when the first answered false. `nand`, `nor`, `xor` and `xnor` read `a:nor(b)`; `and` is `a["and"](a, b)`, and `not` is `require("bevy::ecs::schedule::common_conditions::not")`, called on a condition.
-  - A plain function works too (`:run_if(function() return ready end)`). Its last answer lives in the mod's memory, so a condition from the list above is the usual one.
+  - Its parameters are read-only. `Commands`, `Mut[...]`, `ResMut`, `MessageWriter` and `World` are refused, naming what was refused. `Res[...]` answers `:is_changed()` against the condition's own ticks, and `MessageReader[...]` reads with its own cursor.
+  - A plain function works too (`:run_if(function() return ready end)`). Its last answer lives in the mod's memory, so a condition with parameters is the usual one.
 - A backlog too big for one frame stops when the system has spent its slice of the frame's budget, and carries on next frame: `Res[LuaFrameBudget]` (`local LuaFrameBudget = require("bevy_lua_ecs::lua_frame_budget::LuaFrameBudget")`), `repeat ... until budget:over_budget()`. The first poll of a run answers false, so a run makes at least one unit of progress, however little of the budget is left. Progress lives on an entity or in a resource, and each unit is safe to repeat. Nothing stops a system that does not ask.
 - Each edge is seen exactly once by every system, whatever its order relative to the writer. A system that errors re-sees everything since its last successful run, so reactions should be safe to repeat.
 - Schedules: set up and deliver in `First` or `PreUpdate`, consume another mod's output in `Update` or `PostUpdate`, clear delivered values in `Last`. A consumer never reads another mod's output in the schedule that mod writes it in.
@@ -225,7 +227,7 @@ return {
 ## Queries and writes
 
 - Setup happens on an `added` edge: one query, with `optional` columns for what the setup reads. Setup that a later change must redo reacts to `changed` (which also fires on add) in the same system. A system that fills a computed field writes only when it is missing: the fill is itself a change, and an unconditional one would run every frame.
-- No early-return gates (`if q:is_empty() then return end`). The loop over the edge query is the gate. To skip a whole run on what changed, use a run condition (Systems).
+- No early-return gates in a system body (`if q:is_empty() then return end`). The loop over the edge query is the gate. To skip a whole run on what changed, use a run condition (Systems), where `is_empty` is what Bevy's own helper does.
 - Combine `changed` and `removed` handling in one query with `["or"]` where you can. `changed` also fires on add.
 - A query answers only the columns it names. `get()` and `has()` read the row, so a component the query did not list in `with`, `optional`, `any_of`, `added` or `changed` reads as absent even when the entity has it, and the failure is silent. Name what you read, even when it may be missing (`Query[{ changed = { "animation" }, optional = { "Children" } }]`). Read another entity's data through a declared query (`parents:get(e:get("ChildOf"))`); a mod has no world to read it from.
 - Read each column into a local first, then use the local (`local entered = e:get("collision_trigger").entered or {}`). Never iterate, index or compare through an inline `e:get(...)`.
@@ -317,9 +319,10 @@ return {
 ## Engine notes
 
 - An engine enum reads back as Bevy serialises it, and as it is written: a variant with no data is its name (`RigidBody3d` reads `"KinematicPositionBased"`, a key `"KeyW"`), a variant with data is a table keyed by its name (`{ Character = "w" }`), and an `Option` is its value, or nil for `None`.
-- Some numeric engine fields read back as strings (`Camera.order`). Convert with `tonumber` before comparing.
 - A `removed` edge brings its row in the frame after the removal, exactly once, in every query form, whether the entity despawned or the component was removed from an entity that stays. The old value is readable only from `Query[{ ["or"] = { removed = { "X" } }, optional = { "X" } }]`; a plain `removed = { "X" }`, with or without `optional = { "X" }`, reads nil for X. In that `["or"]` form a query that also takes `added = { "X" }` answers a value on both edges, so `get()` cannot tell which happened: react to each edge in its own system (`sidebar/show` on `added`, `sidebar/hide` on `removed`).
 - `Text` reads back as its string, and `ScrollPosition` as `{ x, y }`.
+- `Name` reads back as `{ hash, name }`, its text as it was written, and is written `Name = "chase"`. `Name = { name = "chase" }` reads back the same, but leaves the hash Bevy compares names by stale.
+- A value Bevy's reflection keeps opaque reads back as its own serialization (a `Duration` as its seconds), never a debug print, unless its type has none (`Instant`, `Range`).
 - An engine component without reflection reads back as plain data when its type is serializable (`Collider3d`). A marker with no fields reads back as `{}`, like a Lua marker component. Any other reads back as nil, with one warning naming the type, and `has()` still answers true (`RapierColliderHandle3d`). Test what such a component does rather than its value (a ball of radius r rests r above a floor).
   - Today differs: `world:get_entity` omits an engine component without reflection, so on its row `has()` answers false and `get()` nil. Query for the component to test whether an entity holds it.
 - A method whose Bevy answer is a tuple answers a table named after the method's documented return: `rapier:cast_ray(...)` answers `{ entity, toi }`. A tuple Bevy gives no names, Bevy's math tuples among them, answers a list by position.
@@ -359,7 +362,7 @@ Each was written by an agent and rejected. The wrong form is what to look for; t
 - **A flag to run a loop body once.** Wrong: `local done = false` ... `if not done then done = true`. Right: `break` after the work.
 - **A local function used once.** Wrong: `local function apply(...)` called from one place. Right: write it where it is used.
 - **A system that only fills static defaults.** Wrong: a `<mod>/init` system on `added` writing `speed = m.speed or 6`, which a system ordered after the spawner and `PostUpdate` read unfilled until the next `First`, and a guard in the mod (`if m.speed ~= nil then`) for that window. Right: `return { defaults = { movement = { speed = 6 } } }`, and no guard (State).
-- **A gate inside the system.** Wrong: `if not touched:is_empty() then rebuild() end`, or an early return on a query, which consumes that query's edges and runs the system every frame to ask. Right: `:run_if(any_match_filter[{ changed = { "<name>" } }])`, and `any_component_removed["<name>"]` for a removal (Systems).
+- **A gate inside the system.** Wrong: `if not touched:is_empty() then rebuild() end` in a system body, or an early return on a query, which consumes that query's edges and runs the system every frame to ask. Right: the same `is_empty` in a run condition, as Bevy's own helper does, which leaves the system's edges for its next run (Systems).
 - **All or nothing behind one `without`.** Wrong: `without = { "CollidingEntities3d" }` on a system that adds `Sensor3d`, `CollidingEntities3d` and `ActiveEvents3d`: an entity that already has that one gets none of the others. Right: name them as `optional` and add each the row lacks (`if not e:has("Sensor3d") then`), and what it already has stays, through a reload too.
 - **Spawning a default entity, then filling it in another system.** Wrong: `ui/style` spawning `ui/theme = {}` and a second system filling its colors. Right: a mod extends a base and fills it (`ui/theme/dark` with `base = "ui/theme"`), and the world adds the mod it wants.
 - **Counters an observer fills for a system.** Wrong: an observer adding to `clicks` or `wheel` and a system acting on them. Right: act in the observer; a suite drives it with `commands:trigger(...)`.

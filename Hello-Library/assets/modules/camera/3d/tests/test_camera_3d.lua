@@ -64,7 +64,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:spawn({
             ["zz/carrier"] = { name = "me" },
             ["core/net/local"] = {},
-            input = { mode = "input/game" },
+            input = {},
+            ["input/mode"] = { mode = "input/game" },
             ["core/net/sync"] = false,
             Transform = { translation = { x = 2, y = 0, z = 3 } },
             camera = { yaw = 0.5, pitch = -0.2 },
@@ -126,7 +127,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("other aimed")
 
     elseif phase == "other aimed" and clock > 0.3 then
-        other:patch({ ["core/net/local"] = {}, input = { mode = "input/game" } })
+        other:patch({ ["core/net/local"] = {}, input = {}, ["input/mode"] = { mode = "input/game" } })
         step("other local")
 
     elseif phase == "other local" and #eyes_of(world, other) > 0 and clock > 0.3 then

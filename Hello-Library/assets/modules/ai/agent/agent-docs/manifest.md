@@ -33,7 +33,7 @@ What makes an entity an agent: a memory, a clock it thinks by, and a choice amon
 commands:spawn({
     ["ai/agent/option"] = { entity = agent, score = 0 },
     ["my/behavior/option"] = {},
-    Name = { name = "my behavior" },
+    Name = "my behavior",
 })
 
 -- it enters and leaves on the edges of `ai/agent/chosen` beside its own marker

@@ -56,11 +56,11 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
 
     if phase == "published" and clock > 0.5 then
         local w = world_of(world)
-        suite.assert_test("W1_it_lists_the_regions", #w.regions == 2 and w.region_count == 2 and w.regions[1].max_x == 4 and w.regions[1].y == 1, "")
-        suite.assert_test("W2_and_links", #w.links == 1 and w.link_count == 1 and w.links[1].to.x == 20 and w.links[1].x == 10, "")
+        suite.assert_test("W1_it_lists_the_regions", #w.regions == 2 and w.regions[1].max_x == 4 and w.regions[1].y == 1, "")
+        suite.assert_test("W2_and_links", #w.links == 1 and w.links[1].to.x == 20 and w.links[1].x == 10, "")
         suite.assert_test("W3_regions_that_touch_add_no_link", #w.links == 1, "")
         suite.assert_test("W4_and_volumes_where_they_stand",
-            #w.volumes == 1 and w.volume_count == 1 and w.volumes[1].min_x == 8 and w.volumes[1].max_x == 12 and w.volumes[1].min_y == 4 and w.volumes[1].max_z == 23,
+            #w.volumes == 1 and w.volumes[1].min_x == 8 and w.volumes[1].max_x == 12 and w.volumes[1].min_y == 4 and w.volumes[1].max_z == 23,
             w.volumes[1] and tostring(w.volumes[1].min_x) or "none")
         writes = 0
         step("standing")
@@ -105,7 +105,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     -- Long enough after the box that nothing else is arriving.
     elseif phase == "late carrier" and clock > 0.3 then
         local late = world:query({ with = { "zz/late", "ai/debug/world" } })[1]:get("ai/debug/world")
-        suite.assert_test("W11_a_new_carrier_is_told", late.volume_count == 1, tostring(late.volume_count))
+        suite.assert_test("W11_a_new_carrier_is_told", #(late.volumes or {}) == 1, tostring(#(late.volumes or {})))
         phase = "done"
         suite.finish("DebugWorldSuite")
     end

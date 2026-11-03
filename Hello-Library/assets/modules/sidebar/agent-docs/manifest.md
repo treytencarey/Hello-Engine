@@ -22,7 +22,7 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `sidebar/setup` | For the local player, bind Escape in `input/game` and `input/ui` (again when `input` is added back), and build the container and bar, hidden unless the sidebar is open already (a reload) |
+| First | `sidebar/setup` | For the local player with `input`, bind Escape in `input/game` and `input/ui` (again when `input` is added back), and build the container and bar, hidden unless the sidebar is open already (a reload) |
 | First | `sidebar/away` | When the player leaves for another world, close the sidebar |
 | First | `sidebar/removed` | When `sidebar` is removed, despawn the container with everything in it, and unbind |
 | Update | `sidebar/toggle` | Escape in game input opens the sidebar; in UI input it closes the newest open panel, or the sidebar |

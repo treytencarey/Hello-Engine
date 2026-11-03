@@ -14,6 +14,7 @@ local Assets = require("bevy::asset::Assets")
 local Mesh = require("bevy::mesh::Mesh")
 local Cuboid = require("bevy::math::primitives::Cuboid")
 local Plane3d = require("bevy::math::primitives::Plane3d")
+local AssetServer = require("bevy::asset::AssetServer")
 local Collider = require("bevy_rapier3d::geometry::Collider")
 local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
 
@@ -93,7 +94,7 @@ end
 
 local value_parts = {}
 
-app:add_systems(Startup, { Commands, ResMut[Assets[Mesh]] }, function(commands, meshes)
+app:add_systems(Startup, { Commands, ResMut[Assets[Mesh]], Res[AssetServer] }, function(commands, meshes, assets)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 
     building(box_maker(commands, meshes, { AsyncCollider = "TriMesh" }), 0)
@@ -129,6 +130,7 @@ app:add_systems(Startup, { Commands, ResMut[Assets[Mesh]] }, function(commands, 
     -- A block as tall as a room, standing on the ground, each kind of collider.
     for _, kind in ipairs({
         { "closed block", 800, { AsyncCollider = "TriMesh" } },
+        { "oriented block", 700, { AsyncCollider = { TriMesh = "MERGE_DUPLICATE_VERTICES|ORIENTED" } } },
         { "hull block", 900, { AsyncCollider = "ConvexHull" } },
         { "cuboid block", 1000, { Collider3d = { cuboid = { hx = 3, hy = 1.5, hz = 3 } } } },
     }) do
@@ -143,6 +145,16 @@ app:add_systems(Startup, { Commands, ResMut[Assets[Mesh]] }, function(commands, 
     end
 
     agent(commands, "outside the block", 806, 1, 0)
+
+    -- A floor three metres thick with ground under it, an oriented mesh: its top and the ground are
+    -- floors, and its underside is not.
+    commands:spawn({
+        Transform = { translation = { x = 1800, y = -0.5, z = 0 } },
+        RigidBody3d = "Fixed",
+        Collider3d = { cuboid = { hx = 12, hy = 0.5, hz = 12 } },
+    })
+    box_maker(commands, meshes, { AsyncCollider = { TriMesh = "MERGE_DUPLICATE_VERTICES|ORIENTED" } })(1800, 5.5, 0, 6, 1.5, 6)
+    volume(commands, "thick storey", 1800, 8, 8, 4, 4)
 
     -- A wall across the ground with a way round each end, too thin for any cell's centre to be inside it,
     -- 0.2 m beyond one row of centres. And a kerb a step can't climb, too low for the wall look to see.
@@ -181,6 +193,13 @@ app:add_systems(Startup, { Commands, ResMut[Assets[Mesh]] }, function(commands, 
         Transform = { translation = { x = 1400.3, y = 1, z = 0.5 } },
         RigidBody3d = "Dynamic",
         Collider3d = { cuboid = { hx = 0.1, hy = 1, hz = 0.1 } },
+        LockedAxes3d = "ROTATION_LOCKED",
+    })
+    -- And one with a cell's centre inside it, where the spot above the floor is in it.
+    commands:spawn({
+        Transform = { translation = { x = 1403.5, y = 1, z = 3.5 } },
+        RigidBody3d = "Dynamic",
+        Collider3d = { cuboid = { hx = 0.3, hy = 1, hz = 0.3 } },
         LockedAxes3d = "ROTATION_LOCKED",
     })
     volume(commands, "crate", 1400, 8, 8, 3, 3)
@@ -223,6 +242,54 @@ app:add_systems(Startup, { Commands, ResMut[Assets[Mesh]] }, function(commands, 
     })
     volume(commands, "roofed room", 1700, 12, 12, 2, 2)
     agent(commands, "to the block", 1708, 1, 8)
+
+    -- A pillar with its faces on cell centres: a plain mesh, so those cells read as inside and no others.
+    ground(2400)
+    box_maker(commands, meshes, { AsyncCollider = "TriMesh" })(2400, 1.5, 0, 0.5, 1.5, 0.5)
+    volume(commands, "on centres", 2400, 8, 8, 3, 3)
+    -- An oriented block and a cuboid, each 0.3 m off the grid, and a walk along the oriented one's edge.
+    ground(2500)
+    box_maker(commands, meshes, { AsyncCollider = { TriMesh = "ORIENTED" } })(2500.3, 1.5, 0, 3, 1.5, 3)
+    volume(commands, "off grid", 2500, 8, 8, 3, 3)
+    agent(commands, "along the edge", 2496.5, 1, -5)
+    ground(2600)
+    commands:spawn({
+        Transform = { translation = { x = 2600.3, y = 1.5, z = 0 } },
+        RigidBody3d = "Fixed",
+        Collider3d = { cuboid = { hx = 3, hy = 1.5, hz = 3 } },
+    })
+    volume(commands, "off grid cuboid", 2600, 8, 8, 3, 3)
+    -- `ORIENTED` alone, on a mesh whose faces share their vertices and on one whose faces do not.
+    local up_high = function(x)
+        return { translation = { x = x, y = 50, z = 0 } }
+    end
+    commands:spawn({ Transform = up_high(2700), RigidBody3d = "Fixed", Mesh3d = meshes:add(Cuboid.new(2, 2, 2)), AsyncCollider = { TriMesh = "ORIENTED" } })
+    commands:spawn({ Transform = up_high(2720), RigidBody3d = "Fixed", SceneRoot = assets:load("modules/ai/nav/tests/shared_cube.gltf#Scene0"), AsyncSceneCollider = { shape = { TriMesh = "ORIENTED" } } })
+    commands:spawn({ Transform = up_high(2740), RigidBody3d = "Fixed", SceneRoot = assets:load("modules/ai/nav/tests/shared_cube.gltf#Scene0"), AsyncSceneCollider = { shape = "TriMesh" } })
+    -- A room modelled as one closed box, oriented and plain.
+    ground(2800)
+    box_maker(commands, meshes, { AsyncCollider = { TriMesh = "ORIENTED" } })(2800, 1.5, 0, 5, 1.5, 5)
+    volume(commands, "oriented room", 2800, 8, 8, 3, 3)
+    ground(2900)
+    box_maker(commands, meshes, { AsyncCollider = "TriMesh" })(2900, 1.5, 0, 5, 1.5, 5)
+    volume(commands, "plain room", 2900, 8, 8, 3, 3)
+    -- A box with no bottom over a ground, and a single open sheet over one, both oriented.
+    ground(3000)
+    commands:spawn({
+        Transform = { translation = { x = 3000, y = 2, z = 0 }, scale = { x = 3, y = 2, z = 3 } },
+        RigidBody3d = "Fixed",
+        SceneRoot = assets:load("modules/ai/nav/tests/open_cube.gltf#Scene0"),
+        AsyncSceneCollider = { shape = { TriMesh = "ORIENTED" } },
+    })
+    volume(commands, "no bottom", 3000, 8, 8, 3, 3)
+    ground(3100)
+    commands:spawn({
+        Transform = { translation = { x = 3100, y = 4, z = 0 } },
+        RigidBody3d = "Fixed",
+        Mesh3d = meshes:add(Plane3d.new(UP, { x = 6, y = 6 })),
+        AsyncCollider = { TriMesh = "ORIENTED" },
+    })
+    volume(commands, "open sheet", 3100, 8, 8, 3, 3)
     commands:spawn({
         ["zz/name"] = { name = "to the roof" },
         ["ai/nav"] = {},
@@ -361,11 +428,15 @@ app:add_systems(Update, { World, Res[Time], ReadRapierContext, Commands }, funct
             end
         end
         return baked(world, "closed block") and baked(world, "hull block") and baked(world, "cuboid block")
+            and baked(world, "oriented block") and baked(world, "thick storey")
             and baked(world, "thin wall") and baked(world, "sheet") and baked(world, "crate")
             and baked(world, "four walls") and baked(world, "roofed wall") and baked(world, "roofed room")
+            and baked(world, "on centres") and baked(world, "off grid") and baked(world, "off grid cuboid")
+            and baked(world, "oriented room") and baked(world, "plain room") and baked(world, "no bottom") and baked(world, "open sheet")
     end
 
-    if phase == "baking" and clock > 1 and all_baked() then
+    -- Long enough for a scene to be ready, and baked again.
+    if phase == "baking" and clock > 3 and all_baked() then
         -- Past the slab's edge the ramp's side wall would come first, so the rays are at the building's middle.
         local closed = heights(rapier, 0, 3, 8, true)
         suite.assert_test("M1_rays_a_closed_trimesh_has_a_top_and_an_underside_and_no_inside",
@@ -410,6 +481,37 @@ app:add_systems(Update, { World, Res[Time], ReadRapierContext, Commands }, funct
         suite.assert_test("M15_nor_does_a_cuboid_block", floor_at(world, "cuboid block", 1000, 0, 0) == nil, "")
         -- A surface has no inside, so its underside is a floor with all the room in the world over it.
         suite.assert_test("M16_a_closed_trimesh_block_reads_its_underside_as_a_floor", floor_at(world, "closed block", 800, 0, 0) ~= nil, "")
+        suite.assert_test("M16a_and_it_keeps_its_top", floor_at(world, "closed block", 800, 0, 3, 0.1) ~= nil, "")
+        suite.assert_test("M29_an_oriented_mesh_block_leaves_no_floor_inside_it", floor_at(world, "oriented block", 700, 0, 0) == nil, "")
+        suite.assert_test("M30_and_keeps_its_top", floor_at(world, "oriented block", 700, 0, 3, 0.1) ~= nil, "")
+        suite.assert_test("M31_lined_up_with_the_grid_it_bakes_what_a_cuboid_does_region_for_region",
+            layout(world, "oriented block", 700) == layout(world, "cuboid block", 1000), "")
+        suite.assert_test("M32_a_thick_oriented_storey_keeps_its_top", floor_at(world, "thick storey", 1800, 0, 7, 0.1) ~= nil, "")
+        suite.assert_test("M33_loses_its_underside", floor_at(world, "thick storey", 1800, 0, 4, 0.1) == nil, "")
+        suite.assert_test("M34_and_keeps_the_ground_under_it", floor_at(world, "thick storey", 1800, 0, 0, 0.1) ~= nil, "")
+        local function inside(x, y, z)
+            return #rapier:intersect_point({ x = x, y = y, z = z }, { flags = "ONLY_FIXED" })
+        end
+        suite.assert_test("M35_a_plain_mesh_reads_as_inside_exactly_on_a_face", inside(803, 1, 0.3) == 1, "")
+        suite.assert_test("M36_and_not_just_off_it_either_side", inside(803.001, 1, 0.3) == 0 and inside(802.999, 1, 0.3) == 0, "")
+        suite.assert_test("M37_a_cell_centred_on_a_face_of_it_is_no_floor", floor_at(world, "on centres", 2399.5, -0.5, 0, 0.1) == nil, "")
+        suite.assert_test("M38_and_the_cells_beside_it_stay",
+            floor_at(world, "on centres", 2398.5, -0.5, 0, 0.1) ~= nil and floor_at(world, "on centres", 2399.5, -1.5, 0, 0.1) ~= nil, "")
+        suite.assert_test("M39_an_oriented_block_off_the_grid_keeps_the_ground_beside_it", floor_at(world, "off grid", 2496.5, 0.5, 0, 0.1) ~= nil, "")
+        suite.assert_test("M40_ground_a_cuboid_off_the_grid_carves", floor_at(world, "off grid cuboid", 2596.5, 0.5, 0, 0.1) == nil, "")
+        suite.assert_test("M41_and_nothing_inside_it",
+            floor_at(world, "off grid", 2500.5, 0.5, 0, 0.1) == nil and floor_at(world, "off grid", 2497.5, 0.5, 0, 0.1) == nil, "")
+        suite.assert_test("M42_oriented_alone_gives_a_cuboid_mesh_an_inside", inside(2700, 50.5, 0) == 1 and inside(2700, 55, 0) == 0, "")
+        suite.assert_test("M43_and_a_mesh_whose_faces_share_their_vertices", inside(2720, 50.5, 0) == 1 and inside(2720, 55, 0) == 0, "")
+        suite.assert_test("M44_which_has_none_plain", inside(2740, 50.5, 0) == 0, "")
+        suite.assert_test("M45_an_oriented_room_loses_the_floor_inside_it", floor_at(world, "oriented room", 2800, 0, 0, 0.1) == nil, "")
+        suite.assert_test("M46_and_keeps_its_roof", floor_at(world, "oriented room", 2800, 0, 3, 0.1) ~= nil, "")
+        suite.assert_test("M47_a_plain_one_keeps_both", floor_at(world, "plain room", 2900, 0, 0, 0.1) ~= nil and floor_at(world, "plain room", 2900, 0, 3, 0.1) ~= nil, "")
+        suite.assert_test("M48_a_box_with_no_bottom_loses_the_ground_under_it", floor_at(world, "no bottom", 3000, 0, 0, 0.1) == nil, "")
+        suite.assert_test("M49_and_keeps_its_top", floor_at(world, "no bottom", 3000, 0, 4, 0.1) ~= nil, "")
+        suite.assert_test("M50_ground_under_an_open_oriented_sheet_stays", floor_at(world, "open sheet", 3100, 0, 0, 0.1) ~= nil, "")
+        suite.assert_test("M51_and_the_sheet_is_a_floor", floor_at(world, "open sheet", 3100, 0, 4, 0.1) ~= nil, "")
+        ask(commands, world, "along the edge", 2496.5, 0, 5)
         suite.assert_test("M16b_but_its_sides_cut_that_off_from_the_ground_outside",
             floor_at(world, "closed block", 802.5, 0, 0) == nil and floor_at(world, "closed block", 804.5, 0, 0) ~= nil, "")
         ask(commands, world, "outside the block", 800, 0, 0)
@@ -430,6 +532,7 @@ app:add_systems(Update, { World, Res[Time], ReadRapierContext, Commands }, funct
         ask(commands, world, "to the block", 1700, 1, 0)
         ask(commands, world, "to the roof", 1700, 3.5, 0)
         suite.assert_test("M25_something_loose_is_no_wall", floor_at(world, "crate", 1400.5, 0.5, 0) ~= nil, "")
+        suite.assert_test("M25c_nor_does_it_put_a_floor_inside_something", floor_at(world, "crate", 1403.5, 3.5, 0) ~= nil, "")
         ask(commands, world, "round the wall", 1200, 0, 3)
         ask(commands, world, "round the sheet", 1300, 0, 3)
 
@@ -468,6 +571,11 @@ app:add_systems(Update, { World, Res[Time], ReadRapierContext, Commands }, funct
                     and math.sqrt((at_block.x - 1700) ^ 2 + at_block.z ^ 2) < 7.5,
                 string.format("%s at %.1f %.1f", tostring((to_block:get("ai/nav/path") or {}).status), at_block.x - 1700, at_block.z))
             suite.assert_test("M28_a_goal_on_the_roof_itself_has_no_way_there", named(world, "to the roof"):get("ai/nav/path").status == "unreachable", "")
+            local edge = named(world, "along the edge")
+            local at_edge = edge:get("Transform").translation
+            suite.assert_test("M52_an_agent_walks_along_that_edge_and_arrives",
+                status_of(world, "along the edge") == "arrived" and near(at_edge.x, 2496.5, 1.2) and near(at_edge.z, 5, 1.2),
+                string.format("%s at %.2f %.2f", tostring(status_of(world, "along the edge")), at_edge.x - 2500, at_edge.z))
             suite.assert_test("M16c_so_nothing_outside_finds_a_way_in", named(world, "outside the block"):get("ai/nav/path").status == "unreachable", "")
             for _, kind in ipairs({ { "round the wall", 1200 }, { "round the sheet", 1300 } }) do
                 local at = named(world, kind[1]):get("Transform").translation

@@ -58,7 +58,7 @@ app:add_systems(First, {
         ["or"] = {
             added = { "camera/2d", "core/net/local", "input" },
         },
-        with = { "camera/2d", "core/net/local" },
+        with = { "camera/2d", "core/net/local", "input" },
     }],
     Commands,
 }, function(carriers, commands)
@@ -95,13 +95,15 @@ app:add_systems(First, {
     Query[{
         removed = { "camera/2d" },
         with = { "input/game" },
+        optional = { "input" },
     }],
     Commands,
 }, function(carriers, commands)
     for _, e in ipairs(carriers:iter()) do
-        -- `removed` also fires on despawn, and a patch to an entity that is gone fails.
+        -- `removed` also fires on despawn, and a patch to an entity that is gone fails. And if `input`
+        -- went too, its bindings go with it, and a patch landing after that would bring them back.
         local carrier = commands:get_entity(e:id())
-        if carrier ~= nil then
+        if carrier ~= nil and e:has("input") then
             carrier:patch({ ["input/game"] = { camera_2d = null } })
         end
     end
@@ -161,12 +163,4 @@ end):in_set("camera/2d/aim"):after("camera/2d/zoom")
 
 return {
     base = "camera",
-    defaults = {
-        ["camera/2d"] = {
-            zoom_step = 0.1,
-            min_distance = 0.25,
-            max_distance = 4,
-            z = 1000,
-        },
-    },
 }

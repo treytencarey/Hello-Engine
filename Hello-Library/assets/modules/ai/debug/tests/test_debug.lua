@@ -86,12 +86,12 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         local d = named(world, "drawn"):get("ai/debug")
         suite.assert_test("DB1_it_names_what_is_chosen_from_its_name", d.chosen == "chase", "chosen " .. tostring(d.chosen))
         suite.assert_test("DB2_its_ranges", d.vision_range == 22 and d.hearing_range == 30 and d.vision_fov_deg == 100 and d.awareness_range == 3, "")
-        suite.assert_test("DB3_where_it_saw_something", #d.seen == 1 and d.seen_count == 1 and d.seen[1].z == 12 and d.seen[1].entity == nil and d.seen[1].seen_at == nil, "")
-        suite.assert_test("DB4_where_it_heard_something", #d.sound == 1 and d.sound_count == 1 and d.sound[1].x == 3, "")
+        suite.assert_test("DB3_where_it_saw_something", #d.seen == 1 and d.seen[1].z == 12 and d.seen[1].entity == nil and d.seen[1].seen_at == nil, "")
+        suite.assert_test("DB4_where_it_heard_something", #d.sound == 1 and d.sound[1].x == 3, "")
         local path = named(world, "drawn"):get("ai/nav/path")
-        suite.assert_test("DB5_the_path_it_has_left", path ~= nil and #d.path > 0 and d.path_count == #d.path and d.path[#d.path].z == path.path[#path.path].z, "")
+        suite.assert_test("DB5_the_path_it_has_left", path ~= nil and #d.path > 0 and d.path[#d.path].z == path.path[#path.path].z, "")
         local idle = named(world, "idle"):get("ai/debug")
-        suite.assert_test("DB6_nothing_chosen_says_nothing", idle.chosen == "" and #idle.path == 0 and #idle.seen == 0, "")
+        suite.assert_test("DB6_nothing_chosen_says_nothing", idle.chosen == nil and #idle.path == 0 and #idle.seen == 0, "")
         suite.assert_test("DB7_an_agent_without_it_publishes_nothing", not named(world, "left alone"):has("ai/debug"), "")
         writes = 0
         step("counting")
@@ -106,7 +106,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         local e = named(world, "drawn")
         local path = e:get("ai/nav/path")
         local d = e:get("ai/debug")
-        suite.assert_test("DB10_what_it_has_walked_is_not_drawn", d.path_count < #path.path, d.path_count .. " of " .. #path.path)
+        suite.assert_test("DB10_what_it_has_walked_is_not_drawn", #d.path < #path.path, #d.path .. " of " .. #path.path)
         phase = "done"
         suite.finish("DebugSuite")
 

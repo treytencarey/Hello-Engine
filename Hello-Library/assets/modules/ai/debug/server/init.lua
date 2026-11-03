@@ -1,27 +1,18 @@
 -- Publishes what an agent is thinking, so a client can draw it: its own component carries it across,
 -- the one place an agent's insides reach the network. It is opt-in: put it on the agent. At each
 -- thought it reads what the mods keep and decides nothing. It names no behaviour: what is chosen is
--- the `Name` the option entity gives itself. A list that shrinks keeps its tail on the client's copy,
--- so each says how much of it counts.
+-- the `Name` the option entity gives itself.
 --
 -- ai/debug = {
---     chosen = <the chosen option's name, "" with none>,
+--     chosen = <the chosen option's name, absent with none>,
 --     vision_range = <metres>,
 --     vision_fov_deg = <degrees>,
 --     awareness_range = <metres>,
 --     hearing_range = <metres>,
 --     path = { { x, y, z }, ... }: what it has left to walk,
---     path_count = <how many of those count>,
 --     seen = { { x, y, z }, ... }: where it remembers seeing things,
---     seen_count = <how many of those count>,
 --     sound = { { x, y, z }, ... }: where it remembers hearing things,
---     sound_count = <how many of those count>,
 -- }
-
--- Bevy's `Name` reads as its debug print, quotes and all.
-local function name_of(option)
-    return (tostring(option:get("Name").name):gsub('^"(.*)"$', "%1"))
-end
 
 local function places(list, field)
     local out = {}
@@ -57,18 +48,14 @@ app:add_systems(Update, {
 
         a:set({
             ["ai/debug"] = {
-                -- A field that goes absent stays on the client's copy, so none is said.
-                chosen = option and name_of(option) or "",
+                chosen = option and option:get("Name").name,
                 vision_range = p.vision_range,
                 vision_fov_deg = p.vision_fov_deg,
                 awareness_range = p.awareness_range,
                 hearing_range = p.hearing_range,
                 path = places(left),
-                path_count = #left,
                 seen = places(memory.seen, "at"),
-                seen_count = #memory.seen,
                 sound = places(memory.sound, "at"),
-                sound_count = #memory.sound,
             },
         })
     end

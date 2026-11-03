@@ -12,7 +12,7 @@ local suite = helpers.create_suite("SceneSuite")
 local function node(commands, parent, tag, name, transform)
     commands:spawn({
         ["zz/node"] = { tag = tag },
-        Name = { name = name },
+        Name = name,
         Transform = transform,
         ChildOf = parent,
     })
@@ -41,7 +41,7 @@ app:add_systems(Startup, { Commands, Res[AssetServer] }, function(commands, asse
         SceneRoot = assets:load("Placeholder-Character/Model.glb#Scene0"),
     })
     -- Nodes with no source above them, and a source whose nodes are here before it.
-    commands:spawn({ ["zz/node"] = { tag = "outside" }, Name = { name = "stray_nav" }, Transform = {} })
+    commands:spawn({ ["zz/node"] = { tag = "outside" }, Name = "stray_nav", Transform = {} })
     undecided = commands:spawn({
         ["zz/name"] = { name = "undecided" },
         Transform = { translation = { x = 800, y = 0, z = 0 } },
@@ -143,7 +143,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         commands:spawn({
             ["zz/node"] = { tag = "itself" },
             ["zz/name"] = { name = "itself" },
-            Name = { name = "own_nav" },
+            Name = "own_nav",
             ["ai/nav/volumes/scene"] = {},
             ["ai/nav/volumes"] = { sample = false },
             Transform = { translation = { x = 700, y = 0, z = 0 } },

@@ -24,8 +24,6 @@
 local Grid = require("modules/ai/nav/volumes/server/grid.lua")
 local Time = require("bevy::time::Time")
 local LuaFrameBudget = require("bevy_lua_ecs::lua_frame_budget::LuaFrameBudget")
-local any_match_filter = require("bevy::ecs::schedule::common_conditions::any_match_filter")
-local any_component_removed = require("bevy::ecs::schedule::common_conditions::any_component_removed")
 local On = require("bevy::ecs::prelude::On")
 local SceneInstanceReady = require("bevy::scene::SceneInstanceReady")
 local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
@@ -52,8 +50,6 @@ local function owe(time, carriers, commands)
     end
 end
 
-local volume_changed = any_match_filter[{ changed = { "ai/nav/volume" } }]
-
 -- A volume arriving, changing or going.
 app:add_systems(First, {
     Res[Time],
@@ -62,7 +58,16 @@ app:add_systems(First, {
 }, function(time, carriers, commands)
     owe(time, carriers, commands)
 end):in_set("ai/nav/volumes/watch")
-    :run_if(volume_changed["or"](volume_changed, any_component_removed["ai/nav/volume"]))
+    :run_if({
+        Query[{
+            ["or"] = {
+                changed = { "ai/nav/volume" },
+                removed = { "ai/nav/volume" },
+            },
+        }],
+    }, function(touched)
+        return not touched:is_empty()
+    end)
 
 -- A scene ready, new or respawned after its file changed: its geometry may be what the rays hit.
 app:add_observer(On[SceneInstanceReady], {
@@ -148,7 +153,8 @@ app:add_systems(Update, {
                     -- surface, with no inside: the ray goes on to its underside and reads that as the next
                     -- height, which is not a floor unless the mesh is thicker than `headroom`. Then only
                     -- its sides tell, in the cells they pass through, which keeps anything from walking
-                    -- into what is left inside it.
+                    -- into what is left inside it. An `ORIENTED` one does have an inside, for a point
+                    -- query to ask about at `wall_height`, clear of what the floor itself is the top of.
                     local hit = y > bottom and rapier:cast_ray({ x = x, y = y, z = z }, { x = 0, y = -1, z = 0 }, y - bottom,
                         not job.inside, { flags = "ONLY_FIXED" }) or nil
 
@@ -163,7 +169,10 @@ app:add_systems(Update, {
                         if job.ceiling == nil or job.ceiling - height >= v.headroom then
                             local floors = job.grid.floor[job.iz][job.ix]
                             table.insert(floors, height)
-                            if blocked(rapier, x, height + v.wall_height, z, v.cell) then
+                            -- Blocked, not left out: a blocked floor stays a level to its neighbours, so a
+                            -- point that only touches a face takes nothing from the cells beside it.
+                            local at = height + v.wall_height
+                            if #rapier:intersect_point({ x = x, y = at, z = z }, { flags = "ONLY_FIXED" }) > 0 or blocked(rapier, x, at, z, v.cell) then
                                 job.grid.blocked[job.iz][job.ix][#floors] = true
                             end
                         end

@@ -5,9 +5,12 @@
 -- key event reaches every local player: there is no per-player device routing yet.
 --
 -- input = {
+--     sensitivity = <number>,
+-- }
+--
+-- input/mode = {
 --     mode = <the component holding the bindings that apply, e.g. "input/game">,
 --     show_cursor = <boolean>,
---     sensitivity = <number>,
 -- }
 --
 -- input/game = {
@@ -109,11 +112,11 @@ app:add_systems(PreUpdate, {
     bevy.MessageReader["input/synthetic_mouse_wheel"],
     Query[{
         with = { "input", "core/net/local" },
-        optional = { "input/actions" },
+        optional = { "input/mode", "input/actions" },
     }],
     Query[{
         with = { "input", "input/held", "core/net/local" },
-        optional = { "input/actions" },
+        optional = { "input/mode", "input/actions" },
     }],
     Commands,
 }, function(mouse_motion, mouse_wheel, synthetic_wheel, players, held_players, commands)
@@ -135,16 +138,17 @@ app:add_systems(PreUpdate, {
     -- already added.
     local columns = {}
     for _, e in ipairs(players:iter()) do
-        local input = e:get("input")
+        local mode = (e:get("input/mode") or {}).mode
         local added = e:get("input/actions") or {}
-        columns[#columns + 1] = input.mode
+        columns[#columns + 1] = mode
         for name in pairs(added) do columns[#columns + 1] = name end
     end
 
     for _, e in ipairs(held_players:with_columns({ optional = columns }):iter()) do
         local input = e:get("input")
         local held = e:get("input/held")
-        local bindings = input.mode and e:get(input.mode) or {}
+        local mode = (e:get("input/mode") or {}).mode
+        local bindings = mode and e:get(mode) or {}
         local added = e:get("input/actions") or {}
         local sensitivity = input.sensitivity or 1.0
         local held_keys = held.keys or {}
@@ -153,12 +157,12 @@ app:add_systems(PreUpdate, {
         local through_keys = through.keys or {}
         local through_buttons = through.buttons or {}
         local player = commands:entity(e:id())
-        if held.mode ~= input.mode then
+        if held.mode ~= mode then
             -- The mode changed: what is held now waits for its release.
             through_keys, through_buttons = held_keys, held_buttons
             player:patch({
                 ["input/held"] = {
-                    mode = input.mode,
+                    mode = mode,
                     through = {
                         keys = held_keys,
                         buttons = held_buttons,
@@ -173,9 +177,9 @@ app:add_systems(PreUpdate, {
                 local value = (b.key and not through_keys[b.key] and held_keys[b.key])
                     or (b.button and not through_buttons[b.button] and held_buttons[b.button])
                 if delta and (delta.x ~= 0 or delta.y ~= 0) then
-                    wanted[input.mode .. "/" .. group .. "/" .. action] = { dx = delta.x * sensitivity, dy = delta.y * sensitivity }
+                    wanted[mode .. "/" .. group .. "/" .. action] = { dx = delta.x * sensitivity, dy = delta.y * sensitivity }
                 elseif value then
-                    wanted[input.mode .. "/" .. group .. "/" .. action] = { value = value }
+                    wanted[mode .. "/" .. group .. "/" .. action] = { value = value }
                 end
             end
         end
@@ -206,14 +210,13 @@ end):in_set("input")
 
 app:add_systems(PreUpdate, {
     Query[{
-        changed = { "input" },
+        changed = { "input/mode" },
         with = { "core/net/local" },
     }],
     Query[{ with = { "Window", Mut["CursorOptions"] } }],
 }, function(players, windows)
     for _, e in ipairs(players:iter()) do
-        local input = e:get("input")
-        local shown = input.show_cursor == true
+        local shown = e:get("input/mode").show_cursor == true
         for _, w in ipairs(windows:iter_mut()) do
             w:set({
                 CursorOptions = shown and { visible = true, grab_mode = "None" }

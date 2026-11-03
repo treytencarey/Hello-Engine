@@ -52,7 +52,10 @@ end):in_set("projectile/flying")
 -- its timer. The Transform stays; the entity keeps its place. A despawned projectile is in the
 -- `removed` rows too, and has nothing to take off.
 app:add_systems(First, {
-    Query[{ removed = { "projectile" } }],
+    Query[{
+        removed = { "projectile" },
+        optional = { "cooldown" },
+    }],
     Query[{ with = { "RigidBody3d" } }],
     Commands,
 }, function(removed, bodies, commands)
@@ -60,7 +63,10 @@ app:add_systems(First, {
         if bodies:contains(e:id()) then
             local entity = commands:entity(e:id())
             entity:try_remove("RigidBody3d", "Collider3d", "GravityScale3d", "Velocity3d")
-            entity:patch({ cooldown = { ["projectile/flying"] = null } })
+            -- Only while `cooldown` stays: a patch landing after it went would bring it back.
+            if e:has("cooldown") then
+                entity:patch({ cooldown = { ["projectile/flying"] = null } })
+            end
         end
     end
 end):in_set("projectile/removed")

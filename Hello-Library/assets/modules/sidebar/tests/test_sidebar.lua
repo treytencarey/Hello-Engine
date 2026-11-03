@@ -55,7 +55,7 @@ end
 local function player(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/player" },
-        optional = { "sidebar/open", "input" },
+        optional = { "sidebar/open", "input", "input/mode" },
     })) do
         if e:get("zz/player").name == name then
             return e
@@ -125,7 +125,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["zz/player"] = { name = "me" },
             ["core/net/local"] = {},
             ["core/net/sync"] = false,
-            input = { mode = "input/game" },
+            input = {},
+            ["input/mode"] = { mode = "input/game" },
             sidebar = {},
             ["zz/panel"] = {},
         })
@@ -152,8 +153,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "opened" and clock > 0.4 then
         suite.assert_test("R3_escape_opens_the_sidebar_and_switches_to_ui_input",
             me:has("sidebar/open") and shown(container(world))
-                and me:get("input").mode == "input/ui" and me:get("input").show_cursor == true,
-            "mode=" .. tostring(me:get("input").mode))
+                and me:get("input/mode").mode == "input/ui" and me:get("input/mode").show_cursor == true,
+            "mode=" .. tostring(me:get("input/mode").mode))
         click(world, commands, "Alpha")
         step("alpha")
 
@@ -216,7 +217,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "sidebar closed" and clock > 0.4 then
         suite.assert_test("R7_escape_with_no_panel_open_closes_the_sidebar",
             not me:has("sidebar/open") and not shown(container(world))
-                and me:get("input").mode == "input/game", "mode=" .. tostring(me:get("input").mode))
+                and me:get("input/mode").mode == "input/game", "mode=" .. tostring(me:get("input/mode").mode))
         escape()
         step("reopened")
 
@@ -265,7 +266,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "returned" and clock > 0.3 then
         suite.assert_test("R16_coming_back_keeps_the_one_sidebar",
             #world:query({ with = { "sidebar/container" } }) == 1 and #world:query({ with = { "sidebar/bar" } }) == 1
-                and #icons(world) == 1, "")
+                and #icons(world) == 1,
+            string.format("containers=%d bars=%d icons=%d", #world:query({ with = { "sidebar/container" } }), #world:query({ with = { "sidebar/bar" } }), #icons(world)))
         me:remove("sidebar")
         step("removed")
 
@@ -313,7 +315,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "no input" and clock > 0.3 then
         local who = player(world, "me")
         suite.assert_test("R17a_removing_input_takes_the_bindings", (world:get_entity(who:id()):get("input/game") or {}).sidebar == nil, "")
-        who:patch({ input = { mode = "input/game" } })
+        who:patch({ input = {}, ["input/mode"] = { mode = "input/game" } })
         step("input back")
 
     elseif phase == "input back" and clock > 0.3 then

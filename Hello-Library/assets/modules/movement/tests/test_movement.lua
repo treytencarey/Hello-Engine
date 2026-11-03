@@ -57,7 +57,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["zz/name"] = { name = "me" },
             movement = {},
             camera = { yaw = math.pi / 2 },
-            input = { mode = "input/game" },
+            input = {},
+            ["input/mode"] = { mode = "input/game" },
             ["core/net/sync"] = false,
             Transform = { translation = { x = 0, y = 1.1, z = 0 } },
             RigidBody3d = "Dynamic",
@@ -211,7 +212,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local who = named(world, "me")
         suite.assert_test("V12a_removing_input_takes_the_bindings",
             (world:get_entity(who:id()):get("input/game") or {}).movement == nil, "")
-        who:patch({ input = { mode = "input/game" } })
+        who:patch({ input = {}, ["input/mode"] = { mode = "input/game" } })
         step("input back")
 
     elseif phase == "input back" and clock > 0.3 then

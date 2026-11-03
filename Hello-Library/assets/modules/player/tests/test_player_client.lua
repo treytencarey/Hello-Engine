@@ -23,7 +23,7 @@ end
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/name" },
-        optional = { "player", "input", "sidebar", "RigidBody3d" },
+        optional = { "player", "input", "input/mode", "sidebar", "RigidBody3d" },
     })) do
         if e:get("zz/name").name == name then
             return e
@@ -55,7 +55,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "local" and clock > 1.0 then
         local me, other = named(world, "me"), named(world, "other")
         suite.assert_test("C1_the_local_player_starts_in_game_input_with_its_sidebar",
-            me:get("input").mode == "input/game" and me:has("sidebar")
+            me:get("input/mode").mode == "input/game" and me:has("sidebar")
                 and #world:query({ with = { "sidebar/container" } }) == 1, "")
         suite.assert_test("C2_its_own_body_turns_dynamic_and_falls",
             me:get("RigidBody3d") == "Dynamic" and y_of(world, me) < 2,

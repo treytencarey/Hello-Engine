@@ -10,7 +10,7 @@ Draws the walkable ground. The server half publishes what the `ai/nav/volume`, `
 
 ## Components
 
-- `ai/debug/world = { volumes, volume_count, regions, region_count, links, link_count }`, on any entity that crosses to clients. Put it on as `{}`, and the server writes the rest. `volumes` are `{ min_x, max_x, min_y, max_y, min_z, max_z }`, `regions` are `{ min_x, max_x, min_z, max_z, y }`, `links` are `{ from, to, x, y, z }`, and each `_count` says how many of that list count.
+- `ai/debug/world = { volumes, regions, links }`, on any entity that crosses to clients. Put it on as `{}`, and the server writes the rest. `volumes` are `{ min_x, max_x, min_y, max_y, min_z, max_z }`, `regions` are `{ min_x, max_x, min_z, max_z, y }`, `links` are `{ from, to, x, y, z }`, and each `_count` says how many of that list count.
 - `ai/debug/world/slab = { entity = <its carrier> }`, on a slab, on the client: a relationship with target `ai/debug/world/slabs`, `linked_spawn = true`.
 - `ai/debug/world/slabs`: a carrier's slabs, kept by the engine.
 
@@ -33,7 +33,6 @@ commands:spawn({ ["ai/debug/world"] = {} })
 
 - Regions that touch join with nothing to draw, so only links are drawn between them.
 - It writes only when one of those entities changes, so a level that stands still costs one message.
-- A list that shrinks keeps its tail on a client's copy, so it counts its lists.
 - Removing it on the server leaves it on the clients' copies. The slabs go when the carrier does.
 - A headless run has no gizmos, so `ai/debug/world/draw` reports an error there each frame.
 - It publishes in `Last`, as a new volume has no place of its own until `PostUpdate` has worked it out.

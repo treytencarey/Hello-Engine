@@ -33,7 +33,7 @@ app:add_systems(First, {
         ["or"] = {
             added = { "sidebar", "core/net/local", "input" },
         },
-        with = { "sidebar", "core/net/local" },
+        with = { "sidebar", "core/net/local", "input" },
         optional = { "sidebar/open" },
     }],
     Query[{ with = { "sidebar/container" } }],
@@ -97,7 +97,10 @@ end):in_set("sidebar/away")
 -- `sidebar` removed: its UI goes, with every button and panel in it. The edge also comes for a
 -- player that despawned: only bindings still there are taken off.
 app:add_systems(First, {
-    Query[{ removed = { "sidebar" } }],
+    Query[{
+        removed = { "sidebar" },
+        optional = { "input" },
+    }],
     Query[{ with = { "sidebar/container" } }],
     Query[{ with = { Mut["input/game"] } }],
     Query[{ with = { Mut["input/ui"] } }],
@@ -108,11 +111,14 @@ app:add_systems(First, {
         if container ~= nil then
             commands:entity(container:id()):despawn()
         end
-        for _, b in ipairs(game_bindings:iter_many_mut({ e:id() })) do
-            b:patch({ ["input/game"] = { sidebar = null } })
-        end
-        for _, b in ipairs(ui_bindings:iter_many_mut({ e:id() })) do
-            b:patch({ ["input/ui"] = { sidebar = null } })
+        -- If `input` went too, its bindings go with it, and a patch landing after that would bring them back.
+        if e:has("input") then
+            for _, b in ipairs(game_bindings:iter_many_mut({ e:id() })) do
+                b:patch({ ["input/game"] = { sidebar = null } })
+            end
+            for _, b in ipairs(ui_bindings:iter_many_mut({ e:id() })) do
+                b:patch({ ["input/ui"] = { sidebar = null } })
+            end
         end
     end
 end):in_set("sidebar/removed")
@@ -154,7 +160,7 @@ end):in_set("sidebar/toggle")
 app:add_systems(Update, {
     Query[{
         added = { "sidebar/open" },
-        with = { "sidebar" },
+        with = { "sidebar", "input" },
     }],
     Query[{ with = { "sidebar/container", Mut["Node"] } }],
     Commands,
@@ -163,7 +169,7 @@ app:add_systems(Update, {
         for _, c in ipairs(containers:iter_mut()) do
             c:patch({ Node = { display = "Flex" } })
         end
-        commands:entity(e:id()):patch({ input = { mode = "input/ui", show_cursor = true } })
+        commands:entity(e:id()):patch({ ["input/mode"] = { mode = "input/ui", show_cursor = true } })
     end
 end):in_set("sidebar/show"):after("sidebar/toggle")
 
@@ -175,7 +181,8 @@ app:add_systems(Update, {
         with = { "sidebar" },
     }],
     Query[{ with = { "sidebar/container", Mut["Node"] } }],
-    Query[{ with = { "sidebar" } }],
+    -- Game input comes back only to `input` that is still there: a patch would bring it back whole.
+    Query[{ with = { "sidebar", "input" } }],
     Query[{ with = { "sidebar/button", "sidebar/button/open" } }],
     Commands,
 }, function(closed, containers, players, open_buttons, commands)
@@ -184,7 +191,7 @@ app:add_systems(Update, {
             c:patch({ Node = { display = "None" } })
         end
         for _, p in ipairs(players:iter_many({ e:id() })) do
-            commands:entity(p:id()):patch({ input = { mode = "input/game", show_cursor = false } })
+            commands:entity(p:id()):patch({ ["input/mode"] = { mode = "input/game", show_cursor = false } })
         end
         for _, b in ipairs(open_buttons:iter()) do
             commands:entity(b:id()):remove("sidebar/button/open")

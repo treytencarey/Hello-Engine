@@ -13,7 +13,7 @@ app:add_systems(First, {
         ["or"] = {
             added = { "movement", "core/net/local", "input" },
         },
-        with = { "movement", "core/net/local" },
+        with = { "movement", "core/net/local", "input" },
     }],
     Commands,
 }, function(owned, commands)
@@ -209,16 +209,22 @@ app:add_systems(Update, {
     end
 end):in_set("movement/follow")
 
--- `movement` was taken off an entity that stays: take off what this half added. A despawned
+-- `movement` was taken off an entity that stays: take off what this half added, unless `input` went
+-- too, as its bindings go with it and a patch landing after that would bring them back. A despawned
 -- entity has no row in `bound`.
 app:add_systems(First, {
-    Query[{ removed = { "movement" } }],
+    Query[{
+        removed = { "movement" },
+        optional = { "input" },
+    }],
     Query[{ with = { "input/game" } }],
     Commands,
 }, function(removed, bound, commands)
     local gone = {}
     for _, e in ipairs(removed:iter()) do
-        gone[#gone + 1] = e:id()
+        if e:has("input") then
+            gone[#gone + 1] = e:id()
+        end
     end
     for _, e in ipairs(bound:iter_many(gone)) do
         commands:entity(e:id()):patch({

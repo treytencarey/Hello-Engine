@@ -39,16 +39,15 @@ app:add_systems(First, {
             commands:entity(slab):try_despawn()
         end
         local w = e:get("ai/debug/world")
-        local count = w.region_count or 0
-        if count > 0 then
+        local regions = w.regions or {}
+        if #regions > 0 then
             local mesh = meshes:add(Cuboid.new(1, 1, 1))
             local material = materials:add({
                 base_color = { Srgba = { red = 0.2, green = 0.95, blue = 0.35, alpha = 0.22 } },
                 unlit = true,
                 alpha_mode = "Blend",
             })
-            for i = 1, count do
-                local r = w.regions[i]
+            for _, r in ipairs(regions) do
                 commands:spawn({
                     ["ai/debug/world/slab"] = { entity = e:id() },
                     Mesh3d = mesh,
@@ -80,8 +79,7 @@ app:add_systems(Update, {
 }, function(gizmos, carriers)
     for _, e in ipairs(carriers:iter()) do
         local w = e:get("ai/debug/world")
-        for i = 1, w.volume_count or 0 do
-            local v = w.volumes[i]
+        for _, v in ipairs(w.volumes or {}) do
             local low, high = v.min_y + LIFT, v.max_y + LIFT
             outline(gizmos, v.min_x, v.max_x, low, v.min_z, v.max_z, VOLUME)
             if high > low then
@@ -96,12 +94,10 @@ app:add_systems(Update, {
                 end
             end
         end
-        for i = 1, w.region_count or 0 do
-            local r = w.regions[i]
+        for _, r in ipairs(w.regions or {}) do
             outline(gizmos, r.min_x, r.max_x, (r.y or 0) + LIFT, r.min_z, r.max_z, REGION)
         end
-        for i = 1, w.link_count or 0 do
-            local l = w.links[i]
+        for _, l in ipairs(w.links or {}) do
             local from = { x = l.from.x, y = l.from.y + LIFT * 2, z = l.from.z }
             local to = { x = l.to.x, y = l.to.y + LIFT * 2, z = l.to.z }
             local crossing = { x = l.x or (from.x + to.x) * 0.5, y = (l.y or from.y) + LIFT * 2, z = l.z or (from.z + to.z) * 0.5 }

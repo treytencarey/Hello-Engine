@@ -23,7 +23,7 @@ The owning client drives its player's Transform until prediction returns with th
 
 - What each player gets, by side. Names are written in the code; a mod joins this list when it is rewritten:
   - server: `core/player/attest` (identity, as today), `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for) and `ai/noisemaker` (for them to hear);
-  - the owning client: `input = { mode = "input/game" }`, `sidebar`, and its `RigidBody3d` switched to `Dynamic`.
+  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, and its `RigidBody3d` switched to `Dynamic`.
 
   If `player` is removed from an entity that stays, each half removes what it added.
 
