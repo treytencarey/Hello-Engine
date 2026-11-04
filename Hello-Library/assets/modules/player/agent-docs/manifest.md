@@ -1,5 +1,5 @@
 ---
-depends_on: [core/player/attest, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler]
+depends_on: [core/player/attest, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/file_browser]
 conflicts_with: []
 exposes: [player]
 ---
@@ -22,7 +22,7 @@ The owning client drives its player's Transform until prediction returns with th
   | `smoothing` | how fast the server's Transform follows the owner's, per second | 15 |
 
 - What each player gets, by side. Names are written in the code; a mod joins this list when it is rewritten:
-  - server: `core/player/attest` (identity, as today), `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for) and `ai/noisemaker` (for them to hear);
+  - server: `core/player/attest` (identity, as today), `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for), `ai/noisemaker` (for them to hear) and `sidebar/file_browser` (the file browser panel, synced to its owner: a panel with server work is the server's to add);
   - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, and its `RigidBody3d` switched to `Dynamic`.
 
   If `player` is removed from an entity that stays, each half removes what it added.
@@ -31,10 +31,10 @@ The owning client drives its player's Transform until prediction returns with th
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | `player/init` | On an added `player`, add identity, the camera, movement and the abilities |
+| First (server) | `player/init` | On an added `player`, add identity, the camera, movement, the abilities and the file browser panel |
 | Update (server) | `player/identity` | When the join ticket is verified, set `player.user_id` |
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`) |
-| First (server) | `player/removed` | When `player` is removed from an entity that stays, remove identity, the camera, movement and the abilities |
+| First (server) | `player/removed` | When `player` is removed from an entity that stays, remove identity, the camera, movement, the abilities and the file browser panel |
 | First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar and its profiler panel, and make its body dynamic |
 | First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar and its profiler panel |
 

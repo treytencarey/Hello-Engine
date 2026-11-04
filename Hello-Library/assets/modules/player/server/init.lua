@@ -32,6 +32,7 @@ app:add_systems(First, {
             ["abilities/grenade"] = {},
             ["ai/perception/target"] = {},
             ["ai/noisemaker"] = {},
+            ["sidebar/file_browser"] = {},
         })
     end
 end):in_set("player/init")
@@ -87,6 +88,7 @@ app:add_systems(First, {
             "abilities/grenade",
             "ai/perception/target",
             "ai/noisemaker",
+            "sidebar/file_browser",
         },
     }],
     Commands,
@@ -104,7 +106,8 @@ app:add_systems(First, {
             "abilities/fireball",
             "abilities/grenade",
             "ai/perception/target",
-            "ai/noisemaker")
+            "ai/noisemaker",
+            "sidebar/file_browser")
     end
 end):in_set("player/removed")
 
