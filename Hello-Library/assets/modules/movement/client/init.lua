@@ -136,7 +136,7 @@ app:add_systems(Update, {
         local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
         e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
         -- opposite keys cancel out: no direction to face
-        if x ~= 0 or z ~= 0 then
+        if m.face ~= "look" and (x ~= 0 or z ~= 0) then
             e:patch({
                 Transform = {
                     rotation = Quat.slerp(rotation,
@@ -147,6 +147,31 @@ app:add_systems(Update, {
         end
     end
 end):in_set("movement/walk")
+
+-- Facing where its camera looks: standing or walking, so it polls. A body's front is +Z and a
+-- look's is -Z, hence the half turn.
+app:add_systems(Update, {
+    Res[Time],
+    Query[{
+        with = { "movement", "camera", "core/net/local", Mut["Transform"] },
+    }],
+}, function(time, bodies)
+    local dt = time:delta_secs()
+    for _, e in ipairs(bodies:iter_mut()) do
+        local m = e:get("movement")
+        if m.face == "look" then
+            local camera = e:get("camera")
+            local rotation = e:get("Transform").rotation
+            e:patch({
+                Transform = {
+                    rotation = Quat.slerp(rotation,
+                        Quat.from_rotation_y((camera.yaw or 0) + math.pi),
+                        math.min(1, m.turn * dt)),
+                },
+            })
+        end
+    end
+end):in_set("movement/face")
 
 -- Polls: standing on something is a short ray down from the origin, past the feet, that
 -- skips the player's own body, cast through Rapier's `ReadRapierContext`.

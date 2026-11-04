@@ -10,6 +10,7 @@
 --     turn = <how fast it turns to face where it goes, per second>,
 --     ground = <metres from its origin to just below its feet>,
 --     smoothing = <how fast another client's copy follows, per second>,
+--     face = <"velocity", where it goes, or "look", where its camera looks>,
 -- }
 --
 -- movement/grounded: on the owner's client while it stands on something.
@@ -37,6 +38,7 @@ return {
             turn = 10,
             ground = 1,
             smoothing = 10,
+            face = "velocity",
         },
     },
     ["core/net/sync"] = {

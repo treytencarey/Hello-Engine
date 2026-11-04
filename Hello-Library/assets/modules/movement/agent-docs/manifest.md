@@ -10,7 +10,7 @@ Walking and jumping. The owning client moves its own player from input, relative
 
 ## Components
 
-- `movement = { speed, jump, turn, ground, smoothing }`, added by `player` on the server and synced from it. Missing fields get defaults when it is added:
+- `movement = { speed, jump, turn, ground, smoothing, face }`, added by `player` on the server and synced from it. Missing fields get defaults when it is added:
 
   | Field | Meaning | Default |
   |-------|---------|---------|
@@ -19,6 +19,7 @@ Walking and jumping. The owning client moves its own player from input, relative
   | `turn` | how fast it turns to face where it goes, per second | 10 |
   | `ground` | metres from its origin to just below its feet (a capsule with half height 0.5 and radius 0.4 stands 0.9 above them) | 1 |
   | `smoothing` | how fast another client's copy follows its synced Transform, per second | 10 |
+  | `face` | `"velocity"`: it turns to face where it goes; `"look"`: it turns to face where its camera looks (`player/vr` writes it) | `"velocity"` |
 
 - `movement/grounded`: on the owner's client while it stands on something.
 - `Velocity3d`: added with `movement` when the entity has none (the server does not send one), and left in place when `movement` goes.
@@ -33,6 +34,7 @@ Walking and jumping. The owning client moves its own player from input, relative
 | First (client) | `movement/copy` | A copy that isn't this client's own is kinematic, as it only follows the server; a player's arrives so and is left alone, and a body dynamic on the server turns kinematic here |
 | First (client) | `movement/shadow` | For another client's player, seed the shadow its Transform arrives in |
 | Update (client) | `movement/walk` | While a key is held (`any_of`), it polls: horizontal velocity from the held keys, turned by `camera.yaw`, and a turn to face that way. Letting go of a key (its `removed` edge) stands it still, and keys still held walk on. Vertical velocity is left to gravity and jumps |
+| Update (client) | `movement/face` | Polls: with `face = "look"`, turn toward `camera.yaw`, standing or walking |
 | Update (client) | `movement/ground` | Polls: a ray down from the origin, skipping the player's own body, adds or removes `movement/grounded` |
 | Update (client) | `movement/jump` | On a jump press while grounded, straight up at `jump` |
 | Update (client) | `movement/follow` | Polls: another client's player eases toward its synced Transform |
@@ -51,5 +53,5 @@ commands:entity(player):insert({ movement = { speed = 8, jump = 7 } })
 - One press is one jump: the jump reacts to the action's `added` edge, so the old cooldown after a jump is gone.
 - The ground ray passes `{ exclude_rigid_body = <the player> }`; the old ray started inside the player's own capsule and always found it.
 - `movement/ground` casts its ray through Rapier's `ReadRapierContext`, declared as a system parameter.
-- Not yet carried over: facing where a VR headset looks (returns with `vr`), and server-side movement for prediction (returns with the net rewrite and the input action sync).
+- Not yet carried over: server-side movement for prediction (returns with the net rewrite and the input action sync).
 - The suite runs windowed: keys reach `input` through a window.
