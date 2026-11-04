@@ -51,5 +51,5 @@ commands:spawn({ ["player/spawner"] = {}, ChildOf = boot:id() })
 
 - Mirrored players from another world (`WorldMirror`) are not set up here.
 - The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches.
-- Not done yet: the streaming panels and the account providers, whose mods are not in this library yet, and crossing between worlds (promotion, demotion, transfer), which waits for a planned rewrite of `core/net`.
+- Not done yet: the streaming panels and the account providers, whose mods are not in this library yet, and crossing between worlds (promotion, demotion, transfer).
 - Suites: a server one (headless) and a client one (windowed: input and the sidebar act on a window).

@@ -1,6 +1,6 @@
 # Mod standard
 
-DRAFT. Only agreed rules are listed.
+Only agreed rules are listed.
 
 ## Goal: a mod is an isolated unit
 
@@ -348,7 +348,7 @@ return {
 
 ## Common mistakes
 
-Each was written by an agent and rejected. The wrong form is what to look for; the right form is what to write.
+The wrong form is what to look for; the right form is what to write.
 
 - **Checking presence with `get`.** Wrong: `if e:get("sidebar/open") == nil then`. Right: `if not e:has("sidebar/open") then`.
 - **Linking by a field you scan for.** Wrong: `sidebar/container = { player = <id> }`, `notification/card = { owner = <id> }`, then scanning every container for the one whose field names you. Stored as a number it would arrive as a different entity in another world and stay after its entity goes; even as an entity value, the scan is the reverse side a relationship keeps for you. Right: link with `ChildOf` and find it by marker among the parent's children (`q:iter_many(parent:get("Children") or {})`); make the entity itself the UI node where it can be (a notification is its own card); spawn into another mod's UI where it is (a panel's button into the bar); a single shared entity is the first row of a declared query. A link that is not parent and child is a declared relationship (Links between entities).
@@ -390,7 +390,7 @@ Each was written by an agent and rejected. The wrong form is what to look for; t
 
 How to audit a mod against this standard, and how to rate what you find, is in `mod-audit.md`.
 
-Before a design is shown, check it against every item, and list the earlier rulings that apply:
+Before a design is shown, check it against every item, and list the rules above that apply:
 
 1. Several consumers of the same kind on one target (two portals, one player).
 2. Several different consumers on one entity.
@@ -408,7 +408,7 @@ Before a design is shown, check it against every item, and list the earlier ruli
 14. Assets are handles from `asset_server:load` or `Assets[T]:add`, refilled in place when their file changes; nothing re-runs, and what the mod computes from an asset's contents reacts to the change itself (`asset_changed`).
 15. The test proves the real effect, and a mutation turns it red.
 16. No component is only a signal.
-17. The design lists the earlier rulings that apply and follows each.
+17. The design lists the rules in this standard that apply and follows each.
 18. Green means zero Lua errors in the log.
 19. Nothing is shared through Lua memory, and no component holds a function.
 20. No mod names its children or filters on another mod's marker, and each mod does one job.

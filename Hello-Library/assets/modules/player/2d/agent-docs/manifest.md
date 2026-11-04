@@ -50,6 +50,6 @@ commands:spawn({ ["player/2d/spawner"] = {}, ChildOf = boot:id() })
 ## Notes
 
 - Mirrored players from another world (`WorldMirror`) are not set up here.
-- Not done yet: crossing between worlds, which waits for a planned rewrite of `core/net`.
+- Not done yet: crossing between worlds.
 - A 2D player has no abilities, as they are 3D today, and not the 3D player's panels (`sidebar/profiler`, `sidebar/file_browser`).
 - Suites: `tests/test_player_2d_net.lua` over a real connection, and `player/2d/spawner`'s for the server half. Both run headless.
