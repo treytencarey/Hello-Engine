@@ -6,7 +6,7 @@ exposes: [movement/2d]
 
 # movement/2d
 
-Top-down 2D walking. The owning client moves its own body from input; every other client eases its copy toward the synced Transform. The owner drives the Transform until prediction returns with the net rewrite, so the server runs no movement. Its own component is how it knows an entity is 2D: it reads no camera.
+Top-down 2D walking. The owning client moves its own body from input; every other client eases its copy toward the synced Transform. The owner drives the Transform, as there is no client prediction yet, so the server runs no movement. Its own component is how it knows an entity is 2D: it reads no camera.
 
 ## Components
 
@@ -47,5 +47,5 @@ commands:entity(player):insert({ ["movement/2d"] = { speed = 240 } })
 - Rapier's 2D world has no gravity, and is scaled at 100 pixels to the metre.
 - A 2D body never turns: nothing here writes a rotation, and a follower eases only its translation.
 - Other mods read `Velocity2d` for where the body goes (`animation/sprite`); Rapier writes a kinematic copy's from how it moved.
-- The server needs no action component, as it runs no movement, so none is synced. That returns with the net rewrite.
-- Not carried over: a jump, which a top-down world has no use for.
+- The server needs no action component, as it runs no movement, so none is synced. Server-side movement waits for client prediction.
+- No jump: a top-down world has no use for one.

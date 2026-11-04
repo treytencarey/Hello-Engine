@@ -1,7 +1,7 @@
 -- Walking and jumping. The owning client moves its own body from input, relative to where
 -- its camera looks, and turns it to face where it goes; every other client eases its copy
--- toward the synced Transform. The owner drives the Transform until prediction returns with
--- the net rewrite, so the server runs no movement. Missing fields get
+-- toward the synced Transform. The owner drives the Transform, as there is no client prediction
+-- yet, so the server runs no movement. Missing fields get
 -- defaults when it is added.
 --
 -- movement = {

@@ -8,7 +8,7 @@ exposes: [player/2d]
 
 A top-down 2D player: what every 2D player has, who it is, and how its Transform moves. `player/2d/spawner` spawns them on a world's server; this mod sets each one up on both sides. It is a mod of its own: `player` means the 3D stack, and an entity carries one or the other.
 
-The owning client drives its player's Transform until prediction returns with the net rewrite: the server's body is kinematic, the owner's turns dynamic (`movement/2d`), and the server eases its Transform toward what the owner sends.
+The owning client drives its player's Transform, as there is no client prediction yet: the server's body is kinematic, the owner's turns dynamic (`movement/2d`), and the server eases its Transform toward what the owner sends.
 
 ## Components
 
@@ -50,5 +50,6 @@ commands:spawn({ ["player/2d/spawner"] = {}, ChildOf = boot:id() })
 ## Notes
 
 - Mirrored players from another world (`WorldMirror`) are not set up here.
-- Not carried over from the old 2D spawner: abilities (they are 3D today, and the old list was empty) and crossing between worlds, which returns with the net rewrite. The panels the 3D player has since gained (`sidebar/profiler`, `sidebar/file_browser`) are not added here.
+- Not done yet: crossing between worlds, which waits for a planned rewrite of `core/net`.
+- A 2D player has no abilities, as they are 3D today, and not the 3D player's panels (`sidebar/profiler`, `sidebar/file_browser`).
 - Suites: `tests/test_player_2d_net.lua` over a real connection, and `player/2d/spawner`'s for the server half. Both run headless.

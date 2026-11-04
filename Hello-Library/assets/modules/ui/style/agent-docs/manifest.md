@@ -48,4 +48,4 @@ commands:entity(theme):patch({ ["ui/theme"] = { bg = { r = 0.1, g = 0.1, b = 0.2
 
 - Colors are written in `PostUpdate`, so a style change made in `Update` shows the same frame.
 - A theme change restyles every styled node, once; otherwise only nodes whose style or interaction changed are touched.
-- The default roles are the old `sidebar/shared/colors.lua` names, so a mod moves from `Colors.text_dim` to `text = "text_dim"`.
+- A role is a colour's name in the theme: `text = "text_dim"`.

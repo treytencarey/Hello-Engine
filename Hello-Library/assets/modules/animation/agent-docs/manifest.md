@@ -64,4 +64,4 @@ commands:entity(character):patch({ ["animation/action"] = null })
 - `animation/graph` is written with `set`: a patch would merge into the old `nodes` and `clips`, and a clip taken out would stay listed.
 - `animation/graph` builds the graph as Bevy does: `AnimationGraph.new()`, `graph:add_clip(clip, 1.0, graph.root)` for each clip (loaded with `asset_server:load`), then `graphs:add(graph)` on a `ResMut[Assets[AnimationGraph]]` parameter.
 - Not provable by the suite: that a rebuilt graph reaches a player already linked. A created asset's handle reads back as an opaque reflect value, so no suite can tell which graph a player holds; the line stays because without it the player keeps the old graph's clips.
-- `vr/avatar` and `vr/calibration` read the old `model_entity_id` and break until their own turn.
+- Not done yet: `vr/avatar` and `vr/calibration`, which use a character's model, are not in this library yet.

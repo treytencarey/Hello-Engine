@@ -2,8 +2,8 @@
 -- spawn point, despawned when the client leaves. Points sit on a circle around the spawner's
 -- origin, in the plane. Missing fields get defaults when it is added.
 --
--- The owning client drives its player's Transform (until prediction returns with the net
--- rewrite): `Transform` syncs with client authority into the `core/net/sync/Transform` shadow
+-- The owning client drives its player's Transform, as there is no client prediction yet:
+-- `Transform` syncs with client authority into the `core/net/sync/Transform` shadow
 -- seeded here, which `player/2d` follows on the server. The server's body is kinematic; the
 -- owner switches its own to dynamic (`movement/2d`).
 --

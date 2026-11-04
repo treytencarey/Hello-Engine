@@ -1,6 +1,6 @@
 -- The server half of a player: what every player has, who it is, and its Transform following
--- the owner's. The owning client drives the Transform (until prediction
--- returns with the net rewrite); it arrives in `core/net/sync/Transform`, seeded by the
+-- the owner's. The owning client drives the Transform, as there is no client prediction
+-- yet; it arrives in `core/net/sync/Transform`, seeded by the
 -- spawner, and the server eases its own toward it. Missing fields get defaults when it is
 -- added.
 --

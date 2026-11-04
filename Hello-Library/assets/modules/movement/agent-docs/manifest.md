@@ -6,7 +6,7 @@ exposes: [movement, movement/grounded]
 
 # movement
 
-Walking and jumping. The owning client moves its own player from input, relative to where its camera looks, and turns it to face where it goes; every other client eases its copy toward the synced Transform. The owner drives the Transform until prediction returns with the net rewrite, so the server runs no movement.
+Walking and jumping. The owning client moves its own player from input, relative to where its camera looks, and turns it to face where it goes; every other client eases its copy toward the synced Transform. The owner drives the Transform, as there is no client prediction yet, so the server runs no movement.
 
 ## Components
 
@@ -50,8 +50,8 @@ commands:entity(player):insert({ movement = { speed = 8, jump = 7 } })
 ## Notes
 
 - It faces where the keys point, not where it moves: a push does not turn it, and opposite keys held together stand it still without turning.
-- One press is one jump: the jump reacts to the action's `added` edge, so the old cooldown after a jump is gone.
-- The ground ray passes `{ exclude_rigid_body = <the player> }`; the old ray started inside the player's own capsule and always found it.
+- One press is one jump: the jump reacts to the action's `added` edge, so a jump needs no cooldown.
+- The ground ray passes `{ exclude_rigid_body = <the player> }`: it starts inside the player's own capsule and would always find it.
 - `movement/ground` casts its ray through Rapier's `ReadRapierContext`, declared as a system parameter.
-- Not yet carried over: server-side movement for prediction (returns with the net rewrite and the input action sync).
+- Not done yet: server-side movement for client prediction, which also needs the input actions synced.
 - The suite runs windowed: keys reach `input` through a window.

@@ -45,4 +45,4 @@ commands:spawn({
 - Players outlive their spawner (removing it stops this mod; its players stay until their clients leave).
 - `camera/2d` syncs as that mod declares; the spawner sets no override. `camera`'s own default distance is 8, a 3D one, so the spawner states the starting zoom.
 - There is no default sheet: a world names its own in `sprite`, and a player with none has no sprite.
-- Crossing between worlds (portal promotion, departure) is not carried over: it returns with the net rewrite.
+- Not done yet: crossing between worlds (portal promotion, departure), which waits for a planned rewrite of `core/net`.

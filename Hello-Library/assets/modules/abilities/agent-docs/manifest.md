@@ -62,4 +62,4 @@ end):in_set("abilities/fireball/fire")
 - A press fires once. Holding the key, or pressing another ability while it is held, does not fire it again. A press while it cools starts nothing: `cooldown` never restarts a running timer.
 - The action columns come from data: each pass reads every player's ability names, as `input` reads its bindings.
 - An ability mod is not a subclass of `abilities` (no `base`). `mod_registry` allows one child per base on an entity, and a player has many abilities. Each one registers its entry by data instead.
-- No client prediction yet (until the core/net rewrite): what an ability does happens on the server.
+- No client prediction yet: what an ability does happens on the server.

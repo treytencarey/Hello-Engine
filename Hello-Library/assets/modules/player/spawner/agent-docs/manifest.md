@@ -39,5 +39,5 @@ commands:spawn({ ["player/spawner"] = { count = 4, radius = 6 }, ChildOf = boot:
 - A point is free when no player holds its index in `player.spawn_index`; a point given in the same run counts as taken.
 - A spawner added after clients connected serves them: the mod loads with it, and a mod's first run sees every connection as changed.
 - Players outlive their spawner (removing it stops this mod; its players stay until their clients leave).
-- The client drives the Transform until prediction returns; the old constant that switched it is gone.
-- Crossing between worlds (portal promotion with `synced_state`, demotion, departure `transfer_data`) is not carried over: it returns with the net rewrite.
+- The client drives the Transform, as there is no client prediction yet.
+- Not done yet: crossing between worlds (portal promotion with `synced_state`, demotion, departure `transfer_data`), which waits for a planned rewrite of `core/net`.

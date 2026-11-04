@@ -41,5 +41,5 @@ commands:spawn({ ["map/default"] = { size = { x = 60, y = 0.2, z = 60 } }, Child
 ## Notes
 
 - Ambient light is left to the engine's default. Bevy 0.17's `AmbientLight` component requires a `Camera`, so the old map's ambient-light entity was an extra camera nobody despawned; the world resource is not writable from Lua.
-- The old map also declared a walkable nav volume (`ai/nav/volumes/box`) for AI agents; that waits for the rewritten `ai/nav`.
+- This map declares no walkable nav volume (`ai/nav/volumes/box`) for AI agents.
 - Suites: a server one (headless: physics only) and a client one (windowed: a headless run has no `StandardMaterial` assets). The client suite keeps a second map so removing the first does not unload the mod.
