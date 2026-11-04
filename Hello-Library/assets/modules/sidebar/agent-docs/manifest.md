@@ -57,9 +57,27 @@ Query[{ removed = { "sidebar/button/open" }, with = { "sidebar/profiler/button" 
 -- despawn the entity marked sidebar/profiler/view
 ```
 
+A panel stays open through a hot reload if it keeps what it needs on the carrier, which a reload leaves alone: its button and panel are its own spawns, and they go.
+
+```lua
+-- on the carrier's added edge, if it has none
+commands:entity(e:id()):insert({ ["sidebar/profiler/state"] = { open = false } })
+
+-- a new button, once the sidebar has made it an icon (an icon drawn active needs its Node), opens
+-- again by the path a click takes
+Query[{ added = { "Node" }, with = { "sidebar/profiler/button" } }]
+-- if state.open: insert { ["sidebar/button/open"] = { order = <one above the open buttons' highest> } }
+
+-- added: save open = true. removed: the edge also comes for a button a reload despawned, so only a
+-- button still here closing saves open = false
+for _, _ in ipairs(buttons:iter_many(closed_ids)) do ... end
+```
+
 ## Notes
 
 - A click on an icon opens or closes its button's panel in the button's `Pointer<Click>` observer. A suite clicks by triggering Bevy's event in a system with `Commands`: `commands:trigger(Pointer[Click], { entity = button:id(), pointer_location = { target = { None = { width = 0, height = 0 } } }, event = { button = "Primary", hit = { camera = camera } } })`. The observer reads the clicked entity from `event.entity`.
+- Opening a panel closes no other: several stay open side by side. A panel closes by a click on its icon, by Escape while it is the newest, or when the sidebar closes.
+- A sub-component named under `sidebar/` on the player, a panel mod's included, goes when `sidebar` is taken off. The panel mod's own component stays.
 - A key held through a mode switch waits for its release (`input`), so the Escape that opens the sidebar does not also close it.
 - The container is a UI root of its own: a UI node under the player would not be laid out.
 - Layout and clicks need a window: the suite runs windowed. It stands in for a world VM (an instance id), where spawns carry their mod's stamp, plays a panel mod that spawns two buttons into each new bar, and reloads the sidebar by rewriting its file with the same bytes.

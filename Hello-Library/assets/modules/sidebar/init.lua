@@ -287,7 +287,7 @@ app:add_systems(Update, {
         removed = { "sidebar/button/open" },
         with = { "Node" },
     }],
-    Query[{ with = { "Node", Mut["ui/style"] } }],
+    Query[{ with = { "sidebar/button", "Node", Mut["ui/style"] } }],
 }, function(closed, icons)
     local ids = {}
     for _, b in ipairs(closed:iter()) do

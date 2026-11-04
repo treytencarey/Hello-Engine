@@ -23,7 +23,7 @@ end
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/name" },
-        optional = { "player", "input", "input/mode", "sidebar", "RigidBody3d" },
+        optional = { "player", "input", "input/mode", "sidebar", "sidebar/profiler", "RigidBody3d" },
     })) do
         if e:get("zz/name").name == name then
             return e
@@ -55,21 +55,21 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "local" and clock > 1.0 then
         local me, other = named(world, "me"), named(world, "other")
         suite.assert_test("C1_the_local_player_starts_in_game_input_with_its_sidebar",
-            me:get("input/mode").mode == "input/game" and me:has("sidebar")
+            me:get("input/mode").mode == "input/game" and me:has("sidebar") and me:has("sidebar/profiler")
                 and #world:query({ with = { "sidebar/container" } }) == 1, "")
         suite.assert_test("C2_its_own_body_turns_dynamic_and_falls",
             me:get("RigidBody3d") == "Dynamic" and y_of(world, me) < 2,
             string.format("y=%.2f", y_of(world, me)))
         suite.assert_test("C3_a_remote_player_is_left_as_the_server_sent_it",
             other:get("RigidBody3d") == "KinematicPositionBased" and not other:has("input")
-                and not other:has("sidebar") and math.abs(y_of(world, other) - 3) < 0.01, "")
+                and not other:has("sidebar") and not other:has("sidebar/profiler") and math.abs(y_of(world, other) - 3) < 0.01, "")
         me:remove("player")
         step("removed")
 
     elseif phase == "removed" and clock > 0.3 then
         local me = named(world, "me")
         suite.assert_test("C4_removing_player_takes_off_input_and_sidebar",
-            me ~= nil and not me:has("input") and not me:has("sidebar"), "")
+            me ~= nil and not me:has("input") and not me:has("sidebar") and not me:has("sidebar/profiler"), "")
         phase = "done"
         suite.finish("PlayerClientSuite")
     end

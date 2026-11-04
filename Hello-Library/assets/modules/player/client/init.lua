@@ -19,6 +19,7 @@ app:add_systems(First, {
             input = {},
             ["input/mode"] = { mode = "input/game" },
             sidebar = {},
+            ["sidebar/profiler"] = {},
         })
         if e:has("RigidBody3d") then
             e:set({ RigidBody3d = "Dynamic" })
@@ -30,7 +31,7 @@ end):in_set("player/local")
 -- entity has no row in `parts`.
 app:add_systems(First, {
     Query[{ removed = { "player" } }],
-    Query[{ any_of = { "input", "sidebar" } }],
+    Query[{ any_of = { "input", "sidebar", "sidebar/profiler" } }],
     Commands,
 }, function(removed, parts, commands)
     local gone = {}
@@ -38,6 +39,6 @@ app:add_systems(First, {
         gone[#gone + 1] = e:id()
     end
     for _, e in ipairs(parts:iter_many(gone)) do
-        commands:entity(e:id()):remove("input", "input/mode", "sidebar")
+        commands:entity(e:id()):remove("input", "input/mode", "sidebar", "sidebar/profiler")
     end
 end):in_set("player/removed")
