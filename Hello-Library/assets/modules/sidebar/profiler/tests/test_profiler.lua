@@ -19,9 +19,9 @@ local SIDEBAR_FILE = "assets/modules/sidebar/init.lua"
 
 -- A real reload rewrites a file under an immediate watcher. The watcher skips a file whose bytes it
 -- has seen, so each rewrite differs, by a comment at the end, and the end of the suite puts them back.
-local fw = define_resource("_FileWatcherState", {})
-fw.poll_interval = 0
-fw.debounce = 0
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
+end)
 
 local originals = {}
 local rewrites = 0

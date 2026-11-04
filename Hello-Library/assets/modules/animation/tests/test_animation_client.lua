@@ -33,8 +33,9 @@ local suite = helpers.create_suite("AnimationClientSuite")
 
 -- An immediate watcher, for AN9's edit.
 local fw = define_resource("_FileWatcherState", {})
-fw.poll_interval = 0
-fw.debounce = 0
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
+end)
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })

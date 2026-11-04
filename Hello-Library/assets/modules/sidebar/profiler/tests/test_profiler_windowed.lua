@@ -14,9 +14,9 @@ local T = suite.assert_test
 
 -- The reload rewrites the mod's own file with the same bytes: an immediate watcher.
 local MOD_FILE = "assets/modules/sidebar/profiler/init.lua"
-local fw = define_resource("_FileWatcherState", {})
-fw.poll_interval = 0
-fw.debounce = 0
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
+end)
 
 local camera, player
 
