@@ -32,7 +32,7 @@ local function bodies(world)
     return world:query({
         with = { "ai/spawner/agent", "Transform" },
         optional = {
-            "ai/archetype/backrooms_wanderer",
+            "ai/archetype/wanderer",
             "ai/agent/options",
             "ai/agent/memory",
             "ai/nav/request",
@@ -123,7 +123,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     if phase == "built" and clock > 1 then
         local list = bodies(world)
         suite.assert_test("D1_it_makes_the_wanderers_it_was_told", #list == 2, "bodies " .. #list)
-        suite.assert_test("D2_each_a_wanderer", list[1] ~= nil and list[1]:has("ai/archetype/backrooms_wanderer"), "")
+        suite.assert_test("D2_each_a_wanderer", list[1] ~= nil and list[1]:has("ai/archetype/wanderer"), "")
         suite.assert_test("D2b_not_drawn_unless_asked", list[1] ~= nil and not list[1]:has("ai/debug") and not demo(world):has("ai/debug/world"), "")
         suite.assert_test("D3_the_ring_is_four_regions", #world:query({ with = { "ai/demo/region", "ai/nav/region" } }) == 4, "")
         suite.assert_test("D4_and_one_decoy", #world:query({ with = { "ai/demo/decoy", "ai/perception/target", "ai/noisemaker" } }) == 1, "")

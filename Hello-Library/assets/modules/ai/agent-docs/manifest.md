@@ -22,8 +22,8 @@ Agents that walk, look, listen and choose what to do, run on the server and show
 | `ai/behavior/investigate` | server | Walks to what it has heard and looks around |
 | `ai/behavior/patrol` | server | Wanders around home when nothing else is worth doing |
 | `ai/spawner` | server | Makes plain bodies and links them to itself |
-| `ai/archetype/backrooms_wanderer` | server | A creature: all of the above, configured |
-| `ai/archetype/backrooms_wanderer/spawner` | server | A spawner whose bodies become that creature |
+| `ai/archetype/wanderer` | server | A creature: all of the above, each with its mod's defaults |
+| `ai/archetype/wanderer/spawner` | server | A spawner whose bodies become that creature |
 | `ai/demo` | server | A scene that proves it all works, on `map/default` |
 | `ai/debug` | both | Draws what an agent thinks |
 | `ai/debug/world` | both | Draws the walkable ground |
@@ -34,7 +34,7 @@ Agents that walk, look, listen and choose what to do, run on the server and show
 - A behaviour enters on `added` and leaves on `removed` of `ai/agent/chosen` beside its own marker, or looks at each thought while its option is chosen.
 - While chosen, a behaviour writes its own key in `ai/nav/request`. `ai/nav` answers with `ai/nav/path`, `ai/steering` walks it, and the behaviour reads how that went. Not chosen any more, it removes its key.
 - `ai/agent/memory` holds `seen` and `sound`, each with one writer: `ai/perception`. Behaviours only read it.
-- An archetype has `ai/agent` as its `base`, declares the rest with its values on each mod's own component, and removes what it adds.
+- An archetype has `ai/agent` as its `base`, declares the rest on each mod's own component, and removes what it adds. A creature built on one (`base = "ai/archetype/wanderer"`) sets its numbers as carrier defaults, which reach only its own bodies.
 - A client sees an agent as `animation` and `movement` on a body whose collider and type came from the server. `movement` makes any copy that isn't local kinematic. Nothing else of an agent crosses, except `ai/debug` if it is put on one.
 
 ## Use
@@ -43,7 +43,7 @@ Agents that walk, look, listen and choose what to do, run on the server and show
 -- a pack of wanderers around the middle of the map
 commands:spawn({
     ["ai/spawner"] = { count = 3, radius = 12 },
-    ["ai/archetype/backrooms_wanderer/spawner"] = {},
+    ["ai/archetype/wanderer/spawner"] = {},
     ["core/net/sync"] = false,
 })
 

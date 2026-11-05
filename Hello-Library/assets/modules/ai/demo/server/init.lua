@@ -34,7 +34,7 @@ app:add_systems(First, {
             local d = e:get("ai/demo")
             commands:spawn({
                 ["ai/spawner"] = { count = d.count, radius = d.radius },
-                ["ai/archetype/backrooms_wanderer/spawner"] = {},
+                ["ai/archetype/wanderer/spawner"] = {},
                 ["ai/demo/spawner"] = { debug = d.debug },
                 ChildOf = e:id(),
                 ["core/net/sync"] = false,

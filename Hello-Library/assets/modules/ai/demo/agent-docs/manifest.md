@@ -1,5 +1,5 @@
 ---
-depends_on: [ai/spawner, ai/archetype/backrooms_wanderer/spawner, ai/nav, ai/perception, ai/noisemaker, ai/debug, ai/debug/world, map/default]
+depends_on: [ai/spawner, ai/archetype/wanderer/spawner, ai/nav, ai/perception, ai/noisemaker, ai/debug, ai/debug/world, map/default]
 conflicts_with: []
 exposes: [ai/demo, ai/demo/region, ai/demo/spawner, ai/demo/decoy, ai/demo/decoys]
 ---
