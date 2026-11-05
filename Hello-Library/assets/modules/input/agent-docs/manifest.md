@@ -15,6 +15,7 @@ Keys, mouse buttons, motion and scroll, turned into one component per bound acti
   - `mode` names the component holding the bindings that apply, such as `"input/game"` or `"input/ui"`. With no mode set, nothing is active.
   - `show_cursor` shows the cursor when true and confines it when false.
 - `input/game`, `input/ui` (or any other mode component): bindings, `{ <group> = { <action> = <binding> } }`, where a binding is `{ key = <KeyCode> }`, `{ button = <MouseButton> }`, `{ motion = true }` or `{ scroll = true }`. Each mod writes its own group.
+  - A binding may name both a key and a button (`{ key = "Escape", button = "Right" }`): either fires it.
   - A key or button binding with `take = true` (`{ key = "Escape", take = true }`) takes its key or button in that mode: while it is bound, the mode's other bindings of that key or button do not fire, as if it were not pressed. Every taking binding of one key fires. Removing it gives the key back at once: a key still held then fires the other bindings, as a new press, so a mod that takes a key for one press unbinds after its release.
 - `<mode>/<group>/<action>`: present while the action is active. `{ value = <1, or the analog strength> }` for keys and buttons; `{ dx, dy }` for motion and scroll, present only on frames with movement. Added, updated and removed by `input`.
 - `input/held`, `input/actions`: `input`'s own state (held keys and buttons; which action components it added).
