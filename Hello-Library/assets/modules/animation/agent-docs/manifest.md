@@ -20,6 +20,8 @@ A character's skeletal animation: its model, and the clip it plays for what it i
   | `walk_speed` | metres per second at which `walk` plays at its own speed | 6 |
   | `offset` | `{ x, y, z }`, where the model sits under the character | `{ 0, -0.9, 0 }` |
 
+  The default `model`'s files are not in this repository, so set `model` to your own until a default character is added.
+
 - `animation/action = { state, speed }`: written by another mod that plays something on purpose (a cast, an emote). While it is there, it is played instead of the motion's state. It syncs as the mod that writes it declares.
 - On each client, never synced:
   - `animation/model = { scene }`: a child of the character holding the model's scene, and the scene's path.
