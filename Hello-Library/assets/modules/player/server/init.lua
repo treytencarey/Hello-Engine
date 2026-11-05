@@ -38,19 +38,6 @@ app:add_systems(First, {
     end
 end):in_set("player/init")
 
--- `ai/perception` takes `ai/perception/target` off everything when its last carrier leaves, so it's
--- added again when the mod arrives.
-app:add_systems(First, {
-    Query[{ added = { "ai/perception" } }],
-    Query[{ with = { "player" }, without = { "ai/perception/target", "WorldMirror" } }],
-    Commands,
-}, function(arrived, players, commands)
-    if arrived:is_empty() then return end
-    for _, e in ipairs(players:iter()) do
-        commands:entity(e:id()):insert({ ["ai/perception/target"] = {} })
-    end
-end):in_set("player/perception_target")
-
 -- Who the player is, from the join ticket its client presented (`core/player/attest`).
 app:add_systems(Update, {
     Query[{

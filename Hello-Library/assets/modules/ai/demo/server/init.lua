@@ -38,7 +38,6 @@ app:add_systems(First, {
                 ["ai/demo/spawner"] = { debug = d.debug },
                 ChildOf = e:id(),
                 ["core/net/sync"] = false,
-                -- It ends with its parent, or as a marked child when `ai/demo` comes off it.
                 ["core/script/owner"] = false,
             })
             if d.regions then
@@ -49,11 +48,10 @@ app:add_systems(First, {
                     { min_x = -8, max_x = 8, min_z = -24, max_z = -8 },
                 }) do
                     commands:spawn({
-                        ["ai/demo/region"] = box,
+                        ["ai/demo/region"] = {},
                         ["ai/nav/region"] = { min_x = box.min_x, max_x = box.max_x, min_z = box.min_z, max_z = box.max_z, y = 0.1, cost = 1 },
                         ChildOf = e:id(),
                         ["core/net/sync"] = false,
-                        -- It ends with its parent, or as a marked child when `ai/demo` comes off it.
                         ["core/script/owner"] = false,
                     })
                 end
@@ -67,7 +65,6 @@ app:add_systems(First, {
                     Transform = { translation = { x = d.decoy_radius, y = 1, z = 0 } },
                     Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
                     ["core/net/sync"] = false,
-                    -- It ends at this mod's own `removed` edge (`ai/demo/removed`).
                     ["core/script/owner"] = false,
                 })
             end
@@ -77,30 +74,6 @@ app:add_systems(First, {
         end
     end
 end):in_set("ai/demo/build")
-
--- `ai/perception` and `ai/nav` take their parts off everything when their last carrier leaves, so
--- what this added for them is added again when each arrives.
-app:add_systems(First, {
-    Query[{ added = { "ai/perception" } }],
-    Query[{ with = { "ai/demo/decoy" }, without = { "ai/perception/target" } }],
-    Query[{ added = { "ai/nav" } }],
-    Query[{ with = { "ai/demo/region" }, without = { "ai/nav/region" } }],
-    Commands,
-}, function(perceiving, decoys, navigating, regions, commands)
-    if not perceiving:is_empty() then
-        for _, e in ipairs(decoys:iter()) do
-            commands:entity(e:id()):insert({ ["ai/perception/target"] = {} })
-        end
-    end
-    if not navigating:is_empty() then
-        for _, e in ipairs(regions:iter()) do
-            local box = e:get("ai/demo/region")
-            commands:entity(e:id()):insert({
-                ["ai/nav/region"] = { min_x = box.min_x, max_x = box.max_x, min_z = box.min_z, max_z = box.max_z, y = 0.1 },
-            })
-        end
-    end
-end):in_set("ai/demo/parts_return")
 
 -- The decoy's speed is what `ai/noisemaker` hears, so it writes a velocity it does not otherwise need.
 app:add_systems(Update, {

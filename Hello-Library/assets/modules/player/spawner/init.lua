@@ -61,7 +61,6 @@ app:add_systems(First, {
                     Collider3d = { authority = "server" },
                     LockedAxes3d = { authority = "server" },
                 },
-                -- Not reaped with this mod: a player lives until its client leaves.
                 ["core/script/owner"] = false,
             })
             taken[index] = true

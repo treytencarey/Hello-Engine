@@ -43,8 +43,6 @@ app:add_systems(Update, {
                 commands:spawn({
                     explosion = { at = { x = at.x, y = at.y, z = at.z },
                                   radius = x.radius, duration = x.duration, color = x.color },
-                    -- Not reaped with this mod: the ball that spawned it is its last carrier. It ends by its own
-                    -- timer (`explosion`).
                     ["core/script/owner"] = false,
                 })
                 -- A client's copy is the server's to end: hidden here, despawned by the server.

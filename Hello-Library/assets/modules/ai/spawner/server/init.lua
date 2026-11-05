@@ -50,7 +50,6 @@ app:add_systems(First, {
                     Collider3d = { authority = "server" },
                     LockedAxes3d = { authority = "server" },
                 },
-                -- It ends at this mod's own `removed` edge (`ai/spawner/removed`).
                 ["core/script/owner"] = false,
             })
         end

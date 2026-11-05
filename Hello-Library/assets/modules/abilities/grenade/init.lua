@@ -48,7 +48,6 @@ app:add_systems(Update, {
                 radius = g.radius,
                 color = g.color,
             },
-            -- It ends itself: a reload of this mod, or its last carrier leaving, does not take it.
             ["core/script/owner"] = false,
         })
     end

@@ -26,16 +26,13 @@ app:add_systems(First, {
         without = { "ai/nav/volume" },
     }],
     Query[{ with = { "ai/nav/volumes/scene" } }],
-    Query[{ added = { "ai/nav" } }],
     Commands,
-}, function(named, sources, nodes, owners, arrived, commands)
+}, function(named, sources, nodes, owners, commands)
     local list = {}
     for _, e in ipairs(named:iter()) do
         list[#list + 1] = e:id()
     end
-    -- `ai/nav` takes `ai/nav/volume` off everything when its last carrier leaves, so every source
-    -- tags again when the mod arrives.
-    for _, e in ipairs(arrived:is_empty() and sources:iter() or owners:iter()) do
+    for _, e in ipairs(sources:iter()) do
         list[#list + 1] = e:id()
         for _, id in ipairs(nodes:iter_descendants(e:id())) do
             list[#list + 1] = id

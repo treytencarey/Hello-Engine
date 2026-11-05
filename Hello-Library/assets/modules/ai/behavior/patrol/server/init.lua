@@ -40,7 +40,6 @@ app:add_systems(First, {
                 ["ai/agent/option"] = { entity = a:id(), score = a:get("ai/behavior/patrol").base_score },
                 ["ai/behavior/patrol/option"] = {},
                 Name = "patrol",
-                -- It ends with its agent (`linked_spawn`), or at this mod's own `removed` edge.
                 ["core/script/owner"] = false,
             })
         end

@@ -67,7 +67,6 @@ app:add_systems(First, {
                     LockedAxes2d = { authority = "server" },
                     GravityScale2d = { authority = "server" },
                 },
-                -- Not reaped with this mod: a player lives until its client leaves.
                 ["core/script/owner"] = false,
             })
             taken[index] = true
