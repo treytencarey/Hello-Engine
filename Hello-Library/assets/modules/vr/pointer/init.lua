@@ -1,6 +1,6 @@
--- The right hand as a pointer on this client's own player in VR. A ray from the controller meets
--- the nearest pointer target, and Bevy's picking hears it as the mouse pointer on that target's
--- image: moves, scrolls, presses, and a long press as a right click. A laser shows the ray while
+-- The right hand as a pointer on this client's own player in VR. When the first thing a ray from
+-- the controller meets is a pointer target, Bevy's picking hears it as the mouse pointer on that
+-- target's image: moves, scrolls, presses, and a long press as a right click. A laser shows the ray while
 -- it is on a target.
 --
 -- vr/pointer = {
@@ -128,9 +128,10 @@ app:add_systems(PreUpdate, {
     end
 end):in_set("vr/pointer/ray")
 
--- Only targets answer the ray, so the laser, the player and the world never stand in front of
--- one. Bevy's picking skips a move with no delta, so a ray held still sends none. The mouse
--- pointer is reused: a pointer of its own would be `PointerId::Custom`, which Lua cannot build.
+-- The player and what hangs under it (the laser, its body) never stand in the way; anything else
+-- does, and only a target answers. A player is a root, so its descendants share its root. Bevy's
+-- picking skips a move with no delta, so a ray held still sends none. The mouse pointer is reused:
+-- a pointer of its own would be `PointerId::Custom`, which Lua cannot build.
 app:add_systems(Update, {
     MeshRayCast,
     Query[{
@@ -144,11 +145,15 @@ app:add_systems(Update, {
     Commands,
 }, function(ray_cast, players, targets, hovered, pointer, commands)
     for _, e in ipairs(players:iter()) do
+        local me = e:id()
         local hit = ray_cast:cast_ray(e:get("vr/pointer/ray"), {
             filter = function(entity)
-                return targets:contains(entity)
+                return players:root_ancestor(entity) ~= me
             end,
         })[1]
+        if hit ~= nil and not targets:contains(hit.entity) then
+            hit = nil
+        end
         local was = hovered:iter()[1]
         if was ~= nil and (hit == nil or was:id() ~= hit.entity) then
             commands:entity(was:id()):try_remove("vr/pointer/hovered")

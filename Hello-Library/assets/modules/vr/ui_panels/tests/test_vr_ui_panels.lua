@@ -6,7 +6,7 @@
 --   VUP1 a container with a size gets one panel, linked to it, carrying the pointer's and the grip's
 --        targets, with a camera child the container draws into
 --   VUP2 placed in front of the right hand, nearer by the container's z index, its front to the head
---   VUP3 a new size resizes the same panel and its pointer target
+--   VUP3 a new size resizes the same panel and its pointer target, and takes its old Aabb off
 --   VUP4 hidden with the container, its camera stopped; shown again in front of where the hand is now
 --   VUP5 a reload rebuilds one panel, drawn by its new camera
 --   VUP6 removal takes the panels and the container's camera
@@ -57,7 +57,7 @@ end
 local function panels(world)
     return world:query({
         with = { "vr/ui_panels/panel", "Transform" },
-        optional = { "vr/pointer/target", "vr/grabbable/target", "Visibility", "NoFrustumCulling", "Mesh3d" },
+        optional = { "vr/pointer/target", "vr/grabbable/target", "Visibility", "NoFrustumCulling", "Aabb", "Mesh3d" },
     })
 end
 local function camera_of(world, panel)
@@ -81,7 +81,9 @@ end, function(world, commands)
     T("VUP1_one_panel_linked_to_the_container", p.entity == c:id() and #(c:get("vr/ui_panels/panels") or {}) == 1
         and p.width == 300 and p.height == 500, tostring(p.width) .. " x " .. tostring(p.height))
     T("VUP1_it_is_a_pointer_target_on_its_image", target ~= nil and target.width == 300 and target.height == 500 and target.image ~= nil, "")
-    T("VUP1_and_a_grip_target_that_faces", panel:get("vr/grabbable/target").face == true and panel:has("NoFrustumCulling"), "")
+    T("VUP1_and_a_grip_target_that_faces", panel:get("vr/grabbable/target").face == true, "")
+    -- Bevy gives no Aabb to a mesh with NoFrustumCulling, and the ray cast meets no mesh without one
+    T("VUP1_and_frustum_culling_stays_on", not panel:has("NoFrustumCulling"), "")
     local cam = camera_of(world, panel)
     T("VUP1_the_container_draws_into_its_camera", cam ~= nil and c:get("UiTargetCamera") == cam:id() and cam:get("Camera").order == -200,
         tostring(c:get("UiTargetCamera")))
@@ -90,7 +92,13 @@ end, function(world, commands)
     T("VUP2_placed_in_front_of_the_hand", near(placed.translation, { x = 0, y = 1.2, z = -0.87 }), show(placed.translation))
     T("VUP2_its_front_to_the_head", Quat.mul_vec3(placed.rotation, { x = 0, y = 0, z = 1 }).z > 0.999, "")
     state.panel, state.camera = panel:id(), cam:id()
-    commands:entity(c:id()):insert({ ComputedNode = { size = { x = 420, y = 500 } } })
+    -- what a window's calculate_bounds gives the first mesh
+    commands:entity(panel:id()):insert({ Aabb = { center = { x = 0, y = 0, z = 0 }, half_extents = { x = 0.12, y = 0.2, z = 0 } } })
+end)
+step(function(world)
+    return panels(world)[1]:has("Aabb")
+end, function(world, commands)
+    commands:entity(container(world):id()):insert({ ComputedNode = { size = { x = 420, y = 500 } } })
 end)
 step(after(0.3), function(world, commands)
     local panel = panels(world)[1]
@@ -99,6 +107,7 @@ step(after(0.3), function(world, commands)
         tostring(#panels(world)) .. " " .. tostring(p.width))
     T("VUP3_and_its_pointer_target", panel:get("vr/pointer/target").width == 420, "")
     T("VUP3_drawn_by_the_same_camera", container(world):get("UiTargetCamera") == state.camera, "")
+    T("VUP3_its_old_aabb_taken_off_for_bevy_to_compute_again", not panel:has("Aabb"), "")
     commands:entity(container(world):id()):insert({ Node = { display = "None" } })
 end)
 step(after(0.3), function(world, commands)

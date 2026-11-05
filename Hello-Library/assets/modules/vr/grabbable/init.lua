@@ -54,7 +54,8 @@ app:add_systems(First, {
     end
 end):in_set("vr/grabbable/removed")
 
--- A target's translation is taken as its place in the world, so only a root moves as expected.
+-- As the pointer's ray: the player and what hangs under it never stand in the way, anything else
+-- does. A target's translation is taken as its place in the world, so only a root moves as expected.
 app:add_systems(Update, {
     MeshRayCast,
     Query[{
@@ -65,12 +66,13 @@ app:add_systems(Update, {
     Commands,
 }, function(ray_cast, grabbing, targets, commands)
     for _, e in ipairs(grabbing:iter()) do
+        local me = e:id()
         local hit = ray_cast:cast_ray(e:get("vr/pointer/ray"), {
             filter = function(entity)
-                return targets:contains(entity)
+                return grabbing:root_ancestor(entity) ~= me
             end,
         })[1]
-        if hit ~= nil then
+        if hit ~= nil and targets:contains(hit.entity) then
             local at = targets:get(hit.entity):get("Transform").translation
             commands:entity(hit.entity):insert({
                 ["vr/grabbable/held"] = {

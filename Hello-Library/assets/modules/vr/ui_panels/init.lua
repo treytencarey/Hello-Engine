@@ -107,7 +107,6 @@ app:add_systems(First, {
                     ["MeshMaterial3d<StandardMaterial>"] = material,
                     Transform = { translation = at, rotation = facing },
                     Visibility = "Visible",
-                    NoFrustumCulling = {},
                 }):add_child(camera)
                 commands:entity(c:id()):insert({ UiTargetCamera = { entity = camera } })
             else
@@ -115,10 +114,13 @@ app:add_systems(First, {
                 p.width, p.height, p.image = w, h, image
                 local target = panel:get_mut("vr/pointer/target")
                 target.width, target.height, target.image = w, h, image
+                -- Bevy computes a mesh's `Aabb` only while it has none, and the ray cast and culling
+                -- read it, so the new mesh's is computed again.
                 commands:entity(panel:id()):insert({
                     Mesh3d = mesh,
                     ["MeshMaterial3d<StandardMaterial>"] = material,
                 })
+                commands:entity(panel:id()):remove("Aabb")
                 for _, cam in ipairs(cameras:iter_many_mut(panel:get("Children") or {})) do
                     cam:get_mut("Camera").target = { Image = image }
                 end
