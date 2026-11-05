@@ -48,6 +48,7 @@ app:add_systems(First, {
                 ["ai/agent/option"] = { entity = a:id(), score = 0 },
                 ["ai/behavior/investigate/option"] = {},
                 Name = "investigate",
+                -- It ends with its agent (`linked_spawn`), or at this mod's own `removed` edge.
                 ["core/script/owner"] = false,
             })
         end

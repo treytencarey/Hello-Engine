@@ -22,7 +22,7 @@ A scene that proves the agents work, on `map/default`: a spawner of wanderers, a
   | `decoy_speed` | metres per second, below a chasing wanderer's | 3.5 |
   | `debug` | true to draw what the wanderers think, and the ground | false |
 
-- `ai/demo/region`: marks a region of the ring, a child.
+- `ai/demo/region`: a region of the ring's box, on a child. `ai/nav/region` is made from it, again when `ai/nav` arrives.
 - `ai/demo/spawner = { debug }`: on the spawner, a child.
 - `ai/demo/decoy = { entity = <its demo>, angle, radius, speed }`, on the decoy: a relationship with target `ai/demo/decoys`, `linked_spawn = true`.
 - `ai/demo/decoys`: a demo's decoys, kept by the engine.

@@ -229,14 +229,21 @@ app:add_systems(Update, {
         commands:entity(named(world, "plain"):id()):despawn()
         step("unloaded")
 
-    -- The mod unloads with its last agent, so nothing is watching the regions now.
+    -- The mod unloads with its last agent: the graph goes, and its regions are swept, wherever they are.
     elseif phase == "unloaded" and clock > 0.3 then
+        suite.assert_test("G14_the_graph_goes_with_the_last_agent", count == -1, "regions " .. count)
+        suite.assert_test("G14_and_the_regions_are_swept", not named(world, "west"):has("ai/nav/region"), "")
         commands:spawn({ ["zz/name"] = { name = "unseen" }, ["ai/nav/region"] = box(300, 310, 300, 310) })
         step("unwatched")
 
     elseif phase == "unwatched" and clock > 0.5 then
-        suite.assert_test("G14_nothing_watches_the_regions_once_the_last_agent_left", count == 4, "regions " .. count)
+        suite.assert_test("G14_nothing_watches_a_region_added_meanwhile", count == -1, "regions " .. count)
         commands:spawn({ ["zz/name"] = { name = "back" }, ["ai/nav"] = {} })
+        -- As the mods that add them do, on `ai/nav`'s `added` edge.
+        commands:entity(named(world, "west"):id()):insert({ ["ai/nav/region"] = box(-24, -8, -24, 24) })
+        commands:entity(named(world, "north"):id()):insert({ ["ai/nav/region"] = box(-8, 7, 8, 24) })
+        commands:entity(named(world, "east"):id()):insert({ ["ai/nav/region"] = box(8, 24, -24, 24) })
+        commands:entity(named(world, "south"):id()):insert({ ["ai/nav/region"] = box(-8, 8, -24, -8) })
         step("returned")
 
     elseif phase == "returned" and count == 5 then

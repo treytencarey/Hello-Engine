@@ -56,6 +56,8 @@ app:add_systems(Startup, { Commands }, function(commands)
     })
     agent(commands, "pathless", 0, 240, {})
     agent(commands, "leaver", 0, 280, { speed = 3 }, { ["ai/nav"] = {} })
+    -- So `leaver` is not the last carrier of `ai/nav`, which would sweep the paths given to the rest.
+    commands:spawn({ ["zz/nav_stays"] = {}, ["ai/nav"] = {} })
     agent(commands, "dropper", 0, 320, { speed = 3 })
     agent(commands, "long", 0, 360, { speed = 2 })
     -- Its path is there before its state is.
