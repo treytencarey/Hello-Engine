@@ -132,7 +132,7 @@ return {
 - One target per source component per entity, as in Bevy. An entity can hold many different relationships.
 - `ChildOf` stays the relationship that carries the transform. A declared relationship never does.
 - Only the source crosses to another world or over the network, mapped like any entity value, so the link arrives as a link; each side keeps its own target list from the sources it holds. To reach clients, the source is synced like any component.
-- A declaration with the same source and another target, or a name already used by another relationship, is refused, and the mod registry prints it.
+- A declaration with the same source and another target, or a name already used by another relationship, is refused, with a warning. Two mods may declare the same pair, and it stays declared while either is loaded. A reload keeps a declaration, and applies one edited.
 
 ## Mod boundaries
 
