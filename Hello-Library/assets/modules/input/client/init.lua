@@ -19,6 +19,9 @@
 --     },
 -- }
 --
+-- A key or button binding with take = true takes its key or button: while it is bound, the mode's
+-- other bindings of it do not fire. Every taking binding of a key fires.
+--
 -- input/ui = <same shape as input/game>
 --
 -- <mode>/<group>/<action> = { value = <1, or the analog strength> } or { dx = <number>, dy = <number> }
@@ -170,12 +173,19 @@ app:add_systems(PreUpdate, {
                 },
             })
         end
+        local taken_keys, taken_buttons = {}, {}
+        for _, actions in pairs(bindings) do
+            for _, b in pairs(actions) do
+                if b.take and b.key then taken_keys[b.key] = true end
+                if b.take and b.button then taken_buttons[b.button] = true end
+            end
+        end
         local wanted = {}
         for group, actions in pairs(bindings) do
             for action, b in pairs(actions) do
                 local delta = (b.motion and motion) or (b.scroll and scroll)
-                local value = (b.key and not through_keys[b.key] and held_keys[b.key])
-                    or (b.button and not through_buttons[b.button] and held_buttons[b.button])
+                local value = (b.key and not through_keys[b.key] and (b.take or not taken_keys[b.key]) and held_keys[b.key])
+                    or (b.button and not through_buttons[b.button] and (b.take or not taken_buttons[b.button]) and held_buttons[b.button])
                 if delta and (delta.x ~= 0 or delta.y ~= 0) then
                     wanted[mode .. "/" .. group .. "/" .. action] = { dx = delta.x * sensitivity, dy = delta.y * sensitivity }
                 elseif value then
