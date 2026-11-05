@@ -11,7 +11,12 @@ app:add_systems(First, {
     Commands,
 }, function(entered, commands)
     for _, e in ipairs(entered:iter()) do
-        commands:entity(e:id()):patch({ ["vr/input"] = {} })
+        commands:entity(e:id()):insert_if_new({
+            ["vr/input"] = {},
+            ["vr/pointer"] = {},
+            ["vr/grabbable"] = {},
+            ["vr/ui_panels"] = {},
+        })
     end
 end):in_set("player/vr/local")
 
@@ -31,6 +36,6 @@ app:add_systems(First, {
         gone[#gone + 1] = e:id()
     end
     for _, e in ipairs(parts:iter_many(gone)) do
-        commands:entity(e:id()):remove("vr/input")
+        commands:entity(e:id()):remove("vr/input", "vr/pointer", "vr/grabbable", "vr/ui_panels")
     end
 end):in_set("player/vr/local_removed")

@@ -178,6 +178,9 @@ app:add_systems(Update, {
             "vr/tracking",
             "vr/input",
             "vr/input/pose",
+            "vr/pointer",
+            "vr/grabbable",
+            "vr/ui_panels",
             "camera",
             "camera/vr",
             "camera/3d",
@@ -199,6 +202,8 @@ app:add_systems(Update, {
         ts.c_tracking = me:has("vr/tracking")
         ts.c_vr_input = me:has("vr/input")
         ts.c_pose = me:has("vr/input/pose")
+        ts.c_tools = me:has("vr/pointer") and me:has("vr/grabbable") and me:has("vr/ui_panels")
+        ts.c_any_tool = me:has("vr/pointer") or me:has("vr/grabbable") or me:has("vr/ui_panels")
         ts.c_camera = me:has("camera")
         ts.c_camera_vr = me:has("camera/vr")
         ts.c_camera_3d = me:has("camera/3d")
@@ -223,14 +228,14 @@ app:add_systems(Update, {
     end
     local other = world:query({
         with = { "zz/other" },
-        optional = { "camera/vr", "VmXrRig", "vr/input", "input/game", "vr/active", "core/net/local" },
+        optional = { "camera/vr", "VmXrRig", "vr/input", "vr/pointer", "input/game", "vr/active", "core/net/local" },
     })[1]
     ts.o_seen = other ~= nil
     if other ~= nil then
         ts.o_camera_vr = other:has("camera/vr")
         ts.o_active = other:has("vr/active")
         ts.o_rig = other:has("VmXrRig")
-        ts.o_vr_input = other:has("vr/input")
+        ts.o_vr_input = other:has("vr/input") or other:has("vr/pointer")
         ts.o_bound = other:has("input/game")
         ts.o_local = other:has("core/net/local")
     end
@@ -281,6 +286,7 @@ local function on_the_desktop(tag)
         string.format("third %s, camera_vr %s", tostring(ts.c_bound_third), tostring(ts.c_bound_camera_vr)))
     suite.assert_test(tag .. "_it_faces_where_it_goes", ts.c_face == "velocity" and ts.s_face == "velocity", tostring(ts.c_face))
     suite.assert_test(tag .. "_no_controllers", not ts.c_vr_input, "")
+    suite.assert_test(tag .. "_no_tools", not ts.c_any_tool, "")
 end
 
 -- What every side has in VR.
@@ -295,6 +301,7 @@ local function in_vr(tag)
     suite.assert_test(tag .. "_the_stick_is_bound", ts.c_bound_camera_vr and not ts.c_bound_third, "")
     suite.assert_test(tag .. "_it_faces_the_look", ts.c_face == "look" and ts.s_face == "look", tostring(ts.c_face))
     suite.assert_test(tag .. "_controllers", ts.c_vr_input and ts.c_pose, "")
+    suite.assert_test(tag .. "_and_the_tools", ts.c_tools, "")
 end
 
 step(function()

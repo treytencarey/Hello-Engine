@@ -1,5 +1,5 @@
 ---
-depends_on: [vr, vr/input, camera/vr, camera/third_person, movement]
+depends_on: [vr, vr/input, vr/pointer, vr/grabbable, vr/ui_panels, camera/vr, camera/third_person, movement]
 conflicts_with: []
 exposes: [player/vr]
 ---
@@ -13,7 +13,7 @@ A player in VR. This mod is the composer: it names what a VR player has, on each
 - `player/vr = {}`, on a player, added on the server and synced from it. It adds:
   - server, always: `vr`;
   - server, while `vr/active` exists: `camera/vr` in place of `camera/third_person`, and `movement.face = "look"`;
-  - the owning client, while `vr/active` exists: `vr/input`.
+  - the owning client, while `vr/active` exists: `vr/input`, and the tools `vr/pointer`, `vr/grabbable` and `vr/ui_panels`.
 
   When `vr/active` goes, the player gets `camera/third_person` back and `movement.face = "velocity"`. If `player/vr` is removed from an entity that stays, each half removes what it added.
 
@@ -25,8 +25,8 @@ A player in VR. This mod is the composer: it names what a VR player has, on each
 | First (server) | `player/vr/enter` | While `vr/active`, `player/vr` and `movement` are there, on any of them arriving: add `camera/vr`, face the look |
 | First (server) | `player/vr/leave` | When `vr/active` goes and `player/vr` stays: add `camera/third_person`, face the velocity |
 | First (server) | `player/vr/removed` | When `player/vr` is removed from an entity that stays: remove `vr`; a player in VR gets `camera/third_person` back, and what is no longer a player loses `camera/vr` |
-| First (client) | `player/vr/local` | On this client's own player, while `vr/active` is there: add `vr/input` |
-| First (client) | `player/vr/local_removed` | When `vr/active` goes: remove `vr/input` |
+| First (client) | `player/vr/local` | On this client's own player, while `vr/active` is there: add `vr/input` and the tools |
+| First (client) | `player/vr/local_removed` | When `vr/active` goes: remove `vr/input` and the tools |
 
 ## Use
 
