@@ -40,8 +40,7 @@ commands:entity(body):insert({ ["ai/archetype/wanderer"] = {} })
 return {
     base = "ai/archetype/wanderer",
     defaults = {
-        ["ai/steering"] = { speed = 1.8 },
-        ["ai/perception"] = { vision_range = 20 },
+        ["ai/perception"] = { vision_range = 20, hearing_range = 26 },
     },
 }
 ```
