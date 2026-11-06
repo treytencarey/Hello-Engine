@@ -66,26 +66,17 @@ end):in_set("placement/unbind")
 
 -- Follows, so it polls. The ray skips the placed entity and the player, with what hangs under
 -- each: a ray from the hand starts inside the player's own body. In a world VM the camera draws
--- into an image the size of the window's physical pixels, so the cursor is read in those. A
--- client sends a change only for an entity the server has confirmed, so a move made before that
--- is marked again once it is, or the server keeps the spawn's place.
+-- into an image the size of the window's physical pixels, so the cursor is read in those.
 app:add_systems(Update, {
     ReadRapierContext,
     Query[{ with = { "placement", "core/net/local", Mut["Transform"] } }],
-    Query[{
-        added = { "core/net/id" },
-        with = { "placement", "core/net/local", Mut["Transform"] },
-    }],
     Query[{
         with = { "input", "core/net/local" },
         optional = { "vr/pointer/ray", "Children" },
     }],
     Query[{ with = { "camera/3d/eye", "Camera", "GlobalTransform" } }],
     Query[{ with = { "Window" } }],
-}, function(rapier, placing, confirmed, players, eyes, windows)
-    for _, p in ipairs(confirmed:iter_mut()) do
-        p:get_mut("Transform"):set_changed()
-    end
+}, function(rapier, placing, players, eyes, windows)
     for _, player in ipairs(players:iter()) do
         local ray = player:get("vr/pointer/ray")
         local eye = eyes:iter_many(player:get("Children") or {})[1]
