@@ -267,6 +267,7 @@ return {
 - One shared entity of a kind (an overlay, a bar) is the first row of a declared query: `overlays:iter()[1]` on `Query[{ with = { "notification/overlay" } }]`.
 - Never move a UI root. Bevy gives every UI node without a parent its own camera source and keeps it after the node gets a parent. Spawn a UI node and give it its parent in the same system (`container:add_child(commands:spawn({ ... }):id())`), so the parent lands in the flush that spawns it, or give an existing entity `Node` in the same command as its `ChildOf`.
 - A mod binds input in a group named after itself (`["input/game"] = { first_person = { ... } }`) and unbinds it when its component is removed. Never write into a group another mod also uses. Bindings are `input's` sub-components, so they go when `input` is removed: bind on `added = { "input" }` too, so they come back with it.
+- A binding with `take = true` takes its key or button in its mode: the mode's other bindings of it don't fire while it is bound.
 - No signal components: never add a component only to say "do X next frame".
 - The hierarchy is walked with Bevy's walks (`RelationshipQuery`), over `ChildOf`, as methods of any declared query. Each takes an entity and returns a list of entity values, without the entity it starts from:
   - `q:iter_ancestors(e)`: its parent, grandparent, and so on to the root, nearest first;
