@@ -13,7 +13,7 @@ Neither half runs git. Each asks root (`vault/git`), which reads the checkout of
 ## Components
 
 - `git/world/head = { sha }`, server authority, synced to the world's players: the commit the world's tree is on. One entity per world, spawned by the world's server; this mod writes `sha`. Absent until root has answered.
-- The requests this mod sends root are children of the `git/world/head` entity, so they go with it: `vault/git/status` (the server's commit), `vault/git/pull` (a pull, server) and `vault/git/head` (the comparison, client). Each is closed once answered.
+- The requests this mod sends root are children of the `git/world/head` entity, so they go with it: `{ ["vault/git/status"] = {}, ["vault/git"] = {}, Request = {} }` (the server's commit), `{ ["vault/git/pull"] = {}, ["vault/git"] = { sha }, Request = {} }` (a pull, server) and `{ ["vault/git/head"] = {}, ["vault/git"] = { sha }, Request = {} }` (the comparison, client). Each is answered on `<method>/reply` and closed once answered.
 
 ## Systems
 

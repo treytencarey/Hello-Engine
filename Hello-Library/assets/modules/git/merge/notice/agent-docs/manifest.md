@@ -6,7 +6,7 @@ exposes: [git/merge/notice, git/merge/notice/row]
 
 # git/merge/notice
 
-What happened to an edit, said to the person who made it: a plain-text `notification` with a title and a line. The git mods use it for a merge conflict, a merge that failed, and a checkout behind its world. Local UI: never synced.
+What happened to an edit, said to the person who made it: a plain-text `notification` with a title and a line. The git mods use it for a merge conflict, a merge that failed, a checkout behind its world, and a world asked to pull. Local UI: never synced.
 
 ## Components
 

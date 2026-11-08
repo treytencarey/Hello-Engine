@@ -31,12 +31,12 @@ The owning client drives its player's Transform, as there is no client predictio
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | `player/init` | On an added `player`, add identity, the camera, movement, the abilities, the file browser panel and the VR stack |
+| First (server) | `player/init` | On an added `player`, add identity, the camera, movement, the model, the abilities, what agents look for and hear, the file browser panel and the VR stack |
 | Update (server) | `player/identity` | When the join ticket is verified, set `player.user_id` |
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`) |
-| First (server) | `player/removed` | When `player` is removed from an entity that stays, remove identity, the camera, movement, the abilities, the file browser panel and the VR stack |
-| First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar and its profiler panel, and make its body dynamic |
-| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar and its profiler panel |
+| First (server) | `player/removed` | When `player` is removed from an entity that stays, remove identity, the camera, movement, the model, the abilities, what agents look for and hear, the file browser panel and the VR stack |
+| First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar with its profiler and sign-in panels, and make its body dynamic |
+| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar and its profiler and sign-in panels |
 
 ## Use
 
