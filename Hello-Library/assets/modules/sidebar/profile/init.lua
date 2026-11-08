@@ -392,11 +392,13 @@ app:add_systems(Update, {
         end
 
         local site = account("Hello!", site_known, site_who, site_wish, site_said)
-        local github = account("GitHub", github_known, github_who, github_wish, github_said)
+        -- GitHub is offered only to a player signed in to Hello!, and only hidden by a Hello! sign-out:
+        -- root keeps the GitHub session.
+        local github = site_who ~= nil and account("GitHub", github_known, github_who, github_wish, github_said) or nil
 
         local wanted = { "SIGN-INS" }
         for _, text in ipairs(texts_of(site)) do wanted[#wanted + 1] = text end
-        for _, text in ipairs(texts_of(github)) do wanted[#wanted + 1] = text end
+        for _, text in ipairs(github and texts_of(github) or {}) do wanted[#wanted + 1] = text end
         local shown = {}
         local held = rows:iter_many(parts)
         for _, row in ipairs(held) do
@@ -476,7 +478,7 @@ app:add_systems(Update, {
                 end)
             end
 
-            local github_button = spawn_account(commands, scroll:id(), github)
+            local github_button = github and spawn_account(commands, scroll:id(), github)
             if github_button ~= nil and github.label == "Sign in" then
                 github_button:observe(On[Pointer[Click]], {
                     Query[{

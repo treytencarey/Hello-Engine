@@ -3,11 +3,14 @@
 -- real click on the sidebar's button opens the panel.
 --
 -- A1  the carrier asks root who is signed in, once per sign-in, on requests under it
--- V1  before root answers, both rows say so and offer no button
+-- V1  before root answers, the Hello! row says so and offers no button, and GitHub has no row
+-- V2  signed out of Hello!, only Hello! is offered, though root answered GitHub
 -- C1  "Sign in" asks root to sign in on a new request; the standing ask stays
 -- P1  a pending sign-in shows the code and the address, and no button
--- S1  signed in, a row shows the name root gave, with "Sign out"
+-- S1  signed in, a row shows the name root gave, with "Sign out"; GitHub's row appears
 -- O1  "Sign out" asks root to sign out, on a new request in place of the sign-in's
+-- G1  a Hello! sign-out hides GitHub's row and asks root nothing about GitHub
+-- G2  signed in to Hello! again, GitHub's row comes back as root left it
 -- T1  a reply field the panel does not show reaches no other component
 -- H1  a reload keeps the panel open, its rows, and its asks, none doubled
 -- U1  the carrier's sign-ins taken off close every ask
@@ -197,19 +200,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         click(commands, b:id())
         step("opening")
 
-    elseif phase == "opening" and #views(world) == 1 and #row_texts(world, "GitHub") > 0 and clock > 0.2 then
+    elseif phase == "opening" and #views(world) == 1 and #row_texts(world, "Hello!") > 0 and clock > 0.6 then
         local site, github = row_texts(world, "Hello!"), row_texts(world, "GitHub")
-        T("V1_before_root_answers_both_rows_say_so_with_no_button", has_text(site, "Asking...") and has_text(github, "Asking...")
-            and button_in(world, "Hello!", "Sign in") == nil and button_in(world, "GitHub", "Sign in") == nil,
-            table.concat(site, "|") .. " / " .. table.concat(github, "|"))
+        T("V1_before_root_answers_the_hello_row_says_so_with_no_button", has_text(site, "Asking...")
+            and button_in(world, "Hello!", "Sign in") == nil, table.concat(site, "|"))
+        T("V1_and_github_has_no_row", #github == 0, table.concat(github, "|"))
         T("V1_the_title_is_set", views(world)[1]:get("sidebar/panel").title == "Accounts")
         reply(commands, standing(world, "core/player/session/signin"), "core/player/session/signin/reply", { pending = false })
         reply(commands, standing(world, "vault/github/signin"), "vault/github/signin/reply", { pending = false })
         step("signed_out")
 
-    elseif phase == "signed_out" and button_in(world, "Hello!", "Sign in") ~= nil and button_in(world, "GitHub", "Sign in") ~= nil then
-        T("V2_answered_signed_out_each_row_offers_sign_in", has_text(row_texts(world, "Hello!"), "Not signed in")
-            and has_text(row_texts(world, "GitHub"), "Not signed in"))
+    elseif phase == "signed_out" and button_in(world, "Hello!", "Sign in") ~= nil and clock > 0.6 then
+        T("V2_answered_signed_out_hello_offers_sign_in", has_text(row_texts(world, "Hello!"), "Not signed in"))
+        T("V2_and_github_is_not_offered", #row_texts(world, "GitHub") == 0
+            and #world:query({ with = { "sidebar/profile/row" } }) == 2, table.concat(row_texts(world, "GitHub"), "|"))
         mark.standing = standing(world, "core/player/session/signin").id
         click(commands, button_in(world, "Hello!", "Sign in"))
         step("asked")
@@ -237,6 +241,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P1_pending_shows_the_code", has_text(site, "ZZZZ-2222"), table.concat(site, "|"))
         T("P1_and_the_address", has_text(site, "Enter the code at https://zz.invalid/device?user_code=ZZZZ-2222:"), table.concat(site, "|"))
         T("P1_and_no_button", button_in(world, "Hello!", "Sign in") == nil and button_in(world, "Hello!", "Sign out") == nil)
+        T("P1_and_still_no_github_row", #row_texts(world, "GitHub") == 0)
         reply(commands, standing(world, "core/player/session/signin"), "core/player/session/signin/reply", {
             user = { id = "u-42", name = "Zz Player" }, pending = false, access_token = SITE_SECRET,
         })
@@ -289,6 +294,32 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "github_signed_out" and button_in(world, "GitHub", "Sign in") ~= nil then
         T("O3_signed_out_the_row_offers_sign_in_again", not has_text(row_texts(world, "GitHub"), "zz-octo"))
+        reply(commands, standing(world, "vault/github/signin"), "vault/github/signin/reply", { login = "zz-octo", pending = false })
+        step("github_again")
+
+    elseif phase == "github_again" and button_in(world, "GitHub", "Sign out") ~= nil then
+        mark.github = {}
+        for _, ask in ipairs(asks(world, "vault/github/signin")) do mark.github[ask.id] = true end
+        reply(commands, standing(world, "core/player/session/signin"), "core/player/session/signin/reply", { pending = false })
+        reply(commands, action(world, "core/player/session/signin"), "core/player/session/signin/reply", { pending = false })
+        step("site_signed_out")
+
+    elseif phase == "site_signed_out" and button_in(world, "Hello!", "Sign in") ~= nil and clock > 0.6 then
+        local now = asks(world, "vault/github/signin")
+        local same = #now == 2
+        for _, ask in ipairs(now) do same = same and mark.github[ask.id] == true end
+        T("G1_a_hello_sign_out_hides_github_s_row", #row_texts(world, "GitHub") == 0
+            and #world:query({ with = { "sidebar/profile/row" } }) == 2, table.concat(row_texts(world, "GitHub"), "|"))
+        T("G1_and_asks_root_nothing_about_github", same and not action(world, "vault/github/signin").wish.start,
+            #now .. " asks")
+        reply(commands, standing(world, "core/player/session/signin"), "core/player/session/signin/reply", {
+            user = { id = "u-42", name = "Zz Player" }, pending = false,
+        })
+        step("site_again")
+
+    elseif phase == "site_again" and button_in(world, "GitHub", "Sign out") ~= nil then
+        T("G2_signed_in_again_github_s_row_comes_back_as_root_left_it", has_text(row_texts(world, "GitHub"), "zz-octo")
+            and has_text(row_texts(world, "Hello!"), "Zz Player"))
         mark.reloads = reloads
         mark.button = buttons(world)[1]:id()
         reload()
@@ -306,7 +337,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("H1_its_asks_stay_none_doubled", #asks(world, "core/player/session/signin") == 2 and #asks(world, "vault/github/signin") == 2
             and standing(world, "core/player/session/signin").id == mark.standing,
             #asks(world, "core/player/session/signin") .. " " .. #asks(world, "vault/github/signin"))
-        T("H1_the_rows_say_what_they_said", button_in(world, "GitHub", "Sign in") ~= nil
+        T("H1_the_rows_say_what_they_said", button_in(world, "GitHub", "Sign out") ~= nil
             and has_text(row_texts(world, "Hello!"), "Zz Player"))
         commands:entity(player):remove("sidebar/profile")
         step("removed")

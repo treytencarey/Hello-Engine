@@ -6,7 +6,7 @@ exposes: [sidebar/profile, sidebar/profile/state, sidebar/profile/button, sideba
 
 # sidebar/profile
 
-A sidebar panel, "Accounts", for the player's two sign-ins: Hello! (the Site) and GitHub. Root runs both sign-ins and keeps the tokens. The panel asks root and shows only what root answers: the name while signed in, with Sign out; the code and the address to enter it at while a sign-in waits for the player; otherwise Sign in, with the reason the last sign-in failed. It opens no browser: the player opens the address.
+A sidebar panel, "Accounts", for the player's two sign-ins: Hello! (the Site) and GitHub. Root runs both sign-ins and keeps the tokens. The panel asks root and shows only what root answers: the name while signed in, with Sign out; the code and the address to enter it at while a sign-in waits for the player; otherwise Sign in, with the reason the last sign-in failed. GitHub's row shows only while root's Hello! reply names a `user`: a player not signed in to Hello! is offered only Hello!. A Hello! sign-out hides GitHub's row and asks root nothing about GitHub, so root keeps that session and the row comes back as it was on the next Hello! sign-in. It opens no browser: the player opens the address.
 
 ## Components
 
@@ -14,7 +14,7 @@ A sidebar panel, "Accounts", for the player's two sign-ins: Hello! (the Site) an
 - `sidebar/profile/state = { open }` on the carrier, added by this mod when the carrier arrives, if it has none: whether the panel is open, kept through a reload. It goes with the carrier, and with `sidebar`, as a part of that name.
 - `sidebar/profile/button`: marks this mod's `sidebar/button`, in the bar.
 - `sidebar/profile/view`: on the panel, a plain `sidebar/panel` in the container, there only while the panel is open.
-- `sidebar/profile/row`: marks each row in the panel's scroll area: a header, then one row per sign-in.
+- `sidebar/profile/row`: marks each row in the panel's scroll area: a header, then one row per sign-in shown.
 
 The asks are root's requests, children of the carrier, and carry nothing of this mod's:
 
