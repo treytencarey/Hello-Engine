@@ -1,0 +1,12 @@
+-- git/world/head/pull: a player asks the world to pull, because their upstream holds commits the
+-- world's commit lacks. A declaration only: git/world/head's client half raises it and its server
+-- half answers it. On the server it never becomes a component: it arrives inside
+-- core/net/predict and is despawned there. The file is here so the name resolves, and to declare
+-- its sync.
+--
+-- git/world/head/pull = {
+--     sha = <the world's commit the player compared with>,
+-- }
+--
+-- Only the asking player's own connection carries it.
+return { ["core/net/sync"] = { authority = "client", target = "owner" } }
