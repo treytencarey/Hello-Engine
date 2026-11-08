@@ -21,7 +21,7 @@ app:add_systems(Update, {
     end
     for _, e in ipairs(carriers:iter()) do
         if holds and not e:has("git/status") then
-            commands:entity(e:id()):insert({ ["git/status"] = {} })
+            commands:entity(e:id()):insert({ ["git/status"] = {}, ["git/merge"] = {} })
             print(string.format("[GIT/WORLD/SERVED] '%s' is your checkout: watching your edits", tostring(scope)))
         elseif not holds and e:has("git/status") then
             commands:entity(e:id()):remove("git/status")
