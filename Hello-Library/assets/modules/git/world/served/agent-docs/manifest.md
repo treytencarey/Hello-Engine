@@ -1,5 +1,5 @@
 ---
-depends_on: [git/collaborators/authorize]
+depends_on: [git/collaborators/authorize, vault/git, core/process]
 conflicts_with: []
 exposes: [git/world/served, git/world/served/status, git/world/served/merge]
 ---
@@ -13,6 +13,7 @@ A world served from git says so in its own boot, and this mod is what that state
 - `git/world/served = {}`: on the world's boot entity, put there by the boot's `base`. It never crosses the network; each side's boot brings its own half.
   - On a server, its base is `git/collaborators/authorize`, the world's write policy.
   - On a client, it adds its two sub-mods to its own entity, `git/world/served/status = {}` and `git/world/served/merge = {}`, while this world's own content library is the player's checkout. It removes them when the library stops being one, or when `git/world/served` leaves an entity that stays. The checkout is this world's when the `core/library` whose `ref` is the world's scope (its own `core/world/status`) has `edits = true`, which core sets from the home fact.
+  - As it adds them, while the player is signed in and not in both-mode, it asks the player's root for the writer proof: `{ ["vault/git/proof"] = {}, ["vault/git"] = {}, Request = {} }`, a child of the carrier, closed once answered. Root pushes the ref named by the nonce of the ticket it joined this world on, to the repository it joined, both from its own record; the request names neither. The world's host checks for that ref before it takes the player's first write (`git/collaborators/authorize`).
 
 ## Sub-mods
 
@@ -25,8 +26,10 @@ Each has its own folder and manifest. Neither declares this mod as its `base`: a
 
 | Schedule | Set | Purpose |
 |----------|-----|---------|
-| Update (client) | `git/world/served` | When a carrier, a `core/library` or the world's status row changes: add both sub-mods to each carrier while the world's own library is the checkout, remove them otherwise |
+| Update (client) | `git/world/served` | When a carrier, a `core/library` or the world's status row changes: add both sub-mods to each carrier while the world's own library is the checkout, and ask for the proof as it adds them, signed in and outside both-mode; remove them otherwise |
 | Update (client) | none | When `git/world/served` is taken off an entity that stays, remove both sub-mods |
+| Update (client) | `git/world/served` | On a changed root `core/player/identity` with a `site_user_id`, outside both-mode: asks for the proof on each carrier carrying both sub-mods and no open proof request |
+| Update (client) | `git/world/served` | On a proof reply under a carrier: closes the request. Runs on the reply's edge, and twice a second while a reply waits |
 
 ## Use
 
@@ -38,6 +41,6 @@ return { base = "git/world/served" }
 ## Notes
 
 - A world whose boot doesn't declare it plays normally, and the asset layer refuses every edit to it.
-- Nothing here watches files or asks git: its sub-mods do, and only on the carrier this mod gave them.
-- `git/collaborators/authorize` is named as the server half's base before it is in this library; until it is, a served world on a server has no write policy and refuses every edit.
-- Suites run headless. `test_served` checks when the carrier carries its sub-mods, not what they do.
+- Nothing here watches files or reads git: its sub-mods do, and only on the carrier this mod gave them. The one thing this mod asks root for is the proof push.
+- The proof is asked each time the sub-mods are added, so a checkout that moves away and back in one join asks again; root pushes the same ref. Signed in and both-mode are read as `git/world/served/status` reads them: root's `core/player/identity` with a `site_user_id`, and root's `core/process` `mode`, from root's own rows only. Signing in while the sub-mods are on asks too. Root's identity also changes while signed in for other reasons (a linked account), so each such change asks again unless a request is open; root pushes the same ref. A reload of this mod asks once, as its first run sees root's identity as changed. The request it spawned survives a reload, since closing it would stop root's push.
+- Suites run headless. `test_served` checks when the carrier carries its sub-mods, not what they do, that the proof is asked once as they are added and closed once answered, and that it is not asked signed out or in both-mode.

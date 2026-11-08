@@ -10,7 +10,8 @@
 --   D6   the next client gets the next free point; a client only watching gets none
 --   D7   a changed connection does not spawn another, and a watcher who joins gets one
 --   D8   the server follows the owner's Transform, in the plane
---   D9   identity comes from the join ticket
+--   D9   identity comes from the join ticket, on the player's connection
+--   D9b  a player spawned again for the same connection is who it was
 --   D10  the spawner's and the mod's files edited: no second player, and it still follows
 --   D11  a client back to watching, or gone, loses its player; others stay; the point is free again
 --   D12  `player/2d` taken off an entity that stays takes off what the mod added
@@ -42,7 +43,7 @@ local function players(world, client_id)
     for _, p in ipairs(world:query({
         with = { "player/2d", "core/net/owner" },
         optional = {
-            "core/player/attest", "camera", "camera/2d", "movement/2d", "animation/sprite", "player",
+            "camera", "camera/2d", "movement/2d", "animation/sprite", "player",
             "camera/third_person", "movement", "animation",
             "core/net/sync", "core/net/sync/Transform", "RigidBody2d", "Collider2d", "LockedAxes2d", "GravityScale2d",
         },
@@ -104,8 +105,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("D3b_the_2d_camera_is_not_overridden_to_client_authority", (sync["camera/2d"] or {}).authority ~= "client", "")
         local sprite = p:has("animation/sprite") and p:get("animation/sprite") or {}
         suite.assert_test("D4a_with_no_sheet_named_its_sprite_names_no_image", sprite.image == nil and sprite.columns == 1, tostring(sprite.image))
-        suite.assert_test("D5a_every_2d_player_gets_identity_a_2d_camera_and_2d_movement",
-            p:has("core/player/attest") and p:has("camera/2d") and p:has("movement/2d")
+        suite.assert_test("D5a_every_2d_player_gets_a_2d_camera_and_2d_movement_and_no_attest_of_its_own",
+            not p:has("core/player/attest") and p:has("camera/2d") and p:has("movement/2d")
                 and p:get("player/2d").user_id == "" and p:get("player/2d").smoothing == 15, "")
         suite.assert_test("D5b_and_nothing_3d",
             not p:has("player") and not p:has("camera/third_person") and not p:has("movement") and not p:has("animation"), "")
@@ -115,7 +116,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         connection(world, 7):patch({ ["core/net/connection"] = { ping = 1 } })
         connection(world, 9):patch({ ["core/net/connection"] = { observer = false } })
         p:patch({ ["core/net/sync/Transform"] = { translation = { x = 10, y = 40, z = 0 } } })
-        p:patch({ ["core/player/attest"] = { state = "attested", user = "u7" } })
+        -- Who the client is lands on its connection, as core/player/attest writes it.
+        commands:entity(connection(world, 7):id()):insert({ ["core/player/attest"] = { state = "attested", user = "u7" } })
         step("changed")
 
     elseif phase == "changed" and clock > 1.0 then
@@ -142,6 +144,17 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("D10b_what_each_has_stays", p:has("camera/2d") and p:has("movement/2d") and p:get("player/2d").user_id == "u7"
             and p:get("camera").distance == 1, "")
         suite.assert_test("D10c_and_it_still_follows", near(pos.x, -30, 0.05), string.format("at %.2f", pos.x))
+        connection(world, 7):patch({ ["core/net/connection"] = { observer = true } })
+        step("away")
+
+    elseif phase == "away" and (#players(world, 7) == 0 or clock > 5) then
+        connection(world, 7):patch({ ["core/net/connection"] = { observer = false } })
+        step("back")
+
+    elseif phase == "back" and ((#players(world, 7) == 1 and clock > 0.5) or clock > 5) then
+        local p = players(world, 7)[1]
+        suite.assert_test("D9b_a_player_spawned_again_is_who_it_was", p ~= nil and p:get("player/2d").user_id == "u7",
+            tostring(p and p:get("player/2d").user_id))
         connection(world, 9):patch({ ["core/net/connection"] = { observer = true } })
         commands:entity(connection(world, 7):id()):despawn()
         step("left")
@@ -163,10 +176,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local gone = false
         for _, e in ipairs(world:query({
             with = { "core/net/owner" },
-            optional = { "core/player/attest", "camera/2d", "movement/2d", "animation/sprite" },
+            optional = { "camera/2d", "movement/2d", "animation/sprite" },
         })) do
             if e:get("core/net/owner").client_id == 8 then
-                gone = not e:has("core/player/attest") and not e:has("camera/2d")
+                gone = not e:has("camera/2d")
                     and not e:has("movement/2d") and not e:has("animation/sprite")
             end
         end

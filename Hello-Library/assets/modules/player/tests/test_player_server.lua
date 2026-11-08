@@ -24,7 +24,7 @@ local function players(world, client_id)
     local out = {}
     for _, p in ipairs(world:query({
         with = { "player", "core/net/owner" },
-        optional = { "abilities/fireball", "abilities/grenade", "Transform", "core/player/attest", "camera/third_person", "movement", "animation", "core/net/sync/Transform", "RigidBody3d" },
+        optional = { "abilities/fireball", "abilities/grenade", "Transform", "camera/third_person", "movement", "animation", "core/net/sync/Transform", "RigidBody3d" },
     })) do
         if p:get("core/net/owner").client_id == client_id then
             out[#out + 1] = p
@@ -72,15 +72,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("S3_the_next_client_gets_the_next_free_point",
             #eight == 1 and eight[1]:get("player").spawn_index == 2, "")
         suite.assert_test("S4_a_client_only_watching_gets_no_player", #players(world, 9) == 0, "")
-        suite.assert_test("S5_every_player_gets_identity_a_camera_movement_and_its_abilities",
-            p:has("core/player/attest") and p:has("camera/third_person") and p:has("movement") and p:has("animation") and p:has("abilities/fireball")
+        suite.assert_test("S5_every_player_gets_a_camera_movement_and_its_abilities_and_no_attest_of_its_own",
+            not p:has("core/player/attest") and p:has("camera/third_person") and p:has("movement") and p:has("animation") and p:has("abilities/fireball")
                 and p:has("abilities/grenade")
                 and p:get("player").user_id == "" and p:get("player").smoothing == 15, "")
         -- a changed connection (the net server patches them) must not spawn a second player
         connection(world, 7):patch({ ["core/net/connection"] = { ping = 1 } })
         connection(world, 9):patch({ ["core/net/connection"] = { observer = false } })
         p:patch({ ["core/net/sync/Transform"] = { translation = { x = 0, y = 5, z = 4 } } })
-        p:patch({ ["core/player/attest"] = { state = "attested", user = "u7" } })
+        -- Who the client is lands on its connection, as core/player/attest writes it.
+        commands:entity(connection(world, 7):id()):insert({ ["core/player/attest"] = { state = "attested", user = "u7" } })
         step("changed")
 
     elseif phase == "changed" and clock > 1.0 then
@@ -110,16 +111,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("removed")
 
     elseif phase == "removed" and clock > 0.3 then
-        local eight = world:query({ with = { "core/net/owner" }, optional = { "core/player/attest", "camera/third_person", "movement", "animation", "abilities/fireball", "abilities/grenade" } })
+        local eight = world:query({ with = { "core/net/owner" }, optional = { "camera/third_person", "movement", "animation", "abilities/fireball", "abilities/grenade" } })
         local gone = true
         for _, e in ipairs(eight) do
             if e:get("core/net/owner").client_id == 8 then
-                gone = not e:has("core/player/attest") and not e:has("camera/third_person") and not e:has("movement")
+                gone = not e:has("camera/third_person") and not e:has("movement")
                     and not e:has("animation")
                     and not e:has("abilities/fireball") and not e:has("abilities/grenade")
             end
         end
-        suite.assert_test("S13_removing_player_takes_off_identity_camera_movement_and_abilities", gone, "")
+        suite.assert_test("S13_removing_player_takes_off_camera_movement_and_abilities", gone, "")
         -- No spawner (its mod stops with it; players stay), then a client joins, then a
         -- new spawner comes: it serves the client already connected, and no one else twice.
         commands:entity(world:query({ with = { "player/spawner" } })[1]:id()):despawn()

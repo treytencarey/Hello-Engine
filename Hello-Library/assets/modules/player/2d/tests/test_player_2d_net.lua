@@ -3,7 +3,7 @@
 -- is a client of it, in the shape a world would be. Its world names no sheet, so no sprite is drawn:
 -- `animation/sprite`'s windowed suite covers what builds one.
 --
---   N1  this client's player arrives and is marked its own, with its identity, and nothing 3D
+--   N1  this client's player arrives and is marked its own, without an attest (who it is stays on the server), and nothing 3D
 --   N2  it starts in game input with its sidebar, its keys bound
 --   N3  its own body turns dynamic, as it arrived with its collider
 --   N4  its camera arrives at 1:1, and an eye is there at that scale
@@ -126,7 +126,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "settling" and since > 1.5 then
         local me = mine(world)
-        suite.assert_test("N1a_this_clients_player_arrives_with_its_identity", me:has("core/player/attest"), "")
+        -- Who the client is stays on the server's connection: the player carries no attest.
+        suite.assert_test("N1a_this_clients_player_arrives_without_an_attest", not me:has("core/player/attest"), "")
         suite.assert_test("N1b_and_nothing_3d",
             not me:has("player") and not me:has("movement") and not me:has("camera/third_person") and not me:has("animation"), "")
         local keys = (me:get("input/game") or {}).movement_2d

@@ -1,5 +1,5 @@
 ---
-depends_on: [core/player/attest, camera/2d, movement/2d, animation/sprite, input, sidebar]
+depends_on: [core/player/attest, core/net, camera/2d, movement/2d, animation/sprite, input, sidebar]
 conflicts_with: [player]
 exposes: [player/2d]
 ---
@@ -18,11 +18,11 @@ The owning client drives its player's Transform, as there is no client predictio
   |-------|---------|---------|
   | `client_id` | the owning client | set by the spawner |
   | `spawn_index` | its spawn point, 0 for the centre | set by the spawner |
-  | `user_id` | who the player is, from its join ticket; `""` until known | `""` |
+  | `user_id` | who the player is, from its join ticket: the `user` of `core/player/attest` on the server's `core/net/connection` with this `client_id`, while it is `attested`; `""` otherwise | `""` |
   | `smoothing` | how fast the server's Transform follows the owner's, per second | 15 |
 
 - What each player gets, by side:
-  - server: `core/player/attest` (identity), `camera/2d`, `movement/2d` and `animation/sprite`;
+  - server: `camera/2d`, `movement/2d` and `animation/sprite`;
   - the owning client: `input`, `input/mode = { mode = "input/game" }` and `sidebar`.
 
   If `player/2d` is removed from an entity that stays, each half removes what it added.
@@ -31,10 +31,10 @@ The owning client drives its player's Transform, as there is no client predictio
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | `player/2d/init` | On an added `player/2d`, add identity, the camera, movement and the sprite |
-| Update (server) | `player/2d/identity` | When the join ticket is verified, set `player/2d.user_id` |
+| First (server) | `player/2d/init` | On an added `player/2d`, add the camera, movement and the sprite |
+| Update (server) | `player/2d/identity` | On a changed `core/player/attest` on a connection, and on an added `player/2d`: set `player/2d.user_id` from the connection with its `client_id`. Who the client is lives on the connection, so a player spawned again for it is who it was |
 | Update (server) | `player/2d/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`), its translation only |
-| First (server) | `player/2d/removed` | When `player/2d` is removed from an entity that stays, remove identity, the camera, movement and the sprite |
+| First (server) | `player/2d/removed` | When `player/2d` is removed from an entity that stays, remove the camera, movement and the sprite |
 | First (client) | `player/2d/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input and the sidebar |
 | First (client) | `player/2d/removed` | When `player/2d` is removed from an entity that stays, remove input and the sidebar |
 
