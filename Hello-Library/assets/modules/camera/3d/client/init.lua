@@ -5,11 +5,20 @@
 -- an eye. It turns off while the player is in another world, goes with the carrier when
 -- it despawns, and is despawned when `camera/3d` is removed.
 --
+-- While something else shows the carrier's view, the carrier has no eye. The screen shows the
+-- camera added last, so the view comes back only with a freshly spawned eye: an old one turned
+-- back on would stay behind the other view.
+--
 -- camera/3d = {
 --     offset = { x = <metres>, y = <metres>, z = <metres> },  -- from the carrier, world space
 -- }
 --
 -- camera/3d/eye = {}
+--
+-- camera/3d/view_of = { entity = <the carrier> }: on an entity showing the carrier's view instead,
+-- put there by the mod that shows it. Client only, never synced.
+--
+-- camera/3d/viewed_by = { <entity>, ... }: on the carrier, kept by the engine
 
 local Quat = require("bevy::math::Quat")
 
@@ -22,6 +31,17 @@ local function follow(cam, c3d)
     }
 end
 
+local function eye(cam, c3d)
+    return {
+        Camera3d = {},
+        Camera = { order = 0, is_active = true },
+        Transform = {},
+        IsDefaultUiCamera = true,
+        ["transform/follow"] = follow(cam, c3d),
+        ["camera/3d/eye"] = {},
+    }
+end
+
 -- `camera` arrives as `{}` and its own mod may load a frame later, so a new eye can be
 -- spawned before `camera` has its defaults. It starts level; filling them is a change to
 -- `camera`, and `camera/3d/aim` turns the eye then.
@@ -31,6 +51,7 @@ app:add_systems(First, {
             added = { "camera/3d", "camera", "core/net/local" },
         },
         with = { "camera/3d", "camera", "core/net/local" },
+        without = { "camera/3d/viewed_by" },
         optional = { "Children" },
     }],
     Query[{
@@ -39,25 +60,50 @@ app:add_systems(First, {
     Commands,
 }, function(carriers, all_eyes, commands)
     for _, e in ipairs(carriers:iter()) do
-        local cam = e:get("camera")
-        local c3d = e:get("camera/3d")
         local eyes = all_eyes:iter_many_mut(e:get("Children") or {})
-        for _, eye in ipairs(eyes) do
-            eye:patch({ Camera = { is_active = true } })
+        for _, old in ipairs(eyes) do
+            old:patch({ Camera = { is_active = true } })
         end
         if #eyes == 0 then
-            local eye = commands:spawn({
-                Camera3d = {},
-                Camera = { order = 0, is_active = true },
-                Transform = {},
-                IsDefaultUiCamera = true,
-                ["transform/follow"] = follow(cam, c3d),
-                ["camera/3d/eye"] = {},
-            }):id()
-            commands:entity(e:id()):add_child(eye)
+            commands:entity(e:id()):add_child(commands:spawn(eye(e:get("camera"), e:get("camera/3d"))):id())
         end
     end
 end):in_set("camera/3d/spawn")
+
+app:add_systems(First, {
+    Query[{
+        added = { "camera/3d/viewed_by" },
+        with = { "camera/3d" },
+        optional = { "Children" },
+    }],
+    Query[{ with = { "camera/3d/eye" } }],
+    Commands,
+}, function(viewed, all_eyes, commands)
+    for _, e in ipairs(viewed:iter()) do
+        for _, old in ipairs(all_eyes:iter_many(e:get("Children") or {})) do
+            commands:entity(old:id()):despawn()
+        end
+    end
+end):in_set("camera/3d/yield")
+
+-- A view moved from one entity to another in one flush can take the list away and bring it back,
+-- so a carrier viewed again by now gets no eye.
+app:add_systems(First, {
+    Query[{
+        removed = { "camera/3d/viewed_by" },
+        with = { "camera/3d", "camera", "core/net/local" },
+        without = { "camera/3d/viewed_by" },
+        optional = { "Children" },
+    }],
+    Query[{ with = { "camera/3d/eye" } }],
+    Commands,
+}, function(released, all_eyes, commands)
+    for _, e in ipairs(released:iter()) do
+        if #all_eyes:iter_many(e:get("Children") or {}) == 0 then
+            commands:entity(e:id()):add_child(commands:spawn(eye(e:get("camera"), e:get("camera/3d"))):id())
+        end
+    end
+end):in_set("camera/3d/resume")
 
 -- The player left for another world: its eye stops rendering this one.
 app:add_systems(First, {
@@ -106,5 +152,8 @@ return {
         ["camera/3d"] = {
             offset = { x = 0, y = 0, z = 0 },
         },
+    },
+    relationships = {
+        ["camera/3d/view_of"] = { target = "camera/3d/viewed_by" },
     },
 }

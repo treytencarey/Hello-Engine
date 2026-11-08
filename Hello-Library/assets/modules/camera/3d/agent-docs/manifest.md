@@ -1,12 +1,14 @@
 ---
 depends_on: [camera, transform/follow]
 conflicts_with: []
-exposes: [camera/3d, camera/3d/eye]
+exposes: [camera/3d, camera/3d/eye, camera/3d/view_of, camera/3d/viewed_by]
 ---
 
 # camera/3d
 
 The eye of a 3D camera. Extends `camera` (`base = "camera"`). The local player's carrier gets an eye: a Camera3d child turned to the carrier's `camera` yaw and pitch and placed at `camera/3d.offset` from the carrier. The eye moves with the carrier but does not turn with it (`transform/follow`). Remote carriers get no eye.
+
+Another mod can show the carrier's view from somewhere else, such as a fixed camera in the map, by putting `camera/3d/view_of` on that entity. While any such view exists the carrier has no eye; when the last one goes, a fresh eye is spawned. The screen shows the camera added last, so only a new eye takes the screen back.
 
 Camera mods that look through a 3D eye (`camera/first_person`, `camera/third_person`) extend this one with `base = "camera/3d"` and write only the offset; they never touch the eye. Switching between them keeps the same eye.
 
@@ -14,12 +16,16 @@ Camera mods that look through a 3D eye (`camera/first_person`, `camera/third_per
 
 - `camera/3d = { offset = { x, y, z } }`: where the eye sits relative to the carrier, in world space. The camera mod extending this one writes it. Missing when added, it defaults to the carrier's origin.
 - `camera/3d/eye = {}`: marks the eye, a child of the carrier. Added and despawned by this mod.
+- `camera/3d/view_of = { entity = <the carrier> }`: on an entity that shows the carrier's view instead. A relationship, declared in the client half's return value: `relationships = { ["camera/3d/view_of"] = { target = "camera/3d/viewed_by" } }`. The mod that shows the view adds it, removes it when the view moves on, and declares the same pair, since either mod may load first. Client only, never synced. When the carrier despawns, the entity loses it.
+- `camera/3d/viewed_by = { <entity>, ... }`: on the carrier, kept by the engine: the entities showing its view, in the order they were added. Added with the first, removed with the last; read only.
 
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `camera/3d/spawn` | On the local carrier, spawn the eye already aimed, or turn the existing eye back on |
+| First | `camera/3d/spawn` | On the local carrier, spawn the eye already aimed, or turn the existing eye back on. Nothing while the carrier has `camera/3d/viewed_by`, so a reload during a view spawns no eye |
+| First | `camera/3d/yield` | When `camera/3d/viewed_by` is added, despawn the carrier's eye |
+| First | `camera/3d/resume` | When `camera/3d/viewed_by` is removed, spawn a fresh eye, already aimed |
 | First | `camera/3d/teardown` | When the player leaves for another world (`core/net/local` removed), turn the eye off |
 | Update | `camera/3d/aim` | When `camera` or `camera/3d` changes, set the eye's `transform/follow` rotation (yaw, then pitch) and offset. The camera mods extending this one order their writers `:before` it |
 
@@ -57,3 +63,4 @@ local eye = eyes:iter_many(player:get("Children") or {})[1]
 - Order every system that writes `camera` or `camera/3d` `:before("camera/3d/aim")`, so the eye turns and moves in the frame the look changes.
 - The server half only chains the base to `camera`. The eye and offset are the client's view and are not synced.
 - The eye is a child, so it despawns with its carrier.
+- A frame of the old view may show on the way back, until the fresh eye is drawn.
