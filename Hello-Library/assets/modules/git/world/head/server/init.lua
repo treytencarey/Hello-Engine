@@ -5,8 +5,6 @@
 --     sha = <the commit this world's tree is on>,
 -- }
 
-local Time = require("bevy::time::Time")
-
 -- Root answers a status request with the checkout's commit (`head`).
 app:add_systems(Update, {
     Query[{
@@ -26,10 +24,11 @@ app:add_systems(Update, {
 end):in_set("git/world/head/state")
 
 -- A status reply names the checkout's commit as `head`; a pull reply names the commit the pull
--- left the checkout on as `sha`.
+-- left the checkout on as `sha`. A reply crosses from root's VM, and a mirrored edge arrives as
+-- surely as a local one, so the reply's own edge is all this runs on.
 app:add_systems(Update, {
-    Query[{ with = { "vault/git/status/reply", "ChildOf" } }],
-    Query[{ with = { "vault/git/pull/reply", "ChildOf" } }],
+    Query[{ added = { "vault/git/status/reply" }, with = { "ChildOf" } }],
+    Query[{ added = { "vault/git/pull/reply" }, with = { "ChildOf" } }],
     Query[{
         with = { Mut["git/world/head"] },
         without = { "WorldMirror" },
@@ -62,17 +61,6 @@ app:add_systems(Update, {
         end
     end
 end):in_set("git/world/head/state")
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: a reply
-    -- still waiting is looked at again twice a second.
-    :run_if({
-        Res[Time],
-        Query[{ ["or"] = { added = { "vault/git/status/reply", "vault/git/pull/reply" } } }],
-        Query[{ any_of = { "vault/git/status/reply", "vault/git/pull/reply" } }],
-    }, function(time, arrived, waiting)
-        local t = time:elapsed_secs()
-        return not arrived:is_empty()
-            or (not waiting:is_empty() and math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
-    end)
 
 -- A player whose upstream holds commits this world lacks asks it to pull. Nothing in the ask is
 -- trusted but its existence: root pulls this world's own branch into its own tree, as a restart

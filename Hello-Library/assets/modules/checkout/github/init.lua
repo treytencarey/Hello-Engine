@@ -13,8 +13,6 @@
 --     detail = <the deploy key's public half, with "needs-deploy-key">,
 -- }
 
-local Time = require("bevy::time::Time")
-
 app:add_systems(Update, {
     Query[{
         added = { "checkout/github" },
@@ -33,9 +31,12 @@ app:add_systems(Update, {
     end
 end):in_set("checkout/github")
 
+-- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so the
+-- reply's own edge is all this runs on.
 app:add_systems(Update, {
     Query[{
-        with = { "vault/git/checkout/reply", "ChildOf" },
+        added = { "vault/git/checkout/reply" },
+        with = { "ChildOf" },
         without = { "RequestFrom", "WorldMirror" },
     }],
     Query[{
@@ -62,17 +63,6 @@ app:add_systems(Update, {
         end
     end
 end):in_set("checkout/github")
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: a reply
-    -- still waiting is looked at again twice a second.
-    :run_if({
-        Res[Time],
-        Query[{ added = { "vault/git/checkout/reply" } }],
-        Query[{ with = { "vault/git/checkout/reply" } }],
-    }, function(time, arrived, waiting)
-        local t = time:elapsed_secs()
-        return not arrived:is_empty()
-            or (not waiting:is_empty() and math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
-    end)
 
 app:add_systems(Update, {
     Query[{

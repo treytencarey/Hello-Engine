@@ -28,7 +28,7 @@ The world's version of a file the player edited, merged into their own checkout.
 | Schedule | Set | Purpose |
 |----------|-----|---------|
 | Update | `git/world/served/merge` | When a carrier is added or an edited library's `core/library/upstream` changes: a request and a record for each held version with no record, and closes the requests and records for versions no longer held |
-| Update | `git/world/served/merge` | On a merge reply under a carrier, or a record 30 s old: sets the record's `status`, a notice for a conflict or a failure, and closes the request. Runs on the reply's edge, and twice a second while a record waits |
+| Update | `git/world/served/merge` | On a merge reply under a carrier, or a record 30 s old: sets the record's `status`, a notice for a conflict or a failure, and closes the request. Runs on the reply's edge, and when a record still waiting reaches 30 s |
 | Update | `git/world/served/merge` | When a record or a `core/library/edit` is added, or a record changes: sets `on` to the record's hash on the edit for each file merged clean |
 | Update | none | When `git/world/served/merge` is taken off an entity that stays: closes its open requests. Its records go with it as its sub-components |
 
@@ -47,7 +47,7 @@ commands:entity(e):insert({ ["git/world/served/merge"] = {} })
 
 - A world root did not start gets no reply: its requests close after 30 s, and the file's record says `failed`.
 - Only libraries marked `edits` are read: the tree the player edits by hand.
-- A reply crosses from root's VM, and an edge that crosses VMs can be missed, so while a record waits this looks again twice a second.
+- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so each reply is read on its own edge; only the 30 s limit runs on the clock.
 - An edit stated after the answer gets `on` too: the record outlives the request.
 - Notices are `git/merge/notice` with a 20 s `notification` timeout.
 - Suites run headless, each with a scratch repository a world root starts on: `test_merge` with a stand-in for core's held state, `test_merge_flow` end to end, with root hosting the authority and a stand-in write policy that allows every write.

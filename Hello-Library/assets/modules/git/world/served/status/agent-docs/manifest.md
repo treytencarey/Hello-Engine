@@ -40,7 +40,7 @@ Git answers the branch-switch case by itself. A `git checkout` rewrites many fil
 | Schedule | Set | Purpose |
 |----------|-----|---------|
 | Update | `git/world/served/status` | While a carrier exists, outside both-mode and while signed in: asks root every 2 s, one request at a time. A request root has not answered in 10 s is closed and asked again |
-| Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, and closes the request. Runs on the reply's edge, and twice a second while a reply waits |
+| Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, and closes the request. Runs on the reply's edge |
 | Update | none | When `git/world/served/status` is taken off an entity that stays: despawns its edits and its open request |
 
 ## Use

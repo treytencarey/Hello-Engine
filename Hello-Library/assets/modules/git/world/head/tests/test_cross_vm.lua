@@ -5,8 +5,7 @@
 -- X1  a reply with no count or pushed ("same") arrives, with neither field
 -- X2  a reply with a count ("behind") arrives, with it
 -- X3  a later reply carries no count from the earlier one
--- X4  a reply whose arrival git/world/head saw before it could use it (its request's parent was
---     not yet a world's head) is used once it can be, with no edge of its own
+-- X4  a reply is used on its own edge, under a world's head; one under no world's head is not
 
 require("modules/core/init.lua")
 require("modules/core/world/creator.lua")
@@ -30,7 +29,7 @@ local seen = helpers.shared_state("GitCrossVmSeen", { notices = 0 })
 local BOOT = [==[
 local seen = require("modules/core/test_helpers.lua").shared_state("GitCrossVmSeen", {})
 
-local early_spawned = false
+local early_spawned, head_spawned = false, false
 
 -- The stand-in has no commit yet, so it asks nothing, and git/world/head loads with it.
 app:add_systems(Startup, { Commands }, function(commands)
@@ -40,7 +39,7 @@ app:add_systems(Startup, { Commands }, function(commands)
 end)
 
 app:add_systems(Update, {
-    Query[{ with = { "zz/cross/early" }, optional = { "git/world/head" } }],
+    Query[{ with = { "zz/cross/early" } }],
     Query[{ with = { Mut["git/world/head"], "zz/cross/standin" } }],
     Query[{ with = { "core/library", "zz/cross/checkout" } }],
     Commands,
@@ -55,11 +54,19 @@ app:add_systems(Update, {
             ChildOf = parent,
         })
     end
-    for _, e in ipairs(early:iter()) do
-        if seen.early_done then
+    if seen.early_head and not head_spawned then
+        head_spawned = true
+        local parent = commands:spawn({ ["zz/cross/early"] = {}, ["git/world/head"] = { sha = "@EARLY" } }):id()
+        commands:spawn({
+            ["vault/git/head"] = {},
+            ["vault/git"] = { sha = "@EARLY" },
+            ["vault/git/head/reply"] = { sha = "@EARLY", relation = "behind", count = 4 },
+            ChildOf = parent,
+        })
+    end
+    if seen.early_done then
+        for _, e in ipairs(early:iter()) do
             commands:entity(e:id()):despawn()
-        elseif seen.early_head and not e:has("git/world/head") then
-            commands:entity(e:id()):insert({ ["git/world/head"] = { sha = "@EARLY" } })
         end
     end
     for _, head in ipairs(heads:iter_mut()) do
@@ -177,7 +184,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     if st.phase == "early_seen" then
         if st.t < 1.5 then return end
-        T("X4_a_reply_is_not_used_before_its_world_head_is_there", seen.notices == 0,
+        T("X4_a_reply_under_no_world_head_is_not_used", seen.notices == 0,
             string.format("%d notice(s): %s", seen.notices, tostring(seen.notice_1)))
         seen.early_head = true
         st.phase, st.t = "late", 0
@@ -186,8 +193,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     if st.phase == "late" then
         if seen.notices < 1 and st.t < 5 then return end
-        T("X4_a_reply_seen_too_early_is_used_once_it_can_be",
-            tostring(seen.notice_1):find("3 commits behind", 1, true) ~= nil,
+        T("X4_a_reply_under_a_world_head_is_used_on_its_edge",
+            seen.notices == 1 and tostring(seen.notice_1):find("4 commits behind", 1, true) ~= nil,
             string.format("%d notice(s): %s", seen.notices, tostring(seen.notice_1)))
         seen.early_done = true
         st.phase, st.t = "cleared", 0

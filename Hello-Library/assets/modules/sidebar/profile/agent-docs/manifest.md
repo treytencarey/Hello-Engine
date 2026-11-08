@@ -31,7 +31,7 @@ The asks are root's requests, children of the carrier, and carry nothing of this
 | Update | `sidebar/profile/restore` | When the sidebar has made a new button an icon, open it if the state says the panel was open |
 | Update | `sidebar/profile/open` | When the button is opened, spawn the panel in the container and save it open |
 | Update | `sidebar/profile/close` | When a button still here is closed, despawn the panel and save it closed |
-| Update, after `sidebar/profile/close` | `sidebar/profile/render` | Build the rows from root's replies, again only when what they say changes. A run condition skips it while the panel is closed, and runs it on a reply or an ask changing, a new scroll area, and twice a second |
+| Update, after `sidebar/profile/close` | `sidebar/profile/render` | Build the rows from root's replies, again only when what they say changes. A run condition skips it while the panel is closed, and runs it on a reply or an ask changing, and a new scroll area |
 
 ## Use
 
@@ -44,7 +44,7 @@ commands:entity(player):insert_if_new({ sidebar = {}, ["sidebar/profile"] = {} }
 
 - Tokens never reach the panel's world: root answers with public facts only (`user = { id, name }`, `login`, `pending`, `user_code`, `verification_uri`, `error`), and the panel writes only the texts it shows. Its suite stubs a reply that also carries a token, and finds it on no other component.
 - A pending sign-in shows on the ask that started it; who is signed in shows on the standing ask, and on the starting ask once root has signed in.
-- A reply crosses from root, and an edge that crosses from another VM can be missed, so while the panel is open it compares what it shows with the replies twice a second, and rebuilds only on a difference.
+- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so the panel compares what it shows with the replies only on their edges, and rebuilds only on a difference.
 - The asks outlive a reload of this mod (`core/script/owner = false`), so a sign-in waiting for the player goes on; a reload opens no second standing ask. A reload keeps the panel open, as `sidebar/profiler` does.
 - No address is opened for the player: there is no approved way for a world to open one yet.
 - `test_profile.lua` runs headless at root with no session held, so the replies are the suite's: it drives the panel with real clicks on the sidebar's button and the rows' buttons.

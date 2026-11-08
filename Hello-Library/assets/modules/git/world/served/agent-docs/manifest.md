@@ -29,7 +29,7 @@ Each has its own folder and manifest. Neither declares this mod as its `base`: a
 | Update (client) | `git/world/served` | When a carrier, a `core/library` or the world's status row changes: add both sub-mods to each carrier while the world's own library is the checkout, and ask for the proof as it adds them, signed in and outside both-mode; remove them otherwise |
 | Update (client) | none | When `git/world/served` is taken off an entity that stays, remove both sub-mods |
 | Update (client) | `git/world/served` | On a changed root `core/player/identity` with a `site_user_id`, outside both-mode: asks for the proof on each carrier carrying both sub-mods and no open proof request |
-| Update (client) | `git/world/served` | On a proof reply under a carrier: closes the request. Runs on the reply's edge, and twice a second while a reply waits |
+| Update (client) | `git/world/served` | On a proof reply under a carrier: closes the request. Runs on the reply's edge |
 
 ## Use
 

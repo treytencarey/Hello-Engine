@@ -15,7 +15,6 @@
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
-local Time = require("bevy::time::Time")
 
 -- What one sign-in's row says. `known`: root has answered the standing ask. `who`: the name root
 -- gave, while signed in. `wish` and `said`: the player's last sign-in or sign-out ask and root's
@@ -535,20 +534,17 @@ app:add_systems(Update, {
         end
     end
 end):in_set("sidebar/profile/render"):after("sidebar/profile/close"):run_if({
-    Res[Time],
     Query[{ with = { "sidebar/profile/view" } }],
     Query[{ added = { "sidebar/panel/scroll" } }],
     Query[{ changed = { "core/player/session/signin/reply" } }],
     Query[{ changed = { "vault/github/signin/reply" } }],
     Query[{ changed = { "core/player/session/signin" } }],
     Query[{ changed = { "vault/github/signin" } }],
-}, function(time, views, scrolls, site_replies, github_replies, site_asks, github_asks)
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: while the
-    -- panel is open it is looked at again twice a second.
-    local t = time:elapsed_secs()
+}, function(views, scrolls, site_replies, github_replies, site_asks, github_asks)
+    -- Root's replies cross from its VM, and a mirrored edge arrives as surely as a local one, so
+    -- their edges are all this waits on.
     return not views:is_empty() and (not scrolls:is_empty() or not site_replies:is_empty()
-        or not github_replies:is_empty() or not site_asks:is_empty() or not github_asks:is_empty()
-        or math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
+        or not github_replies:is_empty() or not site_asks:is_empty() or not github_asks:is_empty())
 end)
 
 return {}

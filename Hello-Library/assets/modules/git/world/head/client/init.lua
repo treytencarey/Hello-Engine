@@ -6,8 +6,6 @@
 -- ran), this half asks the world to pull, with git/world/head/pull. The pull moves the world's
 -- commit, which asks again.
 
-local Time = require("bevy::time::Time")
-
 -- One request per commit the world states. A request for a commit the world has left is closed,
 -- which stops its git process at root.
 app:add_systems(Update, {
@@ -42,8 +40,10 @@ end):in_set("git/world/head/compare")
         return false
     end)
 
+-- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so the
+-- reply's own edge is all this runs on.
 app:add_systems(Update, {
-    Query[{ with = { "vault/git/head/reply", "ChildOf" } }],
+    Query[{ added = { "vault/git/head/reply" }, with = { "ChildOf" } }],
     Query[{ with = { "git/world/head" } }],
     Commands,
 }, function(replies, heads, commands)
@@ -94,16 +94,5 @@ app:add_systems(Update, {
         end
     end
 end):in_set("git/world/head/compare")
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: a reply
-    -- still waiting is looked at again twice a second.
-    :run_if({
-        Res[Time],
-        Query[{ added = { "vault/git/head/reply" } }],
-        Query[{ with = { "vault/git/head/reply" } }],
-    }, function(time, arrived, waiting)
-        local t = time:elapsed_secs()
-        return not arrived:is_empty()
-            or (not waiting:is_empty() and math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
-    end)
 
 return {}

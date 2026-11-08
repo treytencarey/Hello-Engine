@@ -255,9 +255,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if st.phase == "unpushed" then
         if seen.want ~= st.c3 then
             seen.want = st.c3
+            -- R1 left its reply for this commit: only the new one counts.
+            seen["reply_" .. st.c3] = nil
             return
         end
-        if seen["reply_" .. st.c3] == nil and st.t < 30 then return end
+        if (seen["reply_" .. st.c3] == nil or seen.open ~= 0) and st.t < 30 then return end
         if st.t < 1 then return end
         T("R6_commits_you_have_not_pushed_ask_no_pull",
             tostring(seen["reply_" .. st.c3]):find("^ahead") ~= nil and seen.pulls == 1 and seen.notices == 4,

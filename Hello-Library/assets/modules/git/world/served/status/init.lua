@@ -87,9 +87,11 @@ end):in_set("git/world/served/status")
     end)
 
 -- Each scan restates the edits wholesale. A path git still reports moves its `seq` when its op or
--- its `mtime` changed, so a second save of a file that is still dirty goes up too.
+-- its `mtime` changed, so a second save of a file that is still dirty goes up too. A reply crosses
+-- from root's VM, and a mirrored edge arrives as surely as a local one, so the reply's own edge is
+-- all this runs on.
 app:add_systems(Update, {
-    Query[{ with = { "vault/git/status/reply", "ChildOf" } }],
+    Query[{ added = { "vault/git/status/reply" }, with = { "ChildOf" } }],
     Query[{
         with = { "git/world/served/status", Mut["git/world/served/status/scan"] },
         without = { "WorldMirror" },
@@ -168,17 +170,6 @@ app:add_systems(Update, {
         end
     end
 end):in_set("git/world/served/status")
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: a reply
-    -- still waiting is looked at again twice a second.
-    :run_if({
-        Res[Time],
-        Query[{ added = { "vault/git/status/reply" } }],
-        Query[{ with = { "vault/git/status/reply" } }],
-    }, function(time, arrived, waiting)
-        local t = time:elapsed_secs()
-        return not arrived:is_empty()
-            or (not waiting:is_empty() and math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
-    end)
 
 -- git/world/served/status taken off an entity that stays: its edits and its open request go with
 -- it. A despawned carrier takes its children itself.

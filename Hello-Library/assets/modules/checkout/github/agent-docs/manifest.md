@@ -25,7 +25,7 @@ Every checkout provider answers the same way, so the Gateway reads `checkout/ans
 | Schedule | Set | Purpose |
 |----------|-----|---------|
 | Update | `checkout/github` | On an added `checkout/github` with no answer: asks root for the checkout |
-| Update | `checkout/github` | On root's reply under a `checkout/github`: writes `checkout/answer`, and closes the ask. Runs on the reply's edge, and twice a second while a reply waits |
+| Update | `checkout/github` | On root's reply under a `checkout/github`: writes `checkout/answer`, and closes the ask. Runs on the reply's edge |
 | Update | `checkout/github` | On a removed `checkout/github`: closes its ask, which stops root's job, and removes its answer |
 
 ## Use
@@ -49,6 +49,6 @@ end)
 - Removing `checkout/github`, or despawning its entity, cancels: the ask closes and root stops its git process.
 - One request is answered once. To ask again, after a key is registered, despawn the request and spawn a new one.
 - Only the Gateway world root started may ask for a checkout; from anywhere else root answers nothing, or refuses.
-- A reply crosses from root's VM, and an edge that crosses VMs can be missed, so a reply still waiting is looked at again twice a second.
+- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so each reply is read on its own edge.
 - A hot reload asks again for a request still waiting, and nothing for one answered.
 - The suite stands in for root, answering each ask on its request entity.

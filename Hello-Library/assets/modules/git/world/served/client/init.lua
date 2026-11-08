@@ -7,8 +7,6 @@
 --
 -- git/world/served = {}
 
-local Time = require("bevy::time::Time")
-
 -- The world's host lets this player write once it finds the proof ref in the world's repository.
 -- Root pushes it for the world it joined, naming nothing from here.
 local function push(commands, carrier)
@@ -125,9 +123,12 @@ app:add_systems(Update, {
     end
 end)
 
+-- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so the
+-- reply's own edge is all this runs on.
 app:add_systems(Update, {
     Query[{
-        with = { "vault/git/proof/reply", "ChildOf" },
+        added = { "vault/git/proof/reply" },
+        with = { "ChildOf" },
         without = { "RequestFrom", "WorldMirror" },
     }],
     Query[{ with = { "git/world/served" } }],
@@ -141,16 +142,5 @@ app:add_systems(Update, {
         end
     end
 end):in_set("git/world/served")
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: a reply
-    -- still waiting is looked at again twice a second.
-    :run_if({
-        Res[Time],
-        Query[{ added = { "vault/git/proof/reply" } }],
-        Query[{ with = { "vault/git/proof/reply" } }],
-    }, function(time, arrived, waiting)
-        local t = time:elapsed_secs()
-        return not arrived:is_empty()
-            or (not waiting:is_empty() and math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
-    end)
 
 return {}

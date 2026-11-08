@@ -149,21 +149,17 @@ app:add_systems(First, {
         end
     end
 end):in_set("git/collaborators/authorize"):after("core/asset/server_ops"):before("core/asset/server_verdict")
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: a reply
-    -- still waiting is looked at again twice a second.
+    -- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so the
+    -- reply's own edge is enough to settle what waits on it.
     :run_if({
-        Res[Time],
         Query[{
             ["or"] = {
                 added = { "core/asset/write", "vault/git/proof/reply" },
                 removed = { "git/collaborators/authorize/proof" },
             },
         }],
-        Query[{ with = { "vault/git/proof/reply" } }],
-    }, function(time, touched, waiting)
-        local t = time:elapsed_secs()
+    }, function(touched)
         return not touched:is_empty()
-            or (not waiting:is_empty() and math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
     end)
 
 -- A new attestation on a connection is a new join: the proof named the old nonce, so it goes, and its check with it.

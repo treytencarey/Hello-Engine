@@ -1,15 +1,16 @@
 -- test_world_head_flow.lua: git/world/head from the world stating its commit to its pull, in the
 -- shape it runs in: a server world on one checkout, and a player's client world, joined to it,
--- on a clone the player pushed from. Root starts both and compares with real git. Root's pull is
--- not built yet, so this suite, at root, does the pull and answers it in the shape it expects,
--- `vault/git/pull/reply { status, sha }`.
+-- on a clone the player pushed from. Root starts both, compares and pulls with real git. The
+-- world's tree is where this Gateway checks a branch out, as root pulls only such a tree; it and
+-- the player's checkout are clones of a local origin, so nothing reaches GitHub.
 --
 -- J1  the world states the commit its tree is on
 -- J2  ...and its player gets it
 -- J3  the player, whose upstream holds a commit the world lacks, is told so, and the world is
 --     asked to pull, naming its commit
 -- J4  the ask reaches root as a pull of the server world
--- J5  the pull moves the stated commit, on the server and for the player
+-- J5  the pull moves the world's tree on disk, and the stated commit, on the server and for the
+--     player
 -- J6  the player is asked again about the new commit: nothing more to say
 
 require("modules/core/init.lua")
@@ -25,12 +26,16 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 end)
 
-local SCOPE = "zz:world-head-flow"
-local WROOT = "test_fixtures/zz-world-head-flow/world"
+-- Root pulls only a tree in the place this Gateway checks a world's branch out to.
+local SCOPE = "zzheadflow/zzrepo:main"
+local OWNER = ".hello/worktrees/zzheadflow"
+local W = OWNER .. "/zzrepo/main"
+local WROOT = "../" .. W
+local FIXTURE = "assets/test_fixtures/zz-world-head-flow"
 local CROOT = "test_fixtures/zz-world-head-flow/player"
-local W = "assets/" .. WROOT
 local C = "assets/" .. CROOT
-local BARE = "assets/test_fixtures/zz-world-head-flow/remote.git"
+local SEED = FIXTURE .. "/seed"
+local BARE = FIXTURE .. "/remote.git"
 local OUT = "assets/test_fixtures/zz-world-head-flow.out"
 
 local seen = helpers.shared_state("GitWorldHeadFlowSeen", { notices = 0, pulls = 0 })
@@ -100,8 +105,18 @@ end
 
 local function after(fn) queue[#queue].after = fn end
 
+local function read(path)
+    local ok, text = pcall(read_file_bytes, path)
+    return ok and text or nil
+end
+
+local function clear()
+    pcall(os.remove_dir, OWNER)
+    pcall(os.remove_dir, FIXTURE)
+end
+
 local function finish()
-    pcall(os.remove_dir, "assets/test_fixtures/zz-world-head-flow")
+    clear()
     pcall(os.remove, OUT)
     suite.finish("GIT_WORLD_HEAD_FLOW")
     st.phase = "done"
@@ -146,18 +161,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if busy() then return end
 
     if st.phase == "clean" then
-        pcall(os.remove_dir, "assets/test_fixtures/zz-world-head-flow")
+        clear()
         queue[#queue + 1] = { args = { "init", "-q", "--bare", "-b", "main", BARE } }
-        queue[#queue + 1] = { args = { "init", "-q", "-b", "main", W } }
+        queue[#queue + 1] = { args = { "init", "-q", "-b", "main", SEED } }
+        write(SEED .. "/assets/modules/world/boot/server/init.lua", SERVER_BOOT)
         for n = 1, 3 do
-            write(W .. "/assets/f.txt", "v" .. n .. "\n")
-            git(W, "add", "-A")
-            git(W, "commit", "-q", "--no-verify", "-m", "c" .. n)
+            write(SEED .. "/assets/f.txt", "v" .. n .. "\n")
+            git(SEED, "add", "-A")
+            git(SEED, "commit", "-q", "--no-verify", "-m", "c" .. n)
         end
-        git(W, "rev-parse", "HEAD")
+        git(SEED, "rev-parse", "HEAD")
         after(function(text) st.c3 = text:match("^(%x+)") end)
-        git(W, "remote", "add", "origin", "../remote.git")
-        git(W, "push", "-q", "-u", "origin", "main")
+        git(SEED, "remote", "add", "origin", "../remote.git")
+        git(SEED, "push", "-q", "-u", "origin", "main")
+        queue[#queue + 1] = { args = { "clone", "-q", "-c", "core.autocrlf=false", BARE, W } }
         queue[#queue + 1] = { args = { "clone", "-q", BARE, C } }
         git(C, "remote", "set-url", "origin", "../remote.git")
         -- The player's commit, pushed while the world ran.
@@ -171,7 +188,6 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     end
 
     if st.phase == "boot" then
-        write_file_bytes(W .. "/assets/modules/world/boot/server/init.lua", SERVER_BOOT)
         commands:spawn({ ["core/world/instance"] = {
             mode = "server", scope_key = SCOPE, asset_root = WROOT,
         }, ["core/net/sync"] = false })
@@ -230,13 +246,6 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("%d pull request(s) at root, naming %s, from VM %s (the server world is VM %s)",
                 #st.pulls, tostring(p.sha), tostring(p.from), tostring(server_vm)))
         if #st.pulls < 1 then return finish() end
-        git(W, "pull", "-q", "--ff-only")
-        st.phase, st.t = "pulled", 0
-        return
-    end
-
-    if st.phase == "pulled" then
-        commands:entity(st.pulls[1].id):insert({ ["vault/git/pull/reply"] = { status = "updated", sha = st.c4 } })
         st.phase, st.t = "moved", 0
         return
     end
@@ -244,9 +253,19 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if st.phase == "moved" then
         if (seen.client_stated ~= st.c4 or seen["reply_" .. st.c4] == nil) and st.t < 15 then return end
         if st.t < 1 then return end
-        T("J5_the_pull_moves_the_stated_commit", seen.server_stated == st.c4 and seen.client_stated == st.c4,
-            string.format("the server states %s, the player has %s, the pull left the tree on %s",
-                tostring(seen.server_stated), tostring(seen.client_stated), tostring(st.c4)))
+        git(W, "rev-parse", "HEAD")
+        after(function(text) st.tree = text:match("^(%x+)") end)
+        st.phase = "on_disk"
+        return
+    end
+
+    if st.phase == "on_disk" then
+        T("J5_the_pull_moves_the_tree_and_the_stated_commit",
+            st.tree == st.c4 and read(W .. "/assets/f.txt") == "v4\n"
+                and seen.server_stated == st.c4 and seen.client_stated == st.c4,
+            string.format("the tree is on %s with f.txt %q; the server states %s, the player has %s; the player pushed %s",
+                tostring(st.tree), tostring(read(W .. "/assets/f.txt")), tostring(seen.server_stated),
+                tostring(seen.client_stated), tostring(st.c4)))
         T("J6_the_player_is_asked_again_and_told_nothing_more",
             tostring(seen["reply_" .. st.c4]):find("^same pushed=nil") ~= nil and seen.notices == 1 and seen.pulls == 1,
             string.format("reply %s, %d notice(s), %d pull ask(s)", tostring(seen["reply_" .. st.c4]), seen.notices, seen.pulls))

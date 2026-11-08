@@ -155,18 +155,18 @@ app:add_systems(Update, {
         end
     end
 end):in_set("git/world/served/merge")
-    -- A reply crosses from root, and an edge that crosses from another VM can be missed: while a
-    -- record waits for its answer, this looks again twice a second, which also runs its timeout.
+    -- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so this
+    -- runs on the reply's edge, and otherwise only when a record still waiting reaches its 30 s.
     :run_if({
         Res[Time],
         Query[{ added = { "vault/git/merge/reply" } }],
         Query[{ with = { "git/world/served/merge/result" } }],
     }, function(time, arrived, records)
         if not arrived:is_empty() then return true end
-        local t = time:elapsed_secs()
-        if math.floor(t * 2) == math.floor((t - time:delta_secs()) * 2) then return false end
+        local now = time:elapsed_secs()
         for _, row in ipairs(records:iter()) do
-            if row:get("git/world/served/merge/result").status == nil then return true end
+            local record = row:get("git/world/served/merge/result")
+            if record.status == nil and now - record.asked_at >= 30 then return true end
         end
         return false
     end)

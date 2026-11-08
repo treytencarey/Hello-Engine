@@ -40,7 +40,7 @@ Root's answer settles every write waiting for that connection: `proved` allows t
 |----------|-----|---------|
 | First | `git/collaborators/authorize` | On an added `git/collaborators/authorize`: marks the carrier `core/asset/authorizer` |
 | First | none | When `git/collaborators/authorize` leaves an entity that stays: takes the marker off |
-| First | `git/collaborators/authorize` | After `core/asset/server_ops`, before `core/asset/server_verdict`: reads root's answers on its checks, asking again on an early `absent`, then answers each waiting write or asks root. Runs on a new write, a reply or a removed record, and twice a second while a reply waits |
+| First | `git/collaborators/authorize` | After `core/asset/server_ops`, before `core/asset/server_verdict`: reads root's answers on its checks, asking again on an early `absent`, then answers each waiting write or asks root. Runs on a new write, a reply or a removed record |
 | Update | `git/collaborators/authorize` | After `core/player/attest`: on a changed attestation, removes a record for another nonce, and its open check |
 
 ## Use
