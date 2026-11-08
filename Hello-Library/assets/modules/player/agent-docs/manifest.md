@@ -1,5 +1,5 @@
 ---
-depends_on: [core/player/attest, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/file_browser, player/vr]
+depends_on: [core/player/attest, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/profile, sidebar/file_browser, player/vr]
 conflicts_with: []
 exposes: [player]
 ---
@@ -23,7 +23,7 @@ The owning client drives its player's Transform, as there is no client predictio
 
 - What each player gets, by side. Names are written in the code:
   - server: `core/player/attest` (identity), `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for), `ai/noisemaker` (for them to hear), `sidebar/file_browser` (the file browser panel, synced to its owner: a panel with server work is the server's to add) and `player/vr` (the VR stack, which does nothing until a headset is tracking);
-  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, and its `RigidBody3d` switched to `Dynamic`.
+  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), and its `RigidBody3d` switched to `Dynamic`.
 
   If `player` is removed from an entity that stays, each half removes what it added.
 

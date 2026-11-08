@@ -754,8 +754,13 @@ app:add_systems(Update, {
             if count(world, name) > 0 then left[#left + 1] = name end
         end
         T("U1_removing_the_carrier_leaves_no_entity_or_component", #left == 0, table.concat(left, " "))
-        T("U2_the_sidebar_stays", count(world, "sidebar/bar") == 1 and count(world, "sidebar/button") == 0,
-            string.format("bars %d buttons %d", count(world, "sidebar/bar"), count(world, "sidebar/button")))
+        -- Other panels' buttons stay: `player/client` adds more panels than this one.
+        local titled = 0
+        for _, b in ipairs(world:query({ with = { "sidebar/button" } })) do
+            if b:get("sidebar/button").title == "Profiler" then titled = titled + 1 end
+        end
+        T("U2_the_sidebar_stays", count(world, "sidebar/bar") == 1 and titled == 0,
+            string.format("bars %d profiler buttons %d", count(world, "sidebar/bar"), titled))
         local script_left = false
         for _, row in ipairs(world:query({ with = { "core/script" } })) do
             local entry = row:get("core/script").entry
