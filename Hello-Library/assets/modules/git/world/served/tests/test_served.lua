@@ -1,14 +1,15 @@
 -- --host
--- git/world/served on a client: its carrier carries git/status only while this world's own content
--- library is the player's checkout (`edits`, which core sets from the home fact). No home fact is
--- published here, so git/status is the fact under test, not what it does.
+-- git/world/served on a client: its carrier carries its sub-mods git/world/served/status and
+-- git/world/served/merge only while this world's own content library is the player's checkout
+-- (`edits`, which core sets from the home fact). No home fact is published here, so the two
+-- components are the fact under test, not what they do.
 --
 -- S1  the checkout was already this world's when the carrier arrived: the first run catches up
--- S2  the checkout moving away takes git/status off
--- S3  ...and coming back puts it back
+-- S2  the checkout moving away takes both off
+-- S3  ...and coming back puts them back
 -- S4  another scope's library being edited is not this world's checkout
--- S5  a reload of the mod keeps git/status on, added once
--- S6  git/world/served taken off an entity that stays takes git/status with it
+-- S5  a reload of the mod keeps both on, added once
+-- S6  git/world/served taken off an entity that stays takes both with it
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -37,12 +38,15 @@ app:add_systems(Startup, { Commands }, function(commands)
 end)
 
 local added = 0
-app:add_systems(First, { Query[{ added = { "git/status" } }] }, function(rows)
-    added = added + #rows:iter()
+app:add_systems(First, {
+    Query[{ added = { "git/world/served/status" } }],
+    Query[{ added = { "git/world/served/merge" } }],
+}, function(status_rows, merge_rows)
+    added = added + #status_rows:iter() + #merge_rows:iter()
 end):in_set("zz/served_count")
 
 local function carrier(world)
-    return world:query({ with = { "zz/served/carrier" }, optional = { "git/status" } })[1]
+    return world:query({ with = { "zz/served/carrier" }, optional = { "git/world/served/status", "git/world/served/merge" } })[1]
 end
 
 local function own(world)
@@ -54,7 +58,8 @@ local phase, clock = "carrier", 0
 app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local c = carrier(world)
-    local watching = c ~= nil and c:has("git/status")
+    local watching = c ~= nil and c:has("git/world/served/status") and c:has("git/world/served/merge")
+    local stopped = c ~= nil and not c:has("git/world/served/status") and not c:has("git/world/served/merge")
     local function step(next_phase) phase, clock = next_phase, 0 end
     local function edits(on)
         local lib = own(world)
@@ -70,19 +75,19 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "s1" and (watching or clock > 5) then
         T("S1_already_the_checkout_on_arrival_is_caught_up", watching,
-            "no git/status on the carrier after it arrived in a world whose tree is the checkout")
+            "the carrier lacks its sub-mods after it arrived in a world whose tree is the checkout")
         edits(false)
         step("s2")
 
-    elseif phase == "s2" and (not watching or clock > 5) then
-        T("S2_the_checkout_moving_away_takes_it_off", not watching,
-            "git/status must go when this world's tree stops being the checkout")
+    elseif phase == "s2" and (stopped or clock > 5) then
+        T("S2_the_checkout_moving_away_takes_it_off", stopped,
+            "both must go when this world's tree stops being the checkout")
         edits(true)
         step("s3")
 
     elseif phase == "s3" and (watching or clock > 5) then
         T("S3_the_checkout_coming_back_puts_it_back", watching,
-            "git/status must come back with the checkout")
+            "both must come back with the checkout")
         edits(false)
         commands:spawn({
             ["core/library"] = { ref = OTHER, root = "test_fixtures/zz_served_other", order = 6, edits = true },
@@ -91,7 +96,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("s4")
 
     elseif phase == "s4" and clock > 1 then
-        T("S4_another_scopes_edited_library_is_not_this_worlds", not watching,
+        T("S4_another_scopes_edited_library_is_not_this_worlds", stopped,
             "a library edited under another scope made this world watch")
         edits(true)
         step("s5 on")
@@ -107,9 +112,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:entity(c:id()):remove("git/world/served")
         step("s6")
 
-    elseif phase == "s6" and (not watching or clock > 5) then
-        T("S6_taking_the_carrier_off_takes_git_status", not watching,
-            "git/status stayed on an entity that is no longer git/world/served's")
+    elseif phase == "s6" and (stopped or clock > 5) then
+        T("S6_taking_the_carrier_off_takes_git_status", stopped,
+            "a sub-mod stayed on an entity that is no longer git/world/served's")
         phase = "done"
         suite.finish("GIT_WORLD_SERVED")
     end

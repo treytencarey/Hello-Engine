@@ -1,5 +1,6 @@
--- test_status.lua: git/status in a client world root starts on a repository this suite makes, with
--- root answering each scan with real git. The world's boot puts git/status on an entity of its own.
+-- test_status.lua: git/world/served/status in a client world root starts on a repository this suite
+-- makes, with root answering each scan with real git. The world's boot puts git/world/served/status
+-- on an entity of its own, and root shares a signed-in identity.
 --
 -- S1  an edited tracked file is a `write` edit and an untracked one a `create`, asset relative
 -- S2  a second save of the edited file, still dirty: its `seq` moves, and the other's stays
@@ -20,6 +21,11 @@ local T = suite.assert_test
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({
+        ["core/player/identity"] = { site_user_id = "zz-user" },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
 end)
 
 local ROOT = "test_fixtures/zz-status"
@@ -35,7 +41,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     seen.booted = true
     -- the launch folder, where this library's mods are
     commands:spawn({ ["core/library"] = { ref = "zz:launch", root = "", order = 2 }, ["core/net/sync"] = false })
-    commands:spawn({ ["git/status"] = {}, ["zz/status/carrier"] = {}, ["core/net/sync"] = false })
+    commands:spawn({ ["git/world/served/status"] = {}, ["zz/status/carrier"] = {}, ["core/net/sync"] = false })
 end)
 
 local last = nil

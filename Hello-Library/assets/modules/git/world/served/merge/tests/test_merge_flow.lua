@@ -2,8 +2,8 @@
 -- world's tree, and starts a client world on the player's checkout, a git repository whose
 -- committed files match what the authority started from. The authority's copy moves on, then the
 -- player saves their own change. From there the path is the real one: the write comes back stale,
--- core holds the authority's version, git/merge asks root, root merges into the checkout, and the
--- result goes up. The player's edit is a stand-in for git/status.
+-- core holds the authority's version, git/world/served/merge asks root, root merges into the
+-- checkout, and the result goes up. The player's edit is a stand-in for git/world/served/status.
 --
 -- F1  edits to different lines: the merged file reaches the authority with both changes, and the
 --     checkout holds it too
@@ -19,7 +19,6 @@ require("modules/core/mod_registry/init.lua")
 
 local helpers = require("modules/core/test_helpers.lua")
 local Proto = require("modules/core/asset/shared.lua")
-local AssetSrv = require("modules/core/asset/server/init.lua")
 
 local suite = helpers.create_suite("GitMergeFlowSuite")
 local T = suite.assert_test
@@ -41,10 +40,28 @@ local BIN_BASE, BIN_MINE = "\0\1\2 committed map", "\0\1\2 my edited map"
 
 local seen = helpers.shared_state("GitMergeFlowSeen", { notices = 0 })
 
-AssetSrv.set_write_authorizer(function() return "allow" end)
+-- The authority's write policy, as a mod: it allows every write.
+helpers.make_fixture("modules/test_fixtures/zz_merge_flow_authz/init.lua", [[
+app:add_systems(First, { Commands, Query[{ added = { "test_fixtures/zz_merge_flow_authz" } }] }, function(commands, carriers)
+    for _, c in ipairs(carriers:iter()) do
+        commands:entity(c:id()):insert({ ["core/asset/authorizer"] = {} })
+    end
+end)
+
+app:add_systems(First, {
+    Commands, Query[{ added = { "core/asset/write" }, without = { "RequestFrom", "WorldMirror" } }],
+}, function(commands, asks)
+    for _, ask in ipairs(asks:iter()) do
+        commands:entity(ask:id()):insert({ ["core/asset/write/reply"] = { verdict = "allow" } })
+    end
+end):in_set("test_fixtures/zz_merge_flow_authz"):after("core/asset/server_ops"):before("core/asset/server_verdict")
+
+return {}
+]])
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({ ["test_fixtures/zz_merge_flow_authz"] = {}, ["core/net/sync"] = false })
 end)
 
 local BOOT = [==[
@@ -60,12 +77,12 @@ app:add_systems(Startup, { Commands }, function(commands)
         },
         ["core/net/sync"] = false,
     })
-    commands:spawn({ ["git/merge"] = {} })
+    commands:spawn({ ["git/world/served/merge"] = {} })
 end)
 
 app:add_systems(Update, {
     Query[{ added = { "git/merge/notice" } }],
-    Query[{ with = { "git/merge/result" } }],
+    Query[{ with = { "git/world/served/merge/result" } }],
     Query[{ with = { "core/library", "core/library/upstream" } }],
     Commands,
 }, function(notices, records, libraries, commands)
@@ -82,7 +99,7 @@ app:add_systems(Update, {
     end
     local list = {}
     for _, e in ipairs(records:iter()) do
-        local r = e:get("git/merge/result")
+        local r = e:get("git/world/served/merge/result")
         list[#list + 1] = tostring(r.key) .. "=" .. tostring(r.status)
     end
     table.sort(list)
@@ -133,6 +150,7 @@ end
 local function finish()
     pcall(os.remove_dir, "assets/" .. ROOT)
     pcall(os.remove, OUT)
+    pcall(os.remove_dir, "assets/modules/test_fixtures/zz_merge_flow_authz")
     clear_held()
     suite.finish("GIT_MERGE_FLOW")
     st.phase = "done"

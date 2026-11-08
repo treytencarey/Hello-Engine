@@ -1,9 +1,10 @@
--- git/status: the player's edits to this world's checkout, read from git and stated as core's
--- `core/library/edit`, one per changed file, which core uploads. Root runs git; this world asks
--- with a `vault/git/status` request and reads the answer.
+-- git/world/served/status: the player's edits to this world's checkout, read from git and stated
+-- as core's `core/library/edit`, one per changed file, which core uploads. Root runs git; this
+-- world asks with a `vault/git/status` request and reads the answer. A sub-mod of git/world/served,
+-- which adds and removes it.
 --
--- git/status = {}
--- git/status/scan = {
+-- git/world/served/status = {}
+-- git/world/served/status/scan = {
 --     asked_at = <this world's clock, in seconds, when the last request was asked>,
 --     head = <the checkout's commit at the last scan>,
 --     ops = {
@@ -22,37 +23,67 @@ local Time = require("bevy::time::Time")
 app:add_systems(Update, {
     Res[Time],
     Query[{
-        with = { "git/status" },
+        with = { "git/world/served/status" },
         without = { "WorldMirror" },
-        optional = { Mut["git/status/scan"], "Children" },
+        optional = { Mut["git/world/served/status/scan"], "Children" },
     }],
     Query[{ with = { "vault/git/status", "Request" } }],
     Commands,
 }, function(time, carriers, asks, commands)
     local now = time:elapsed_secs()
     for _, carrier in ipairs(carriers:iter_mut()) do
-        local scan = carrier:get_mut("git/status/scan")
+        local scan = carrier:get_mut("git/world/served/status/scan")
         local open = asks:iter_many(carrier:get("Children") or {})[1]
         if open == nil and (scan == nil or now - scan.asked_at >= 2) then
             if scan == nil then
-                commands:entity(carrier:id()):insert({ ["git/status/scan"] = { asked_at = now, ops = {} } })
+                commands:entity(carrier:id()):insert({
+                    ["git/world/served/status/scan"] = { asked_at = now, ops = {} },
+                })
             else
                 scan.asked_at = now
             end
             commands:spawn({ ["vault/git/status"] = {}, ["vault/git"] = {}, Request = {}, ChildOf = carrier:id() })
         elseif open ~= nil and (scan == nil or now - scan.asked_at > 10) then
             commands:entity(open:id()):despawn()
-            print("[GIT/STATUS] root did not answer a status request in 10 s: asking again")
+            print("[GIT/WORLD/SERVED/STATUS] root did not answer a status request in 10 s: asking again")
         end
     end
-end):in_set("git/status")
+end):in_set("git/world/served/status")
     :run_if({
         Query[{
-            with = { "git/status" },
+            with = { "git/world/served/status" },
             without = { "WorldMirror" },
         }],
     }, function(carriers)
         return not carriers:is_empty()
+    end)
+    -- In both-mode this process serves the world from the same checkout, so there is nothing to
+    -- send. Only root's statement counts: any world can share a `core/process` of its own.
+    :run_if({
+        Query[{
+            with = { "core/process" },
+            optional = { "WorldMirror" },
+        }],
+    }, function(processes)
+        for _, row in ipairs(processes:iter()) do
+            local from = row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0
+            if from == 0 and row:get("core/process").mode == "both" then return false end
+        end
+        return true
+    end)
+    -- Signed out, an edit can only be refused upstream, so nothing is asked until the player signs
+    -- in. Root's identity carries `site_user_id` while they are.
+    :run_if({
+        Query[{
+            with = { "core/player/identity" },
+            optional = { "WorldMirror" },
+        }],
+    }, function(identities)
+        for _, row in ipairs(identities:iter()) do
+            local from = row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0
+            if from == 0 and row:get("core/player/identity").site_user_id ~= nil then return true end
+        end
+        return false
     end)
 
 -- Each scan restates the edits wholesale. A path git still reports moves its `seq` when its op or
@@ -60,7 +91,7 @@ end):in_set("git/status")
 app:add_systems(Update, {
     Query[{ with = { "vault/git/status/reply", "ChildOf" } }],
     Query[{
-        with = { "git/status", Mut["git/status/scan"] },
+        with = { "git/world/served/status", Mut["git/world/served/status/scan"] },
         without = { "WorldMirror" },
         optional = { "Children" },
     }],
@@ -72,7 +103,7 @@ app:add_systems(Update, {
         if carrier then
             local reply = row:get("vault/git/status/reply")
             if reply.status == "ok" then
-                local scan = carrier:get_mut("git/status/scan")
+                local scan = carrier:get_mut("git/world/served/status/scan")
                 local before = scan.ops or {}
                 -- Git refuses to switch branches over a dirty file whose content differs, so a path
                 -- that leaves the list while HEAD moved was committed or is the other branch's: no edit.
@@ -93,7 +124,7 @@ app:add_systems(Update, {
                         if was == nil or was.op ~= now.op or was.mtime ~= now.mtime then
                             fact.seq = (fact.seq or 0) + 1
                             fact.deleted = now.op == "delete"
-                            print("[GIT/STATUS] " .. tostring(now.op) .. ": " .. path)
+                            print("[GIT/WORLD/SERVED/STATUS] " .. tostring(now.op) .. ": " .. path)
                         end
                     elseif was ~= nil and not moved then
                         -- A revert leaves git's list and is still the person's change: the committed
@@ -102,11 +133,11 @@ app:add_systems(Update, {
                         stated[path] = true
                         fact.seq = (fact.seq or 0) + 1
                         fact.deleted = was.op == "create"
-                        print("[GIT/STATUS] back to the committed version: " .. path)
+                        print("[GIT/WORLD/SERVED/STATUS] back to the committed version: " .. path)
                     else
                         commands:entity(edit:id()):despawn()
                         if moved then
-                            print("[GIT/STATUS] no longer dirty after HEAD moved (not an edit): " .. path)
+                            print("[GIT/WORLD/SERVED/STATUS] no longer dirty after HEAD moved (not an edit): " .. path)
                         end
                     end
                 end
@@ -120,23 +151,23 @@ app:add_systems(Update, {
                             ["core/script/owner"] = false,
                             ChildOf = carrier:id(),
                         })
-                        print("[GIT/STATUS] " .. tostring(now.op) .. ": " .. path)
+                        print("[GIT/WORLD/SERVED/STATUS] " .. tostring(now.op) .. ": " .. path)
                     end
                 end
                 if moved then
-                    print(string.format("[GIT/STATUS] HEAD moved %s -> %s: files it changed are not edits",
+                    print(string.format("[GIT/WORLD/SERVED/STATUS] HEAD moved %s -> %s: files it changed are not edits",
                         scan.head:sub(1, 7), reply.head:sub(1, 7)))
                 end
                 scan.head = reply.head or scan.head
                 scan.ops = ops
             else
-                print(string.format("[GIT/STATUS] root answered %s: %s", tostring(reply.status),
+                print(string.format("[GIT/WORLD/SERVED/STATUS] root answered %s: %s", tostring(reply.status),
                     tostring(reply.message)))
             end
             commands:entity(row:id()):despawn()
         end
     end
-end):in_set("git/status")
+end):in_set("git/world/served/status")
     -- A reply crosses from root, and an edge that crosses from another VM can be missed: a reply
     -- still waiting is looked at again twice a second.
     :run_if({
@@ -149,11 +180,11 @@ end):in_set("git/status")
             or (not waiting:is_empty() and math.floor(t * 2) ~= math.floor((t - time:delta_secs()) * 2))
     end)
 
--- git/status taken off an entity that stays: its edits and its open request go with it. A
--- despawned carrier takes its children itself.
+-- git/world/served/status taken off an entity that stays: its edits and its open request go with
+-- it. A despawned carrier takes its children itself.
 app:add_systems(Update, {
     Query[{
-        removed = { "git/status" },
+        removed = { "git/world/served/status" },
         optional = { "Children" },
     }],
     Query[{ any_of = { "core/library/edit", "vault/git/status" } }],
@@ -164,6 +195,6 @@ app:add_systems(Update, {
             commands:entity(child:id()):try_despawn()
         end
     end
-end):in_set("git/status/removed")
+end)
 
 return {}

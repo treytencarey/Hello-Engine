@@ -1,4 +1,4 @@
--- test_merge.lua: git/merge asks root to merge each held version into the player's checkout, and
+-- test_merge.lua: git/world/served/merge asks root to merge each held version into the player's checkout, and
 -- root merges with real git in a repository this suite makes, the tree of a client world root
 -- starts. Core's held state is a stand-in the suite moves, and so is the player's edit.
 --
@@ -13,6 +13,7 @@
 -- M8  an edit stated after the answer names the held version too
 -- M9  a world root did not start is never answered: after the timeout its record says failed, a
 --     notice says so, and the request is closed
+-- M10 git/world/served/merge taken off an entity that stays: its open request and its record go
 
 require("modules/core/init.lua")
 require("modules/core/world/creator.lua")
@@ -56,7 +57,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     for _, path in ipairs({ "clean.txt", "clash.txt", "blob.bin", "mine.bin" }) do
         commands:spawn({ ["core/library/edit"] = { path = path, seq = 1 }, ["core/net/sync"] = false })
     end
-    commands:spawn({ ["git/merge"] = {} })
+    commands:spawn({ ["git/world/served/merge"] = {} })
 end)
 
 app:add_systems(Update, {
@@ -86,9 +87,9 @@ end)
 
 app:add_systems(Update, {
     Query[{ added = { "git/merge/notice" } }],
-    Query[{ added = { "git/merge/job" }, with = { "vault/git/merge", "vault/git" } }],
-    Query[{ with = { "git/merge/job" } }],
-    Query[{ with = { "git/merge/result" } }],
+    Query[{ added = { "vault/git/merge" }, with = { "vault/git" }, without = { "RequestFrom" } }],
+    Query[{ with = { "vault/git/merge", "vault/git" }, without = { "RequestFrom" } }],
+    Query[{ with = { "git/world/served/merge/result" } }],
     Query[{ with = { "core/library/edit" } }],
 }, function(notices, asked, open, records, edits)
     for _, e in ipairs(notices:iter()) do
@@ -104,7 +105,7 @@ app:add_systems(Update, {
     seen.open = #open:iter()
     local list = {}
     for _, e in ipairs(records:iter()) do
-        local r = e:get("git/merge/result")
+        local r = e:get("git/world/served/merge/result")
         list[#list + 1] = tostring(r.key) .. "=" .. tostring(r.status) .. ":" .. tostring(r.hash)
     end
     table.sort(list)
@@ -170,12 +171,23 @@ local function busy()
 end
 
 local function root_view(world)
-    local view = { records = {}, open = 0, notices = {} }
-    for _, e in ipairs(world:query({ with = { "git/merge/result" }, without = { "WorldMirror" } })) do
-        local r = e:get("git/merge/result")
-        view.records[#view.records + 1] = tostring(r.key) .. "=" .. tostring(r.status) .. ":" .. tostring(r.hash)
+    local view = { records = {}, waiting = 0, open = 0, notices = {}, under = {} }
+    for _, e in ipairs(world:query({
+        with = { "git/world/served/merge/result", "ChildOf" },
+        without = { "WorldMirror" },
+    })) do
+        local r = e:get("git/world/served/merge/result")
+        if r.status == nil then
+            view.waiting = view.waiting + 1
+        else
+            view.records[#view.records + 1] = tostring(r.key) .. "=" .. tostring(r.status) .. ":" .. tostring(r.hash)
+        end
+        view.under[tostring(e:get("ChildOf"))] = (view.under[tostring(e:get("ChildOf"))] or 0) + 1
     end
-    view.open = #world:query({ with = { "git/merge/job" }, without = { "RequestFrom" } })
+    for _, e in ipairs(world:query({ with = { "vault/git/merge", "vault/git", "ChildOf" }, without = { "RequestFrom" } })) do
+        view.open = view.open + 1
+        view.under[tostring(e:get("ChildOf"))] = (view.under[tostring(e:get("ChildOf"))] or 0) + 1
+    end
     for _, e in ipairs(world:query({ with = { "git/merge/notice" } })) do
         view.notices[#view.notices + 1] = tostring(e:get("git/merge/notice").text)
     end
@@ -226,7 +238,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["core/library/upstream"] = { held = { ["late.txt"] = H[7] } },
             ["core/net/sync"] = false,
         })
-        commands:spawn({ ["git/merge"] = {}, ["zz/merge/root"] = {}, ["core/net/sync"] = false })
+        commands:spawn({ ["git/world/served/merge"] = {}, ["zz/merge/root"] = {}, ["core/net/sync"] = false })
         st.phase, st.t = "booting", 0
         return
     end
@@ -237,8 +249,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("M0_the_world_booted", seen.booted == true, "the world never ran its boot")
         local view = root_view(world)
         T("M9_a_request_root_does_not_answer_stays_open_before_the_timeout",
-            view.open == 1 and #view.records == 0,
-            string.format("%d open, records %s", view.open, table.concat(view.records, ",")))
+            view.open == 1 and view.waiting == 1 and #view.records == 0,
+            string.format("%d open, %d waiting, records %s", view.open, view.waiting, table.concat(view.records, ",")))
         seen.stage = 1
         st.phase, st.t = "answers", 0
         return
@@ -312,12 +324,35 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     if st.phase == "timeout" then
         local view = root_view(world)
-        if #view.records == 0 and st.t < 45 then return end
+        if (#view.records == 0 or view.open > 0 or #view.notices == 0) and st.t < 45 then return end
         T("M9_an_unanswered_request_fails_after_the_timeout_and_is_closed",
-             table.concat(view.records, ",") == "late.txt=failed:" .. H[7] and view.open == 0
+             table.concat(view.records, ",") == "late.txt=failed:" .. H[7] and view.open == 0 and view.waiting == 0
             and table.concat(view.notices, " | "):find("late.txt: git did not answer", 1, true) ~= nil,
             string.format("records %s, %d open, notices %s", table.concat(view.records, ","), view.open,
                 table.concat(view.notices, " | ")))
+        commands:spawn({ ["git/world/served/merge"] = {}, ["zz/merge/second"] = {}, ["core/net/sync"] = false })
+        st.phase, st.t = "second", 0
+        return
+    end
+
+    if st.phase == "second" then
+        local second = world:query({ with = { "zz/merge/second" } })[1]
+        local view = root_view(world)
+        if (second == nil or (view.under[tostring(second:id())] or 0) < 2) and st.t < 10 then return end
+        st.second, st.second_had = second, second and view.under[tostring(second:id())] or 0
+        if second then commands:entity(second:id()):remove("git/world/served/merge") end
+        st.phase, st.t = "second off", 0
+        return
+    end
+
+    if st.phase == "second off" then
+        local view = root_view(world)
+        local left = st.second and view.under[tostring(st.second:id())] or 0
+        if left > 0 and st.t < 5 then return end
+        if st.t < 1 then return end
+        T("M10_taking_the_carrier_off_takes_its_open_request_and_record",
+            st.second_had == 2 and left == 0 and view.open == 0,
+            string.format("%d under it before, %d after, %d open", st.second_had, left, view.open))
         finish()
     end
 end)

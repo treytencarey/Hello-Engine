@@ -1,4 +1,4 @@
--- test_status_watch.lua: which changes git/status states as the player's edits. The suite stands in
+-- test_status_watch.lua: which changes git/world/served/status states as the player's edits. The suite stands in
 -- for root and answers each status request with a scripted scan. A request asked at root comes
 -- from no world root started, so nothing else answers it.
 --
@@ -13,7 +13,9 @@
 -- W9  a path leaving because HEAD moved is dropped at once
 -- W10 a request nobody answers is closed after 10 s, and asked again
 -- W11 one request open at a time
--- W12 git/status taken off an entity that stays: its edits and its request go
+-- W12 git/world/served/status taken off an entity that stays: its edits and its request go
+-- W13 signed out (root's identity without `site_user_id`) nothing is asked; signing in asks again
+-- W14 in both-mode (root's `core/process`) nothing is asked; out of it, it asks again
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -21,19 +23,25 @@ local helpers = require("modules/core/test_helpers.lua")
 local suite = helpers.create_suite("GitStatusWatchSuite")
 local T = suite.assert_test
 
-local SOURCE = "assets/modules/git/status/init.lua"
+local SOURCE = "assets/modules/git/world/served/status/init.lua"
 local H1 = "1111111111111111111111111111111111111111"
 local H2 = "2222222222222222222222222222222222222222"
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
+    -- Root's identity, signed in: this suite is root.
+    commands:spawn({
+        ["core/player/identity"] = { site_user_id = "zz-user" },
+        ["zz/watch/identity"] = {},
+        ["core/net/sync"] = false,
+    })
 end)
 
 local asks, max_open, last_open = 0, 0, nil
 
 local function carrier(world)
-    return world:query({ with = { "zz/watch/carrier" }, optional = { "git/status", "Children" } })[1]
+    return world:query({ with = { "zz/watch/carrier" }, optional = { "git/world/served/status", "Children" } })[1]
 end
 
 local function open_requests(world)
@@ -86,7 +94,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local A, B, C = d["zz/a.lua"], d["zz/b.lua"], d["zz/c.lua"]
 
     if phase == "start" and clock > 0.3 then
-        commands:spawn({ ["git/status"] = {}, ["zz/watch/carrier"] = {}, ["core/net/sync"] = false })
+        commands:spawn({ ["git/world/served/status"] = {}, ["zz/watch/carrier"] = {}, ["core/net/sync"] = false })
         step("w1")
 
     elseif phase == "w1" and (asks > 0 or clock > 5) then
@@ -186,14 +194,49 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "w12 setup" and (A or clock > 5) then
         T("W11_one_request_open_at_a_time", max_open == 1, "at most " .. tostring(max_open) .. " open")
         seen.asks = asks
-        commands:entity(c:id()):remove("git/status")
+        commands:entity(c:id()):remove("git/world/served/status")
         step("w12")
 
     elseif phase == "w12" and ((A == nil and open[1] == nil) or clock > 5) then
         if clock < 2.5 then return end
         T("W12_taking_git_status_off_takes_its_edits_and_request",
-            A == nil and open[1] == nil and asks == seen.asks and c ~= nil and not c:has("git/status"),
+            A == nil and open[1] == nil and asks == seen.asks and c ~= nil and not c:has("git/world/served/status"),
             string.format("edit=%s open=%s asked=%d", tostring(A ~= nil), tostring(open[1] ~= nil), asks - seen.asks))
+        commands:entity(c:id()):insert({ ["git/world/served/status"] = {} })
+        scan(H2, {})
+        step("w13 answer")
+
+    elseif phase == "w13 answer" and queued == nil and open[1] == nil then
+        local me = world:query({ with = { "core/player/identity", "zz/watch/identity" } })[1]
+        commands:entity(me:id()):insert({ ["core/player/identity"] = {} })
+        seen.asks = asks
+        step("w13 out")
+
+    elseif phase == "w13 out" and clock > 4 then
+        seen.out = asks - seen.asks
+        local me = world:query({ with = { "core/player/identity", "zz/watch/identity" } })[1]
+        commands:entity(me:id()):insert({ ["core/player/identity"] = { site_user_id = "zz-user" } })
+        step("w13 in")
+
+    elseif phase == "w13 in" and (asks > seen.asks or clock > 5) then
+        T("W13_signed_out_asks_nothing_and_signing_in_asks_again", seen.out == 0 and asks == seen.asks + 1,
+            string.format("%d asked while signed out, %d after signing in", seen.out, asks - seen.asks))
+        scan(H2, {})
+        step("w14 answer")
+
+    elseif phase == "w14 answer" and queued == nil and open[1] == nil then
+        commands:spawn({ ["core/process"] = { mode = "both" }, ["zz/watch/process"] = {}, ["core/net/sync"] = false })
+        seen.asks = asks
+        step("w14 out")
+
+    elseif phase == "w14 out" and clock > 4 then
+        seen.out = asks - seen.asks
+        commands:entity(world:query({ with = { "zz/watch/process" } })[1]:id()):despawn()
+        step("w14 in")
+
+    elseif phase == "w14 in" and (asks > seen.asks or clock > 5) then
+        T("W14_in_both_mode_asks_nothing_and_out_of_it_asks_again", seen.out == 0 and asks == seen.asks + 1,
+            string.format("%d asked in both-mode, %d after", seen.out, asks - seen.asks))
         finish()
     end
 
