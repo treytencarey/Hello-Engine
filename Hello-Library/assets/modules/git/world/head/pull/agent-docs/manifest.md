@@ -27,3 +27,4 @@ commands:spawn({ ["git/world/head/pull"] = { sha = reply.sha }, ["core/script/ow
 
 - On the server it never becomes a component: the transport delivers it inside `core/net/predict` (`requested["git/world/head/pull"]`), and `git/world/head` despawns that.
 - The file exists so the name resolves, and to declare its sync.
+- It is the one way a player asks the world to pull: any client half that wants one, a Pull button included, raises it with the world's `git/world/head.sha`. The answer is that commit moving.

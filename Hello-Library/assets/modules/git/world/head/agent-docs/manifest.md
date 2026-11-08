@@ -40,4 +40,4 @@ commands:spawn({ ["git/world/head"] = {} })
 - A request's reply crosses from root's VM, and an edge that crosses VMs can be missed, so a reply still waiting is looked at again twice a second.
 - The ask to pull carries nothing the server trusts but its existence: root pulls the world's own branch into its own tree, as a restart would.
 - Notices are `git/merge/notice` with a 20 s `notification` timeout.
-- Suites run headless, each with a scratch repository: a world root starts on it, and the suite stands in for root's pull.
+- Suites run headless, each with a scratch repository: a world root starts on it. The pull's suite puts it where this Gateway checks a branch out, cloned from a local origin, so root's own pull runs.
