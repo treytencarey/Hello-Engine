@@ -37,7 +37,7 @@ The asks are root's requests and carry nothing of this mod's:
 
 ## What the panel shows
 
-- **The repository:** `git/panel/state.repo { owner, name }` on the carrier when it has both, else this world's row's `scope_root`, `github:<owner>/<name>` (`core/world/status` without `WorldMirror`). With neither: "No repository selected." It is this world's own when owner and name match the row's, ignoring case.
+- **The repository:** `git/panel/state.repo`, the string `"<owner>/<name>"`, on the carrier when it has one, else this world's row's `scope_root`, `github:<owner>/<name>` (`core/world/status` without `WorldMirror`). With neither: "No repository selected." It is this world's own when owner and name match the row's, ignoring case.
 - Signed out of GitHub (root's sign-in reply has no `login`): "Sign in to GitHub in Accounts". No reply yet: "Loading collaborators...". An `error`: "Error: <error>". None: "No collaborators found."
 - Otherwise "COLLABORATORS (<n>)", then the status lines, then a row per collaborator:
   - a 28 px round avatar (`icon_active`) holding the login's first letter, upper case; an image would go inside it;

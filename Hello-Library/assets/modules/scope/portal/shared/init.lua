@@ -12,6 +12,9 @@
 -- scope/portal/locked = {
 --     reason = <why the target cannot be shown>,
 -- }
+--
+-- scope/portal/cooling = {}: on a player handed in from another world, for 3 s, while it may not
+-- cross again. It is a `cooldown` timer, which `player/spawner` starts.
 
 -- `insert_if_new`: a reload sees every portal as added again, and a fresh `collision_trigger`
 -- would read whoever stands inside as walking in.

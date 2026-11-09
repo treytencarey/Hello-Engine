@@ -34,6 +34,7 @@ app:add_systems(First, {
             ["ai/perception/target"] = {},
             ["ai/noisemaker"] = {},
             ["sidebar/file_browser"] = {},
+            ["git/panel"] = {},
             ["player/vr"] = {},
         })
     end
@@ -114,6 +115,7 @@ app:add_systems(First, {
             "ai/perception/target",
             "ai/noisemaker",
             "sidebar/file_browser",
+            "git/panel",
             "player/vr",
         },
     }],
@@ -133,6 +135,7 @@ app:add_systems(First, {
             "ai/perception/target",
             "ai/noisemaker",
             "sidebar/file_browser",
+            "git/panel",
             "player/vr")
     end
 end):in_set("player/removed")

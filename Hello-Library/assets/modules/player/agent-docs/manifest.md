@@ -1,5 +1,5 @@
 ---
-depends_on: [core/player/attest, core/net, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/profile, sidebar/file_browser, player/vr]
+depends_on: [core/player/attest, core/net, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/profile, sidebar/invites, sidebar/file_browser, git/panel, git/collaborators, player/vr]
 conflicts_with: []
 exposes: [player]
 ---
@@ -22,8 +22,8 @@ The owning client drives its player's Transform, as there is no client predictio
   | `smoothing` | how fast the server's Transform follows the owner's, per second | 15 |
 
 - What each player gets, by side. Names are written in the code:
-  - server: `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for), `ai/noisemaker` (for them to hear), `sidebar/file_browser` (the file browser panel, synced to its owner: a panel with server work is the server's to add) and `player/vr` (the VR stack, which does nothing until a headset is tracking);
-  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), and its `RigidBody3d` switched to `Dynamic`.
+  - server: `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for), `ai/noisemaker` (for them to hear), `sidebar/file_browser` (the file browser panel, synced to its owner: a panel with server work is the server's to add), `git/panel` (the GitHub panel, synced to its owner, for the same reason: its server half answers the owner's asks and opens the portals they ask for) and `player/vr` (the VR stack, which does nothing until a headset is tracking);
+  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), `sidebar/invites` (the invite cards, which need no open panel), `git/collaborators` (the collaborators panel), and its `RigidBody3d` switched to `Dynamic`. Each is local UI with no server half, so the client adds it.
 
   If `player` is removed from an entity that stays, each half removes what it added.
 
@@ -31,13 +31,13 @@ The owning client drives its player's Transform, as there is no client predictio
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | `player/init` | On an added `player` that is neither a `WorldMirror` nor a peer mirror (`core/net/peer/mirror`), add the camera, movement, the model, the abilities, what agents look for and hear, the file browser panel and the VR stack |
+| First (server) | `player/init` | On an added `player` that is neither a `WorldMirror` nor a peer mirror (`core/net/peer/mirror`), add the camera, movement, the model, the abilities, what agents look for and hear, the file browser and GitHub panels and the VR stack |
 | Update (server) | `player/identity` | On a changed `core/player/attest` on a connection, and on an added `player`: set `player.user_id` from the connection with its `client_id`. Who the client is lives on the connection, so a player spawned again for it is who it was |
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`). Not a peer mirror: a player handed to another world stays here as that world's mirror, moved by its peer, and its shadow is stale |
-| First (server) | `player/removed` | When `player` is removed from an entity that stays, remove the camera, movement, the model, the abilities, what agents look for and hear, the file browser panel and the VR stack |
-| First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar with its profiler and sign-in panels, and make its body dynamic |
+| First (server) | `player/removed` | When `player` is removed from an entity that stays, remove the camera, movement, the model, the abilities, what agents look for and hear, the file browser and GitHub panels and the VR stack |
+| First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar with its profiler, sign-in and collaborators panels and the invite cards, and make its body dynamic |
 | First (client) | `player/local` | When `core/net/local` leaves a player that stays (another world's server took it through a portal), make its body `KinematicPositionBased` again with zero velocity: it is moved by what this world's server sends |
-| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar and its profiler and sign-in panels |
+| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar, its profiler, sign-in and collaborators panels and the invite cards |
 
 ## Use
 
@@ -52,6 +52,6 @@ commands:spawn({ ["player/spawner"] = {}, ChildOf = boot:id() })
 
 - Mirrored players from another world (`WorldMirror`, or a peer mirror, `core/net/peer/mirror`) are not set up here.
 - The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches. The server's body is kinematic throughout, and core's peer switch zeroes its velocity when it hands the player over.
-- Crossing between worlds through a portal: `player/spawner` gives every player its `core/net/peer/share` and places a handed player where it stood; `scope/portal` hands it over.
+- Crossing between worlds through a portal: `player/spawner` gives every player its `core/net/peer/share`, and places a handed player where it stood, cooling for 3 s (`scope/portal/cooling`); `scope/portal` hands it over.
 - Not done yet: the streaming panels and the account providers, whose mods are not in this library yet.
 - Suites: a server one and a client one (windowed: input and the sidebar act on a window); `test_player_handover.lua` and `test_player_handover_client.lua` for crossing, headless.

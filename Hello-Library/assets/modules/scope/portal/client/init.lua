@@ -5,13 +5,18 @@
 -- Root drops a second ask for a flip already under way. An ask is root's once made, so a reload
 -- of this file does not take it back.
 
+-- A player still cooling from its last crossing walks into nothing. The handover is the server's
+-- to decide, and it skips a cooling player itself: its own timer, not this client's, says when.
 app:add_systems(Update, {
     Query[{
         changed = { "collision_trigger" },
         with = { "scope/portal" },
         without = { "placement", "scope/portal/hosted" },
     }],
-    Query[{ with = { "player", "core/net/local" } }],
+    Query[{
+        with = { "player", "core/net/local" },
+        without = { "scope/portal/cooling" },
+    }],
     Query[{
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },

@@ -26,7 +26,10 @@ local Vec3 = require("bevy::math::Vec3")
 -- while the client still only watches: it stands where it stood there, still claiming a
 -- point, and keeps its camera's yaw, pitch and distance. Nothing else of that state is
 -- taken, as this world's defaults are its own. The camera's sync rides the spawn, so the
--- carried camera reaches the owner before its own defaults would.
+-- carried camera reaches the owner before its own defaults would. It arrives cooling for 3 s
+-- (`scope/portal/cooling`), so it does not bounce straight back through a portal standing where
+-- it arrives; the timer's sync rides the spawn too, as the owner's client must skip its own flip
+-- from the first frame.
 app:add_systems(First, {
     Query[{ changed = { "core/net/connection" } }],
     Query[{ with = { "player", "core/net/owner" } }],
@@ -52,6 +55,7 @@ app:add_systems(First, {
                 at = Vec3.add(at, Quat.mul_vec3(Quat.from_rotation_y(index / s.count * 2 * math.pi),
                     { x = s.radius, y = 0, z = 0 }))
             end
+            local arrived = connection.synced_state ~= nil
             local handed = connection.synced_state or {}
             local stood = handed.Transform
             local facing = { x = 0, y = 0, z = 0, w = 1 }
@@ -68,6 +72,7 @@ app:add_systems(First, {
                 LockedAxes3d = "ROTATION_LOCKED",
                 Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
                 camera = camera and { yaw = camera.yaw, pitch = camera.pitch, distance = camera.distance } or nil,
+                cooldown = arrived and { ["scope/portal/cooling"] = { remaining = 3 } } or nil,
                 ["core/net/owner"] = { client_id = connection.client_id },
                 ["core/net/peer/share"] = { stable_id = "player_" .. tostring(connection.client_id) },
                 ["core/net/sync/Transform"] = { translation = at, rotation = facing },
@@ -77,6 +82,7 @@ app:add_systems(First, {
                     Collider3d = { authority = "server" },
                     LockedAxes3d = { authority = "server" },
                     camera = camera and { authority = "client", target = "owner" } or nil,
+                    cooldown = arrived and { authority = "server", target = "owner" } or nil,
                 },
                 ["core/script/owner"] = false,
             })

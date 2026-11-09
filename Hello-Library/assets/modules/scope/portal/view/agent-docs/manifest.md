@@ -27,7 +27,7 @@ None of these run in a world that only observes (its own `core/world/status` say
 
 ## Use
 
-`scope/portal`'s approval gives a placed portal `scope/portal/view { mode = "3d" }`. A scene door names `"none"`:
+`git/panel`'s server half spawns a player's portal with `scope/portal/view { mode = "3d" }`. A scene door names `"none"`:
 
 ```json
 { "scope/portal": { "target": "github:treytencarey/hello-backrooms:new-room" },

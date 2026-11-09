@@ -1,9 +1,10 @@
--- The GitHub panel on a real player, driven headless, with root's replies stubbed: this VM plays a
--- client world on `github:zzpanel/world:main`, so root's replies and the flip asks' answers are the
--- suite's, and core's flip driver stays idle. `player/client` adds the carrier, and real clicks drive
--- the panel.
+-- The GitHub panel's client half on a real player, driven headless, with root's replies stubbed:
+-- this VM plays a client world on `github:zzpanel/world:main`, so root's replies, the flip asks'
+-- answers and the server's answers are the suite's, and core's flip driver stays idle. The suite
+-- adds the carrier as the server's sync brings it, and real clicks drive the panel.
 --
--- A0  player/client adds the carrier
+-- A0  player/client adds no carrier of its own: the server's sync brings it; it adds
+--     `sidebar/invites` and `git/collaborators` beside `sidebar/profile`
 -- A1  the carrier asks root for the player's repositories once, with a sign-in ask under that ask
 -- G1  before root answers, and signed out of GitHub, there is no "GitHub" button
 -- I1  signing in asks again for the repositories root answered signed out
@@ -11,6 +12,7 @@
 -- R1  the base repository is listed first and chosen, and its branches asked
 -- B1  the first branch listed is chosen, though this world's own is listed too, and its commits asked
 -- B3  choosing a branch asks its commits in place of the old ones
+-- B4  a branch spelt with capitals keeps them in the target, where the owner and name are lowered
 -- C1  on this world's own branch: "● Current", Pull, and a Portal that does nothing
 -- K1  8 of root's 10 commits, the message's first line cut to 30
 -- U1  Pull asks the world to pull its commit, and reads "⏳ Pulling…" while the ask is out
@@ -19,7 +21,10 @@
 -- B2  another repository's first branch is chosen
 -- S1  Switch asks core's flip for the target, in canonical lower case, and asks the commits again
 -- S2  the label follows the flip ask: switching, then failed with the reason
--- O1  Portal spawns a predicted portal to the target, in canonical lower case, for the player to place
+-- O1  Portal asks the server on the request slot for a portal to the target, in canonical lower
+--     case with the branch as it is, and spawns nothing itself
+-- O2  the server's answer takes the ask back, so the next one is a change
+-- O3  while the server's answer stands, a click asks nothing; once it is taken back, a click asks
 -- L1  a portal here to the target that is locked says why, and stops saying it once unlocked
 -- H1  a reload keeps the panel open, its rows, its state and its asks, none doubled
 -- X1  the carrier taken off closes its asks, and its button and panel go
@@ -40,7 +45,7 @@ local T = suite.assert_test
 -- stubbed reply on an ask that has a parent for the answer to its own HTTP call.
 world_id = 7
 
-local MOD_FILE = "assets/modules/git/panel/init.lua"
+local MOD_FILE = "assets/modules/git/panel/client/init.lua"
 local HEAD_SHA = "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 app:add_systems(Startup, { Commands }, function(commands)
@@ -80,7 +85,7 @@ end)
 local reloads = 0
 app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
     for _, event in ipairs(changed:read()) do
-        if tostring(event.path):find("git/panel/init.lua", 1, true) then reloads = reloads + 1 end
+        if tostring(event.path):find("git/panel/client/init.lua", 1, true) then reloads = reloads + 1 end
     end
 end):in_set("zz/panel/reload_watch")
 
@@ -103,6 +108,11 @@ end
 local function state_of(world)
     local me = world:query({ with = { "zz/player" }, optional = { "git/panel/state", "git/panel" } })[1]
     return me and me:get("git/panel/state") or {}
+end
+
+local function request_of(world)
+    local me = world:query({ with = { "zz/player" }, optional = { "git/panel/request" } })[1]
+    return me and me:get("git/panel/request")
 end
 
 -- The asks right under `parent`: `method` is the request's component; each as { id, wish, reply }.
@@ -227,11 +237,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     if phase == "arrived" and clock > 0.3 then
         commands:entity(player):insert({ ["core/net/local"] = {} })
+        step("local")
+
+    elseif phase == "local" and clock > 0.5 then
+        local me = world:query({
+            with = { "zz/player" },
+            optional = { "git/panel", "sidebar/profile", "sidebar/invites", "git/collaborators" },
+        })[1]
+        T("A0_player_client_adds_no_carrier_of_its_own", me:has("sidebar/profile") and not me:has("git/panel"))
+        T("A0_it_adds_the_invite_cards_and_the_collaborators_panel_beside_the_profile",
+            me:has("sidebar/invites") and me:has("git/collaborators"))
+        commands:entity(player):insert({ ["git/panel"] = {} })
         step("button")
 
     elseif phase == "button" and clock > 0.6 then
-        local me = world:query({ with = { "zz/player" }, optional = { "git/panel" } })[1]
-        T("A0_player_client_adds_the_carrier", me:has("git/panel"))
         T("G1_before_root_answers_there_is_no_github_button", #buttons(world) == 0, tostring(#buttons(world)))
         local repos = asks(world, "vault/github/repos")
         local signins = repos[1] and asks(world, "vault/github/signin", repos[1].id) or {}
@@ -319,7 +338,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local pulls = world:query({ with = { "git/world/head/pull" } })
         T("U1_pull_asks_the_world_to_pull_its_commit", #pulls == 1 and pulls[1]:get("git/world/head/pull").sha == HEAD_SHA)
         T("U1_and_reads_pulling_while_the_ask_is_out", not has_text(panel_texts(world), "⭳ Pull"))
-        T("C1_the_portal_on_this_world_s_branch_does_nothing", #portals(world) == 0)
+        T("C1_the_portal_on_this_world_s_branch_does_nothing", #portals(world) == 0 and request_of(world) == nil)
         -- The server takes the ask and its copy goes, which despawns the client's.
         commands:entity(pulls[1]:id()):despawn()
         step("pulled")
@@ -356,14 +375,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P3_and_asks_its_branches_in_place_of_the_old", #b == 1 and b[1].wish.owner == "ZzOwner" and b[1].wish.name == "Other-Repo")
         T("P3_and_closes_the_commits", #asks(world, "vault/github/commits") == 0 and not has_text(panel_texts(world), "RECENT COMMITS"))
         T("P3_and_closes_the_picker", repo.shown == false and repo.arrow == "▼" and repo.chosen == "Other-Repo")
-        reply(commands, b[1].id, "vault/github/branches/reply", { branches = { "dev", "main" } })
+        reply(commands, b[1].id, "vault/github/branches/reply", { branches = { "Dev", "main" } })
         step("other_branches")
 
     elseif phase == "other_branches" and state_of(world).branch ~= nil and #asks(world, "vault/github/commits") == 1
         and button_labelled(world, "↗ Switch") ~= nil then
         local wish = asks(world, "vault/github/commits")[1].wish
-        T("B2_another_repository_s_first_branch_is_chosen", state_of(world).branch == "dev")
-        T("B2_and_its_commits_asked", wish.owner == "ZzOwner" and wish.name == "Other-Repo" and wish.branch == "dev")
+        T("B2_another_repository_s_first_branch_is_chosen", state_of(world).branch == "Dev")
+        T("B2_and_its_commits_asked", wish.owner == "ZzOwner" and wish.name == "Other-Repo" and wish.branch == "Dev")
         T("B2_another_branch_offers_no_pull", not has_text(panel_texts(world), "⭳ Pull"))
         mark.commits = asks(world, "vault/github/commits")[1].id
         click(commands, button_labelled(world, "↗ Switch"))
@@ -373,16 +392,18 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local f = flips(world)
         local c = asks(world, "vault/github/commits")
         T("S1_switch_asks_core_s_flip_in_canonical_lower_case", #f == 1
-            and f[1]:get("core/world/flip").scope == "github:zzowner/other-repo:dev", tostring(f[1]:get("core/world/flip").scope))
+            and f[1]:get("core/world/flip").scope:sub(1, 24) == "github:zzowner/other-rep", tostring(f[1]:get("core/world/flip").scope))
+        T("B4_a_branch_spelt_with_capitals_keeps_them", #f == 1
+            and f[1]:get("core/world/flip").scope == "github:zzowner/other-repo:Dev", tostring(f[1]:get("core/world/flip").scope))
         T("S1_the_ask_crosses_vms_never_the_wire", f[1]:has("WorldShared") and f[1]:get("core/net/sync") == false)
-        T("S1_and_asks_the_commits_again", #c == 1 and c[1].id ~= mark.commits and c[1].wish.branch == "dev")
+        T("S1_and_asks_the_commits_again", #c == 1 and c[1].id ~= mark.commits and c[1].wish.branch == "Dev")
         mark.flip = f[1]:id()
-        commands:entity(mark.flip):insert({ ["core/world/flip"] = { scope = "github:zzowner/other-repo:dev", status = "resolving" } })
+        commands:entity(mark.flip):insert({ ["core/world/flip"] = { scope = "github:zzowner/other-repo:Dev", status = "resolving" } })
         step("switching")
 
     elseif phase == "switching" and button_labelled(world, "⏳ Switching…") ~= nil then
         commands:entity(mark.flip):insert({ ["core/world/flip"] = {
-            scope = "github:zzowner/other-repo:dev", status = "failed", reason = "zz-refused",
+            scope = "github:zzowner/other-repo:Dev", status = "failed", reason = "zz-refused",
         } })
         step("failed")
 
@@ -391,16 +412,39 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         click(commands, button_labelled(world, "🌀 Portal"))
         step("portal")
 
-    elseif phase == "portal" and #portals(world) > 0 and clock > 0.3 then
-        local p = portals(world)
-        local sync = p[1]:get("core/net/sync") or {}
-        T("O1_portal_spawns_one_portal_to_the_target_in_canonical_lower_case", #p == 1
-            and p[1]:get("scope/portal").target == "github:zzowner/other-repo:dev", tostring(p[1]:get("scope/portal").target))
-        T("O1_for_the_player_to_place", p[1]:has("placement") and (p[1]:get("scope/portal/view") or {}).mode == "3d"
-            and sync.placement and sync.placement.authority == "client"
-            and sync.Transform and sync.Transform.authority == "client")
-        mark.portal = p[1]:id()
-        commands:entity(mark.portal):insert({ ["scope/portal/locked"] = { reason = "zz-locked" } })
+    elseif phase == "portal" and request_of(world) ~= nil and clock > 0.3 then
+        local ask = request_of(world)
+        T("O1_portal_asks_the_server_for_a_portal_to_the_target_in_canonical_form", ask.op == "portal"
+            and ask.target_sk == "github:zzowner/other-repo:Dev", tostring(ask.op) .. " " .. tostring(ask.target_sk))
+        T("O1_and_spawns_nothing_itself", #portals(world) == 0, tostring(#portals(world)))
+        commands:entity(player):insert({ ["git/panel/response"] = {
+            op = "portal", scope = "github:zzowner/other-repo:Dev", status = "opened",
+        } })
+        step("answered")
+
+    elseif phase == "answered" and request_of(world) ~= nil and request_of(world).op == nil and clock > 0.2 then
+        T("O2_the_server_s_answer_takes_the_ask_back", next(request_of(world)) == nil)
+        click(commands, button_labelled(world, "🌀 Portal"))
+        step("standing")
+
+    elseif phase == "standing" and clock > 0.3 then
+        T("O3_while_the_answer_stands_a_click_asks_nothing", request_of(world) ~= nil and next(request_of(world)) == nil)
+        -- The server takes its answer back once the ask is.
+        commands:entity(player):insert({ ["git/panel/response"] = {} })
+        step("cleared")
+
+    elseif phase == "cleared" and clock > 0.3 then
+        click(commands, button_labelled(world, "🌀 Portal"))
+        step("asked_again")
+
+    elseif phase == "asked_again" and request_of(world) ~= nil and request_of(world).op ~= nil then
+        T("O3_once_it_is_taken_back_a_click_asks_again", request_of(world).target_sk == "github:zzowner/other-repo:Dev")
+        -- The portal the server spawned, as its sync brings it here.
+        mark.portal = commands:spawn({
+            ["scope/portal"] = { target = "github:zzowner/other-repo:Dev" },
+            ["scope/portal/locked"] = { reason = "zz-locked" },
+            ["core/net/sync"] = false,
+        }):id()
         step("locked")
 
     elseif phase == "locked" and has_text(panel_texts(world), "⚠ portal refused: zz-locked") then
@@ -437,7 +481,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local r, b2, c = asks(world, "vault/github/repos"), asks(world, "vault/github/branches"), asks(world, "vault/github/commits")
         T("H1_its_asks_stay_none_doubled", #r == 1 and #b2 == 1 and #c == 1 and r[1].id == mark.asks.repos
             and b2[1].id == mark.asks.branches and c[1].id == mark.asks.commits, #r .. " " .. #b2 .. " " .. #c)
-        T("H1_its_state_stays", state_of(world).repo == "ZzOwner/Other-Repo" and state_of(world).branch == "dev"
+        T("H1_its_state_stays", state_of(world).repo == "ZzOwner/Other-Repo" and state_of(world).branch == "Dev"
             and state_of(world).open == true)
         commands:entity(player):remove("git/panel")
         step("removed")

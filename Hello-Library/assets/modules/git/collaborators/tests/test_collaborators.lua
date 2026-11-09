@@ -348,13 +348,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "feedback" and has_row(world, "Portal opened - walk through to join") and clock > 0.3 then
         T("F1_sidebar_invites_feedback_shows", true)
         mark.here_ask = asks_under(world, view_id(world), "vault/github/repos")[1].id
-        commands:entity(player):insert({ ["git/panel/state"] = { open = false, repo = { owner = "zz", name = "other" } } })
+        commands:entity(player):insert({ ["git/panel/state"] = { open = false, repo = "zz/other", branch = "main" } })
         step("chosen")
 
     elseif phase == "chosen" and clock > 0.5 then
         local repos = asks_under(world, view_id(world), "vault/github/repos")
-        T("G1_git_panel_s_repository_is_asked_for_instead", #repos == 1 and repos[1].wish.name == "other"
-            and repos[1].id ~= mark.here_ask, #repos .. " " .. tostring(repos[1] and repos[1].wish.name))
+        T("G1_git_panel_s_repository_is_asked_for_instead", #repos == 1 and repos[1].wish.owner == "zz"
+            and repos[1].wish.name == "other" and repos[1].id ~= mark.here_ask,
+            #repos .. " " .. tostring(repos[1] and repos[1].wish.name))
         if repos[1] then
             reply(commands, repos[1].id, "vault/github/repos/reply", { error = "HTTP 500", status = 500 })
         end

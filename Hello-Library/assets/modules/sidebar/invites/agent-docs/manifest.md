@@ -1,12 +1,12 @@
 ---
-depends_on: [notification, cooldown, ui/style, core/registry, core/world, scope/portal]
+depends_on: [notification, cooldown, ui/style, core/registry, core/world, scope/portal, git/panel]
 conflicts_with: []
 exposes: [sidebar/invites, sidebar/invites/state, sidebar/invites/notification, sidebar/invites/notification/row, sidebar/invites/request]
 ---
 
 # sidebar/invites
 
-The player's invites to other worlds, one card each, answered from the card. Root holds the player's Hello! session and makes every Site call: this mod asks root's `core/registry/invites` for the list and `core/registry/invites/answer` for each answer, and shows what root says. An accepted invite then has root load the host's world join-only, and a portal to it opens 3 m behind the player's back. Sending invites is `git/collaborators`'s. Local UI: never synced, and it needs no open panel: the cards are `notification` toasts.
+The player's invites to other worlds, one card each, answered from the card. Root holds the player's Hello! session and makes every Site call: this mod asks root's `core/registry/invites` for the list and `core/registry/invites/answer` for each answer, and shows what root says. An accepted invite then has root load the host's world join-only, and asks this world's server for a portal to it on `git/panel`'s request slot; the server opens it for the player to place. Sending invites is `git/collaborators`'s. Local UI: never synced, and it needs no open panel: the cards are `notification` toasts.
 
 ## Components
 
@@ -16,14 +16,14 @@ The player's invites to other worlds, one card each, answered from the card. Roo
 - `sidebar/invites/notification/row`: marks each part of a card's content, its children.
 - `sidebar/invites/request = { op, invite_id, scope_key }`:
   - on a hold, a child of the carrier, for each answer: `op` is `"accept"` or `"decline"`. A real answer's hold carries `cooldown = { ["sidebar/invites/request"] = { remaining = 30 } }`, so `cooldown` takes the component off after 30 s; root's request is the hold's child. A debug answer's hold has no timer and goes once handled.
-  - on a portal this mod dropped, `op = "drop_portal"`, until the server confirms it.
+  - on a record of a portal ask, `{ op = "drop_portal", scope_key }` with no `invite_id`, a child of the carrier (`core/script/owner = false`), from the ask until the server answers it.
 
 Root's requests carry nothing of this mod's and outlive a reload of it (`core/script/owner = false`):
 - the list, standing while the carrier is here: `{ ["core/registry/invites"] = {}, Request = {} }`, a child of the carrier. Its reply is `{ invites = { { id, scope, inviter, expires_at } }, error }`.
 - an answer, a child of its hold: `{ ["core/registry/invites/answer"] = { id, action }, Request = {} }`, replied `{ status = "asking" | "ok" | "refused", scope, reason }`.
 - the load of an accepted world, a child of the carrier: `{ ["core/world/load"] = { scope, join_only = true }, WorldShared = {}, ["core/net/sync"] = false }`. Root claims it and writes `status` (`"ready"` or `"failed"` with `reason`) on it.
 
-The dropped portal: `{ Transform = { translation }, ["scope/portal"] = { target = <scope> }, ["scope/portal/view"] = { mode = "3d" }, ["core/net/sync"] = { Transform = { authority = "client" } } }`, with no `placement`, so it is placed at once. The net client predicts it, and the world's server approves or refuses it.
+The portal ask: `git/panel/request = { op = "portal", target_sk = <scope> }` on the carrier, the slot `git/panel` gives the player, and cross-mod input through a sub-component. The server answers on `git/panel/response { op, scope, status }` and spawns the portal itself, with `placement`, so the player places it; it reaches this client as the player's own (`core/net/local`, `core/net/owner`). The carrier must carry `git/panel`.
 
 ## Systems
 
@@ -35,8 +35,9 @@ The dropped portal: `{ Transform = { translation }, ["scope/portal"] = { target 
 | Update, after `sidebar/invites` | `sidebar/invites/render` | Draw a card's content when it is added or changed, and every card when a carrier arrives (a reload) |
 | Update | `sidebar/invites` | On an answer's reply turning `ok` or `refused`: say the outcome; for an accepted `ok`, spawn the join-only load for the reply's `scope` (else the hold's `scope_key`) unless the carrier already has one for it; despawn the hold, with its request, if its timer has ended |
 | Update | `sidebar/invites` | When a hold's timer ends, despawn it, with its request, if root has answered |
-| Update | `sidebar/invites` | On a carrier's load turning `ready`, or a debug accept, drop the portal after the checks below; on `failed`, say why and despawn the load |
-| Update | `sidebar/invites` | A portal confirmed (its `core/net/predict` removed while it stays) says "Portal opened - walk through to join" and loses its `drop_portal` mark; a marked portal that despawned was refused; a portal going despawns the carrier's load for its target when no other portal of this player names it |
+| Update | `sidebar/invites` | On a carrier's load turning `ready`, or a debug accept, ask for the portal after the checks below, and spawn the ask's record; on `failed`, say why and despawn the load |
+| Update | `sidebar/invites` | On a changed `git/panel/response` answering one of the carrier's records (`op = "portal"`, `scope` equal to the record's `scope_key`): `opened` says "Portal opened - walk through to join"; anything else says "You have too many portals open" and despawns the carrier's load for that scope; the record goes either way |
+| Update | `sidebar/invites` | A portal going despawns the carrier's load for its target when no other portal of this player names it |
 
 ## What the card says and does
 
@@ -48,17 +49,17 @@ The dropped portal: `{ Transform = { translation }, ["scope/portal"] = { target 
 
 - `ok`, decline: "Invite declined". `refused`: "Invite <action> failed: <reason>", or "Sign in to answer invites" for `sign-in-required`. Accept: "Opening a door to <scope>".
 - The load answers on its own entity. `failed` with `not-running` or `no-gateway`: "That world has ended" (`stale`); any other reason: "Could not open that world: <reason>". The load goes either way.
-- `ready`: the portal drops at the carrier's `Transform.translation` plus its rotation applied to `(0, 0, 3)` (Bevy's `back()`, 3 m). Before it does, the client checks what the server will, and says:
-  - no row of this world's own (`core/world/status` without `WorldMirror`): "No active scope to place a portal in";
+- `ready`: the portal is asked for. Before it is, the client checks what the server will, and says:
+  - no row of this world's own (`core/world/status` without `WorldMirror`), or a carrier without `git/panel`: "No active scope to place a portal in";
   - the target is this world's `scope_key`: "You are already in that world";
-  - the player already has 8 portals here (counted over `scope/portal` entities that are `core/net/local`, carry this mod's mark, or are owned by the carrier's `core/net/owner.client_id`): "You have too many portals open".
-  A refused drop also despawns the carrier's load for that scope. A target the player already has a portal to drops nothing more; a second `ready` drops nothing.
-- The server refusing the predicted portal (it despawns with no confirmation) says "You have too many portals open": the other checks passed here.
+  - the player already has 8 portals here (counted over `scope/portal` entities that are `core/net/local` or owned by the carrier's `core/net/owner.client_id`): "You have too many portals open".
+  A refused drop also despawns the carrier's load for that scope. A target the player already has a portal to, or an ask out for, asks nothing more; a second `ready` asks nothing.
+- The server refusing the ask says "You have too many portals open": the other checks passed here.
 - The load stays while a portal of this player's names its world, so the observed world is not let go between the load and the portal's own view.
 
 ## Debug invites
 
-A debug card is spawned by `git/collaborators` when its `DEBUG_INVITES` is on: `sidebar/invites/notification { invite_id = "debug-<n>", scope_key = "<this world's scope root>:debug-hub-<n>", sender_login = "you (debug)", message = "Debug invite to a fresh hub world" }`. It is in no list, so it is never dismissed by the reconcile. This mod answers it itself: accept drops the portal at once, with no request to root and no load; decline says "Invite declined".
+A debug card is spawned by `git/collaborators` when its `DEBUG_INVITES` is on: `sidebar/invites/notification { invite_id = "debug-<n>", scope_key = "<this world's scope root>:debug-hub-<n>", sender_login = "you (debug)", message = "Debug invite to a fresh hub world" }`. It is in no list, so it is never dismissed by the reconcile. This mod answers it itself: accept asks for the portal at once, with no request to root and no load; decline says "Invite declined".
 
 ## Use
 
@@ -71,7 +72,9 @@ commands:entity(player):insert_if_new({ ["sidebar/invites"] = {} })
 
 - Only the card's own requests count: an answer is read off a request under the carrier's hold, with neither `RequestFrom` nor `WorldMirror`; a load is read only off a child of the carrier. A load another world shares arrives as a root, so it drops nothing.
 - Once root claims a load, the asker's copy is a mirror of root's, and despawning it there doesn't reach root: root keeps its load, and the observed world, until another ask for that scope replaces it.
-- The scope's canonical form is not checked here: core's parser is not a library mod's to require. The scope is the Site's, through root, and the server's approval checks it.
+- The scope's canonical form is checked by no library mod: root canonicalizes it when the portal's view observes it, and a scope root cannot take ends as a locked portal with root's reason.
+- The portal comes to be placed, where the old one dropped 3 m behind the player: the server spawns every portal a player asks for with `placement`.
+- A record whose ask the server never answers stays until `sidebar/invites` goes, and asks for that scope wait on it.
 - A reload takes the cards' content and may take the cards (a card handed to the overlay stays); the carrier's new edge redraws or respawns each once. Holds, requests and loads outlive it.
 - Taking `sidebar/invites` off an entity that stays while a hold runs: the hold goes as a part of this mod, and `cooldown`'s next tick of it can log Bevy's warning about a missing entity.
-- `test_invites.lua` runs headless with `world_id` set off root's, so root's mods answer nothing and the suite writes every reply, load status and net confirmation itself.
+- `test_invites.lua` runs headless with `world_id` set off root's, so root's mods answer nothing and the suite writes every reply, load status and server answer itself, and spawns the portal the server would.

@@ -11,6 +11,8 @@
 --   H5  a peer mirror of a player is not set up as this world's player
 --   H6  a peer mirror is not eased toward a shadow nobody writes any more
 --   H7  a player being handed over carries its camera's yaw, pitch and distance in the switch
+--   H8  a handed player arrives cooling for 3 s (`scope/portal/cooling`), the timer synced to its
+--       owner in the spawn; a player that was not handed has no timer
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerHandoverSuite")
@@ -34,7 +36,10 @@ end)
 local function player_of(world, client_id)
     for _, p in ipairs(world:query({
         with = { "player", "core/net/owner" },
-        optional = { "core/net/peer/share", "core/net/sync/Transform", "core/net/sync", "camera", "movement" },
+        optional = {
+            "core/net/peer/share", "core/net/sync/Transform", "core/net/sync", "camera", "movement",
+            "cooldown", "scope/portal/cooling",
+        },
     })) do
         if p:get("core/net/owner").client_id == client_id then return p end
     end
@@ -103,6 +108,15 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and near(shadow.x, 10) and near(shadow.z, -4)
                 and seven:get("player").spawn_index == 2 and share ~= nil and share.stable_id == "player_7",
             string.format("at %.2f %.2f %.2f index=%s", pos.x, pos.y, pos.z, tostring(seven:get("player").spawn_index)))
+        local timer = (seven:get("cooldown") or {})["scope/portal/cooling"]
+        local timer_sync = (seven:get("core/net/sync") or {}).cooldown
+        local eight = player_of(world, 8)
+        T("H8_a_handed_player_arrives_cooling_with_the_timer_synced_to_its_owner",
+            timer ~= nil and timer.remaining == 3 and seven:has("scope/portal/cooling")
+                and timer_sync ~= nil and timer_sync.authority == "server" and timer_sync.target == "owner",
+            string.format("timer=%s mark=%s", tostring(timer and timer.remaining), tostring(seven:has("scope/portal/cooling"))))
+        T("H8_a_player_not_handed_has_no_timer", not eight:has("cooldown") and not eight:has("scope/portal/cooling")
+            and (eight:get("core/net/sync") or {}).cooldown == nil, "")
         local cam = seven:get("camera") or {}
         local sync = (seven:get("core/net/sync") or {}).camera
         T("H4_it_keeps_the_cameras_yaw_pitch_and_distance_and_nothing_else",

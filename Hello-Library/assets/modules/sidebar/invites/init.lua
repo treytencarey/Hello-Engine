@@ -1,7 +1,8 @@
 -- The player's invites to other worlds: one card each, answered through root, and what follows an
 -- accepted one. Root holds the Site session and answers; this mod asks it and shows what it says.
--- An accepted invite has root load the host's world join-only, then drops a portal 3 m behind the
--- player's back, which the world's server approves. Local UI: never synced.
+-- An accepted invite has root load the host's world join-only, then asks this world's server for a
+-- portal to it on `git/panel/request`, the slot the player's panel asks on, and the server spawns
+-- it for the player to place. Local UI: never synced.
 --
 -- sidebar/invites = {}
 --
@@ -21,15 +22,13 @@
 --
 -- sidebar/invites/request = {
 --     op = "accept" | "decline" | "drop_portal",
---     invite_id = <the invite answered>,
+--     invite_id = <the invite answered; none on a portal ask's record>,
 --     scope_key = <its world>,
 -- }
 
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
-local Vec3 = require("bevy::math::Vec3")
-local Quat = require("bevy::math::Quat")
 
 local function say(commands, carrier, kind, text)
     commands:entity(carrier):entry("sidebar/invites/state"):and_modify(function(state)
@@ -130,7 +129,8 @@ app:add_systems(Update, {
             end
         end
         for _, hold in ipairs(holds:iter_many(carrier:get("Children") or {})) do
-            held[hold:get("sidebar/invites/request").invite_id] = true
+            local r = hold:get("sidebar/invites/request")
+            if r.invite_id ~= nil then held[r.invite_id] = true end
         end
     end
     local shown = {}
@@ -388,8 +388,9 @@ app:add_systems(Update, {
 end):in_set("sidebar/invites")
 
 -- The host's world is loaded (root's status on the carrier's own load ask), or a debug invite was
--- accepted: a portal to it is dropped 3 m behind the player's back. The client checks what the
--- server will, and the server's approval decides. A failed load says why, and its ask goes.
+-- accepted: the world's server is asked for a portal to it, on `git/panel`'s request slot, and this
+-- mod keeps a record of the ask until the server answers. The client checks what the server will,
+-- and the server decides. A failed load says why, and its ask goes.
 app:add_systems(Update, {
     Query[{
         changed = { "core/world/load" },
@@ -401,7 +402,7 @@ app:add_systems(Update, {
     }],
     Query[{
         with = { "sidebar/invites" },
-        optional = { "Transform", "core/net/owner", "Children" },
+        optional = { "git/panel", "core/net/owner", "Children" },
     }],
     Query[{
         with = { "core/world/status" },
@@ -409,11 +410,12 @@ app:add_systems(Update, {
     }],
     Query[{
         with = { "scope/portal" },
-        any_of = { "core/net/local", "core/net/owner", "sidebar/invites/request" },
+        any_of = { "core/net/local", "core/net/owner" },
     }],
     Query[{ with = { "core/world/load" } }],
+    Query[{ with = { "sidebar/invites/request" } }],
     Commands,
-}, function(loads, answered, carriers, rows, portals, held, commands)
+}, function(loads, answered, carriers, rows, portals, held, records, commands)
     local drops = {}
     for _, load in ipairs(loads:iter()) do
         local carrier = carriers:get(load:get("ChildOf"))
@@ -442,19 +444,22 @@ app:add_systems(Update, {
 
     local row = rows:iter()[1]
     local here = row and row:get("core/world/status").scope_key
-    local dropped = {}
+    local asked = {}
     for _, drop in ipairs(drops) do
         local carrier, scope = drop.carrier, drop.scope
         local me = carrier:has("core/net/owner") and carrier:get("core/net/owner").client_id
         local mine, open = 0, false
         for _, p in ipairs(portals:iter()) do
-            if p:has("core/net/local") or p:has("sidebar/invites/request")
-                or (me ~= nil and p:has("core/net/owner") and p:get("core/net/owner").client_id == me) then
+            if p:has("core/net/local") or (me ~= nil and p:has("core/net/owner") and p:get("core/net/owner").client_id == me) then
                 mine = mine + 1
                 open = open or p:get("scope/portal").target == scope
             end
         end
-        local why = (here == nil and "No active scope to place a portal in")
+        for _, record in ipairs(records:iter_many(carrier:get("Children") or {})) do
+            local r = record:get("sidebar/invites/request")
+            open = open or (r.op == "drop_portal" and r.scope_key == scope)
+        end
+        local why = ((here == nil or not carrier:has("git/panel")) and "No active scope to place a portal in")
             or (scope == here and "You are already in that world")
             or (mine >= 8 and "You have too many portals open")
             or nil
@@ -465,45 +470,61 @@ app:add_systems(Update, {
                     commands:entity(load:id()):despawn()
                 end
             end
-        elseif not open and not dropped[scope] then
-            dropped[scope] = true
-            local t = carrier:has("Transform") and carrier:get("Transform")
-            -- Bevy's back() is the rotation applied to +Z; its Dir3 answer has no Vec3 form here.
-            local at = t and Vec3.add(t.translation, Quat.mul_vec3(t.rotation, { x = 0, y = 0, z = 3 }))
-                or { x = 0, y = 0, z = 0 }
+        elseif not open and not asked[scope] then
+            asked[scope] = true
+            commands:entity(carrier:id()):insert({ ["git/panel/request"] = { op = "portal", target_sk = scope } })
             commands:spawn({
-                Transform = { translation = at },
-                ["scope/portal"] = { target = scope },
-                ["scope/portal/view"] = { mode = "3d" },
-                ["core/net/sync"] = { Transform = { authority = "client" } },
                 ["sidebar/invites/request"] = { op = "drop_portal", scope_key = scope },
                 ["core/script/owner"] = false,
+                ChildOf = carrier:id(),
             })
         end
     end
 end):in_set("sidebar/invites")
 
--- The server approved a dropped portal (the client's prediction confirmed), or refused it (the
--- predicted portal went). A refused drop already passed the other checks here, so the cap is
--- what the server counted differently. The load ask lives while a portal of this player's names
--- its world, so the observed world isn't dropped between the two asks. Removal edges also come
--- for entities that despawned, so only a portal still here was confirmed.
+-- The server answered this mod's portal ask on `git/panel/response`: opened says so; failed says the
+-- cap, as the other checks passed here, and lets the world go. The record of the ask goes either way.
 app:add_systems(Update, {
     Query[{
-        removed = { "core/net/predict" },
-        with = { "scope/portal", "sidebar/invites/request" },
+        changed = { "git/panel/response" },
+        with = { "sidebar/invites" },
+        optional = { "Children" },
     }],
-    Query[{
-        ["or"] = { removed = { "sidebar/invites/request" } },
-        optional = { "sidebar/invites/request" },
-    }],
+    Query[{ with = { "sidebar/invites/request" } }],
+    Query[{ with = { "core/world/load" } }],
+    Commands,
+}, function(answered, records, loads, commands)
+    for _, carrier in ipairs(answered:iter()) do
+        local said = carrier:get("git/panel/response")
+        for _, record in ipairs(records:iter_many(carrier:get("Children") or {})) do
+            local r = record:get("sidebar/invites/request")
+            if r.op == "drop_portal" and said.op == "portal" and said.scope == r.scope_key then
+                if said.status == "opened" then
+                    say(commands, carrier:id(), "ok", "Portal opened - walk through to join")
+                else
+                    say(commands, carrier:id(), "error", "You have too many portals open")
+                    for _, load in ipairs(loads:iter_many(carrier:get("Children") or {})) do
+                        if load:get("core/world/load").scope == r.scope_key then
+                            commands:entity(load:id()):despawn()
+                        end
+                    end
+                end
+                commands:entity(record:id()):despawn()
+            end
+        end
+    end
+end):in_set("sidebar/invites")
+
+-- The load ask lives while a portal of this player's names its world, so the observed world isn't
+-- dropped between the two asks. Removal edges also come for entities that despawned.
+app:add_systems(Update, {
     Query[{
         ["or"] = { removed = { "scope/portal" } },
         optional = { "scope/portal" },
     }],
     Query[{
         with = { "scope/portal" },
-        optional = { "core/net/local", "core/net/owner", "sidebar/invites/request" },
+        optional = { "core/net/local", "core/net/owner" },
     }],
     Query[{
         with = { "sidebar/invites", "core/net/local" },
@@ -511,34 +532,14 @@ app:add_systems(Update, {
     }],
     Query[{ with = { "core/world/load" } }],
     Commands,
-}, function(predicted, unmarked, gone, portals, carriers, loads, commands)
-    local ids = {}
-    for _, p in ipairs(predicted:iter()) do
-        ids[#ids + 1] = p:id()
-    end
-    for _, p in ipairs(portals:iter_many(ids)) do
-        if p:has("sidebar/invites/request") then
-            for _, carrier in ipairs(carriers:iter()) do
-                say(commands, carrier:id(), "ok", "Portal opened - walk through to join")
-            end
-            commands:entity(p:id()):remove("sidebar/invites/request")
-        end
-    end
-    for _, p in ipairs(unmarked:iter()) do
-        local r = p:get("sidebar/invites/request")
-        if r ~= nil and r.op == "drop_portal" and not portals:contains(p:id()) then
-            for _, carrier in ipairs(carriers:iter()) do
-                say(commands, carrier:id(), "error", "You have too many portals open")
-            end
-        end
-    end
+}, function(gone, portals, carriers, loads, commands)
     for _, p in ipairs(gone:iter()) do
         local target = (p:get("scope/portal") or {}).target
         for _, carrier in ipairs(carriers:iter()) do
             local me = carrier:has("core/net/owner") and carrier:get("core/net/owner").client_id
             local still = false
             for _, q in ipairs(portals:iter()) do
-                local owned = q:has("core/net/local") or q:has("sidebar/invites/request")
+                local owned = q:has("core/net/local")
                     or (me ~= nil and q:has("core/net/owner") and q:get("core/net/owner").client_id == me)
                 still = still or (owned and q:get("scope/portal").target == target)
             end

@@ -1,25 +1,27 @@
 -- The invite cards and what follows an answer, driven headless with real clicks. The suite stands
--- in for root: root's mods answer nothing here (`world_id` is not root's), so each reply, each
--- load status and each net confirmation is the suite's own write on the entity the mod made.
+-- in for root and for the world's server: root's mods answer nothing here (`world_id` is not
+-- root's), so each reply, each load status and each server answer is the suite's own write on the
+-- entity the mod made, and a portal the server opens is the suite's spawn, as its sync brings it.
 --
 -- A1   the carrier asks root for its invites once, on a request under it
 -- D1   a debug accept with no world row says "No active scope to place a portal in"
 -- D2   a debug accept into this world says "You are already in that world"
 -- D3   a debug decline says "Invite declined", asks root nothing and drops nothing
--- D4   a debug accept drops the portal at once, with no request and no load; a click on its fading
---      card says "That invite no longer exists"
--- C1   a confirmed portal says "Portal opened - walk through to join"
+-- D4   a debug accept asks the server for one portal at once, on the panel's request slot, with no
+--      request to root and no load, and spawns none itself; a click on its fading card says "That
+--      invite no longer exists"
+-- C1   the server's opened answer says "Portal opened - walk through to join"
 -- I1   one card per listed invite, with its texts and 26 px buttons, no timeout; no duplicates
 -- I2   an invite that leaves the list fades its card only
 -- I3   a click answers on a new request and starts the card's exit at once
 -- IA2  a decline says "Invite declined" and loads nothing; a refused answer says why
 -- I4   an answered invite still listed gets no card while its hold runs, and one once it ends
 -- IA1  root's ok, after "asking", loads the world join-only and says "Opening a door to <scope>"
--- IA3  the load's ready drops one portal 3 m behind the player's back; a second ready drops none
+-- IA3  the load's ready asks the server for one portal to it; a second ready asks none
 -- IA7  the load ask goes with the portal
 -- IA4  a failed load says "That world has ended" or "Could not open that world: <reason>"
 -- IA6  a load that is not the carrier's own drops nothing
--- IA5  eight portals of this player's refuse the drop; a refused prediction says the same
+-- IA5  eight portals of this player's refuse the drop; the server's refusal says the same
 -- H1   a reload redraws every card once and keeps the asks
 -- U1   `sidebar/invites` taken off closes its asks
 require("modules/core/init.lua")
@@ -64,6 +66,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     player = commands:spawn({
         ["zz/player"] = {},
         ["sidebar/invites"] = {},
+        ["git/panel"] = {},
         ["core/net/local"] = {},
         ["core/net/owner"] = { client_id = 1 },
         Transform = {
@@ -188,6 +191,38 @@ local function portals(world, target)
     return out
 end
 
+-- What this mod asked on the panel's request slot.
+local function slot(world)
+    local p = world:query({ with = { "zz/player" }, optional = { "git/panel/request" } })[1]
+    return p:has("git/panel/request") and p:get("git/panel/request") or {}
+end
+
+-- This mod's records of its portal asks, under the player.
+local function records(world)
+    local out = {}
+    for _, r in ipairs(asks(world, "sidebar/invites/request")) do
+        if r.wish.op == "drop_portal" then out[#out + 1] = r end
+    end
+    return out
+end
+
+-- The world's server's answer on the panel's slot.
+local function answer(commands, scope, status, message)
+    commands:entity(player):insert({
+        ["git/panel/response"] = { op = "portal", scope = scope, status = status, message = message },
+    })
+end
+
+-- A portal the server opened for this player, as its sync brings it here.
+local function server_portal(commands, scope)
+    return commands:spawn({
+        ["scope/portal"] = { target = scope },
+        ["core/net/owner"] = { client_id = 1 },
+        ["core/net/local"] = {},
+        ["core/net/sync"] = false,
+    }):id()
+end
+
 local function debug_card(commands, n, scope, message)
     commands:spawn({
         ["sidebar/invites/notification"] = {
@@ -269,24 +304,22 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("debug_dropped")
 
     elseif phase == "debug_dropped" and clock > 0.5 then
-        local p = portals(world, DEBUG_SCOPE)
-        T("D4_a_debug_accept_drops_one_portal_at_once", #p == 1, tostring(#p))
+        local ask = slot(world)
+        T("D4_a_debug_accept_asks_the_server_for_one_portal_at_once", ask.op == "portal"
+            and ask.target_sk == DEBUG_SCOPE and #records(world) == 1,
+            tostring(ask.target_sk) .. " records=" .. #records(world))
+        T("D4_and_spawns_none_itself", #portals(world) == 0, tostring(#portals(world)))
         T("D4_with_no_request_and_no_load", #answers(world) == 0 and #loads(world) == 0)
         T("D4_a_click_on_its_fading_card_says_it_no_longer_exists",
             feedback(world).feedback == "That invite no longer exists", tostring(feedback(world).feedback))
-        if p[1] then
-            commands:entity(p[1]:id()):insert({ ["core/net/predict"] = {}, ["core/net/local"] = {} })
-            mark.debug_portal = p[1]:id()
-        end
-        step("debug_confirm")
-
-    elseif phase == "debug_confirm" and clock > 0.3 then
-        commands:entity(mark.debug_portal):remove("core/net/predict")
+        answer(commands, DEBUG_SCOPE, "opened")
+        mark.debug_portal = server_portal(commands, DEBUG_SCOPE)
         step("debug_confirmed")
 
     elseif phase == "debug_confirmed" and clock > 0.5 then
-        T("C1_a_confirmed_portal_says_portal_opened", feedback(world).feedback == "Portal opened - walk through to join",
+        T("C1_the_server_s_opened_answer_says_portal_opened", feedback(world).feedback == "Portal opened - walk through to join",
             tostring(feedback(world).feedback))
+        T("C1_and_the_record_of_the_ask_goes", #records(world) == 0, tostring(#records(world)))
         commands:entity(mark.debug_portal):despawn()
         list_reply(commands, world, {
             { id = "inv-a", scope = HOST_A, inviter = "Alice", expires_at = "2099-01-01" },
@@ -411,22 +444,28 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("ready")
 
     elseif phase == "ready" and clock > 0.5 then
-        local p = portals(world, HOST_A)
-        local first = p[1]
-        local at = first and first:get("Transform").translation
-        local sync = first and first:get("core/net/sync")
-        T("IA3_ready_drops_one_portal", #p == 1, tostring(#p))
-        T("IA3_3_m_behind_the_player_s_back", at ~= nil and math.abs(at.x - 13) < 0.01 and math.abs(at.y) < 0.01
-            and math.abs(at.z - 5) < 0.01, at and string.format("%.2f %.2f %.2f", at.x, at.y, at.z))
-        T("IA3_a_3d_view_no_placement_its_transform_the_client_s", first ~= nil
-            and first:get("scope/portal/view").mode == "3d" and not first:has("placement")
-            and sync ~= nil and sync.Transform ~= nil and sync.Transform.authority == "client")
-        if first then mark.a_portal = first:id() end
+        local ask = slot(world)
+        T("IA3_ready_asks_the_server_for_one_portal_to_it", ask.op == "portal" and ask.target_sk == HOST_A
+            and #records(world) == 1, tostring(ask.target_sk) .. " records=" .. #records(world))
+        T("IA3_and_spawns_none_itself", #portals(world, HOST_A) == 0, tostring(#portals(world, HOST_A)))
         commands:entity(mark.a_load):insert({ ["core/world/load"] = { scope = HOST_A, join_only = true, status = "ready", waited = 1 } })
         step("ready_again")
 
     elseif phase == "ready_again" and clock > 0.5 then
-        T("IA3_a_second_ready_drops_none", #portals(world, HOST_A) == 1, tostring(#portals(world, HOST_A)))
+        T("IA3_a_second_ready_while_it_is_asked_asks_none", #records(world) == 1 and slot(world).target_sk == HOST_A,
+            tostring(#records(world)))
+        answer(commands, HOST_A, "opened")
+        mark.a_portal = server_portal(commands, HOST_A)
+        step("opened")
+
+    elseif phase == "opened" and clock > 0.5 then
+        T("IA3_opened_its_record_goes", #records(world) == 0 and slot(world).op == nil, tostring(#records(world)))
+        commands:entity(mark.a_load):insert({ ["core/world/load"] = { scope = HOST_A, join_only = true, status = "ready", waited = 2 } })
+        step("ready_third")
+
+    elseif phase == "ready_third" and clock > 0.5 then
+        T("IA3_a_ready_with_its_portal_standing_asks_none", #records(world) == 0 and slot(world).op == nil,
+            tostring(slot(world).target_sk))
         T("IA7_the_load_ask_stays_while_its_portal_does", #loads(world, HOST_A) == 1)
         commands:entity(mark.a_portal):despawn()
         step("portal_gone")
@@ -491,20 +530,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         click(commands, button_in(world, shown["debug-6"]:id(), "Accept"):id())
         step("refusal_dropped")
 
-    elseif phase == "refusal_dropped" and #portals(world, "github:zz/here:debug-hub-6") == 1 and clock > 0.3 then
-        local p = portals(world, "github:zz/here:debug-hub-6")[1]
+    elseif phase == "refusal_dropped" and slot(world).target_sk == "github:zz/here:debug-hub-6" and clock > 0.3 then
         commands:entity(player):insert({ ["sidebar/invites/state"] = { feedback = "zz", feedback_kind = "ok" } })
-        commands:entity(p:id()):insert({ ["core/net/predict"] = {}, ["core/net/local"] = {} })
-        mark.refused = p:id()
-        step("refusing_portal")
-
-    elseif phase == "refusing_portal" and clock > 0.3 then
-        commands:entity(mark.refused):despawn()
+        answer(commands, "github:zz/here:debug-hub-6", "failed", "8 portals already")
         step("refused_portal")
 
     elseif phase == "refused_portal" and clock > 0.5 then
-        T("IA5_a_refused_prediction_says_too_many_portals", feedback(world).feedback == "You have too many portals open",
-            tostring(feedback(world).feedback))
+        T("IA5_the_server_s_refusal_says_too_many_portals", feedback(world).feedback == "You have too many portals open"
+            and #records(world) == 0, tostring(feedback(world).feedback))
         local ask = answer_for(world, "inv-c")
         local hold = ask and world:query({ iter_many = { ask.hold }, with = { "cooldown/left", "sidebar/invites/request" } })[1]
         local left = hold and hold:get("cooldown/left")["sidebar/invites/request"]

@@ -1,7 +1,9 @@
--- A sidebar panel, "GitHub": the player's repositories and a repository's branches, asked of root,
--- with Switch to move to a branch's world, Portal to drop a portal to it, Pull on this world's own
--- branch, and the branch's latest commits. Root holds the token and makes every GitHub call; the
--- panel asks root and shows only what root answers. Local UI: nothing here is synced.
+-- The client half of the "GitHub" sidebar panel: the player's repositories and a repository's
+-- branches, asked of root, with Switch to move to a branch's world, Portal to ask the world's server
+-- for a portal to it, Pull on this world's own branch, and the branch's latest commits. Root holds
+-- the token and makes every GitHub call; the panel asks root and shows only what root answers.
+-- `git/panel` arrives from the server, on the owner's own player only; the state and the UI this
+-- half adds stay on this client.
 --
 -- git/panel = {}
 --
@@ -14,6 +16,9 @@
 -- git/panel/button = {}
 -- git/panel/view = {}
 -- git/panel/row = {}
+--
+-- git/panel/request and git/panel/response: the ask this half writes and the server's answer, laid
+-- out in the server half.
 
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
@@ -244,7 +249,7 @@ app:add_systems(First, {
 end):in_set("git/panel")
 
 -- `git/panel` taken off an entity that stays: its asks close. A despawned carrier takes its children
--- itself. The flip asks, portals and pulls it spawned are the player's, and stay.
+-- itself. The flip asks and pulls it spawned are the player's, and stay.
 app:add_systems(First, {
     Query[{
         removed = { "git/panel" },
@@ -259,6 +264,22 @@ app:add_systems(First, {
     for _, e in ipairs(removed:iter()) do
         for _, ask in ipairs(asks:iter_many(e:get("Children") or {})) do
             commands:entity(ask:id()):try_despawn()
+        end
+    end
+end):in_set("git/panel")
+
+-- The server's answer to an ask on `git/panel/request` stands until the ask is taken back. Taking it
+-- back here makes the next ask a change, even one asking the same.
+app:add_systems(Update, {
+    Query[{
+        changed = { "git/panel/response" },
+        with = { "git/panel", "core/net/local" },
+    }],
+    Commands,
+}, function(answered, commands)
+    for _, e in ipairs(answered:iter()) do
+        if e:get("git/panel/response").op ~= nil then
+            commands:entity(e:id()):insert({ ["git/panel/request"] = {} })
         end
     end
 end):in_set("git/panel")
@@ -804,33 +825,23 @@ app:add_systems(Update, {
                             end
                         end)
                     end
-                    -- The portal is the player's, not the panel's: it outlives the panel, and the
-                    -- world's server approves it or refuses it.
+                    -- The world's server spawns the portal, for the player to place, or refuses it.
+                    -- While the server's last answer stands, it takes an ask for the target it
+                    -- answered as answered already, and never answers it: a click then asks nothing.
                     if not current then
                         portal_button:observe(On[Pointer[Click]], {
                             Query[{
                                 with = { "git/panel", "core/net/local", "git/panel/state" },
-                                optional = { "Transform" },
+                                optional = { "git/panel/response" },
                             }],
                             Commands,
                         }, function(_, owners, click_commands)
                             for _, o in ipairs(owners:iter()) do
                                 local s = o:get("git/panel/state")
-                                if s.repo ~= nil and s.branch ~= nil then
-                                    local at = o:has("Transform") and o:get("Transform").translation or { x = 0, y = 0, z = 0 }
-                                    click_commands:spawn({
-                                        placement = {},
-                                        Transform = { translation = at },
-                                        ["scope/portal"] = { target = scope_of(s.repo, s.branch) },
-                                        ["scope/portal/view"] = { mode = "3d" },
-                                        ["core/net/sync"] = {
-                                            placement = { authority = "client" },
-                                            Transform = { authority = "client", reliable = false },
-                                            ["scope/portal"] = { authority = "server" },
-                                            ["scope/portal/view"] = { authority = "server" },
-                                            ["scope/portal/hosted"] = { authority = "server" },
-                                        },
-                                        ["core/script/owner"] = false,
+                                local standing = o:has("git/panel/response") and o:get("git/panel/response").op ~= nil
+                                if s.repo ~= nil and s.branch ~= nil and not standing then
+                                    click_commands:entity(o:id()):insert({
+                                        ["git/panel/request"] = { op = "portal", target_sk = scope_of(s.repo, s.branch) },
                                     })
                                 end
                             end

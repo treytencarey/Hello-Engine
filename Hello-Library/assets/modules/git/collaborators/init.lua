@@ -23,14 +23,14 @@ local Time = require("bevy::time::Time")
 local DEBUG_INVITES = false
 
 -- The repository the panel lists, as owner and name, and whether it is this world's own: the
--- one git/panel chose, else the one this world's row names.
+-- one git/panel chose (`"<owner>/<name>"`), else the one this world's row names.
 local function listed(choice, row)
     local own = row and row:get("core/world/status").scope_root
     local owner, name = tostring(own or ""):match("^github:([^/]+)/(.+)$")
-    local repo = choice and choice.repo
-    if repo and repo.owner ~= nil and repo.name ~= nil then
-        local same = owner ~= nil and tostring(repo.owner):lower() == owner and tostring(repo.name):lower() == name
-        return repo.owner, repo.name, same
+    local chose, chosen = tostring(choice and choice.repo or ""):match("^([^/]+)/(.+)$")
+    if chose ~= nil then
+        local same = owner ~= nil and chose:lower() == owner and chosen:lower() == name
+        return chose, chosen, same
     end
     return owner, name, owner ~= nil
 end

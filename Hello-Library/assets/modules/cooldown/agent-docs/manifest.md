@@ -6,7 +6,7 @@ exposes: [cooldown, cooldown/left]
 
 # cooldown
 
-Named timers on an entity. While a timer runs, the entity carries the component the timer is named after; when it ends or is cancelled, both are removed. Runs on both sides and never syncs: each side runs the timers started on it. A timer a client needs (to show time left, to predict) is started on both sides from synced data, by the using mod's `shared/` half (`projectile`); the server's side decides what the end does.
+Named timers on an entity. While a timer runs, the entity carries the component the timer is named after; when it ends or is cancelled, both are removed. Runs on both sides and declares no sync: each side runs the timers started on it. Where a spawn syncs `cooldown` from the server (a player handed in from another world, `player/spawner`), the client starts the same timers from the entries it receives, and an entry the server ends goes from the client with the next update. A timer a client needs (to show time left, to predict) is started on both sides from synced data, by the using mod's `shared/` half (`projectile`); the server's side decides what the end does.
 
 ## Components
 

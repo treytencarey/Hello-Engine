@@ -1,15 +1,9 @@
 -- --host
 -- scope/portal on a server. The target's server is stubbed by its row and by a real peer listener
 -- in this VM that answers as the target's scope; the link the portal makes dials it and is
--- welcomed. A client's ask arrives as the net server hands it over, `core/net/predict { client_id,
--- requested }` with the server's `core/net/owner`. Walking in is `collision_trigger` as the
--- trigger mod writes it.
+-- welcomed. Walking in is `collision_trigger` as the trigger mod writes it. A portal being placed
+-- is spawned as `git/panel`'s server half spawns one.
 --
---   P1  a predicted portal to another repository is approved, with its sync
---   P2  a target that is not a canonical github scope key is refused
---   P3  a portal to this world's own scope is refused
---   P4  an owner gets at most 8, asked in one frame
---   P5  ...and the cap counts the portals held from before
 --   P6  one link to each target running here, however many portals name it
 --   P7  a welcomed link marks the portals to its target hosted
 --   P8  a link that is not welcomed marks nothing
@@ -21,6 +15,9 @@
 --   P14 ...and gets them once placed
 --   P15 taking `scope/portal` off a portal that stays takes its body, trigger, mark and link
 --   P16 ...and another portal to that target takes the link
+--   P17 a player still cooling from its crossing (`cooldown`'s `scope/portal/cooling`) is not handed
+--       over
+--   P18 ...and once it has cooled, walking in again hands it over
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -32,7 +29,6 @@ local HERE = "github:zzportal/here:main"
 local OTHER = "github:zzportal/other:main"
 local FOURTH = "github:zzportal/fourth:main"
 local THIRD = "github:zzportal/third:main"
-local SIXTH = "github:zzportal/sixth:main"
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
@@ -48,7 +44,7 @@ local function named(world, marker, name)
         with = { marker },
         optional = {
             "scope/portal", "scope/portal/view", "scope/portal/hosted", "placement", "Transform",
-            "core/net/sync", "core/net/predict", "core/script/owner", "core/net/peer/switch",
+            "core/net/sync", "core/script/owner", "core/net/peer/switch", "scope/portal/cooling",
             "RigidBody3d", "Collider3d", "collision_trigger", "Children",
         },
     })) do
@@ -62,22 +58,6 @@ local function links(world, scope)
         if e:get("core/net/peer/link").scope_key == scope then out[#out + 1] = e end
     end
     return out
-end
-
-local function owned_by(world, client_id)
-    local n = 0
-    for _, e in ipairs(world:query({ with = { "scope/portal", "core/net/owner" } })) do
-        if e:get("core/net/owner").client_id == client_id then n = n + 1 end
-    end
-    return n
-end
-
-local function ask(commands, client_id, name, requested)
-    commands:spawn({
-        ["core/net/predict"] = { client_id = client_id, predicted_eid = -1, requested = requested },
-        ["core/net/owner"] = { client_id = client_id },
-        ["zz/portal/ask"] = { name = name },
-    })
 end
 
 -- Core's switch takes `core/net/peer/switch` off in the same frame when it finds no peer for the
@@ -108,64 +88,39 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["core/net/peer"] = {},
             ["core/net/sync"] = false,
         })
-        -- The server half answers asks only once it is loaded here, which a portal on the server
-        -- does: nothing else loads it.
-        commands:spawn({ ["scope/portal"] = { target = THIRD }, ["core/net/sync"] = false, ["zz/portal/p"] = { name = "seed" } })
+        commands:spawn({
+            ["scope/portal"] = { target = OTHER },
+            ["scope/portal/view"] = { mode = "3d" },
+            placement = {},
+            Transform = { translation = { x = 1, y = 0, z = 2 } },
+            ["core/net/sync"] = {
+                placement = { authority = "client" },
+                Transform = { authority = "client", reliable = false },
+                ["scope/portal"] = { authority = "server" },
+            },
+            ["zz/portal/p"] = { name = "a1" },
+        })
         step("binding")
 
     elseif phase == "binding" then
         local listener = world:query({ with = { "core/net/peer/state", "core/net/peer/listen" } })[1]
         if listener and listener:get("core/net/peer/state").bound then
             bound_port = listener:get("core/net/peer/listen").port
-            ask(commands, 7, "a1", {
-                ["scope/portal"] = { target = OTHER },
-                ["scope/portal/view"] = { mode = "3d" },
-                placement = {},
-                Transform = { translation = { x = 1, y = 0, z = 2 } },
+            commands:spawn({
+                ["core/world/status"] = { scope_key = OTHER, mode = "server", status = "ready",
+                    ports = { world = 47730, peer = bound_port } },
+                ["core/net/sync"] = false,
             })
-            ask(commands, 7, "a2", { ["scope/portal"] = { target = "github:ZZPortal/Other:main" } })
-            ask(commands, 7, "a3", { ["scope/portal"] = { target = HERE } })
-            for i = 1, 9 do
-                ask(commands, 9, "n" .. i, { ["scope/portal"] = { target = SIXTH } })
+            commands:spawn({
+                ["core/world/status"] = { scope_key = FOURTH, mode = "server", status = "ready",
+                    ports = { world = 47732, peer = 47733 } },
+                ["core/net/sync"] = false,
+            })
+            for _, p in ipairs({ { "l1", OTHER }, { "l2", OTHER }, { "l4", FOURTH }, { "l5", THIRD } }) do
+                commands:spawn({ ["scope/portal"] = { target = p[2] }, ["core/net/sync"] = false, ["zz/portal/p"] = { name = p[1] } })
             end
-            step("asked")
+            step("linking")
         end
-
-    elseif phase == "asked" and clock > 0.4 then
-        local a1 = named(world, "zz/portal/ask", "a1")
-        local sync = a1 and a1:get("core/net/sync") or {}
-        local at = a1 and a1:get("Transform").translation
-        T("P1_a_portal_to_another_repository_is_approved_with_its_sync",
-            a1 ~= nil and not a1:has("core/net/predict") and a1:get("scope/portal").target == OTHER
-                and a1:get("scope/portal/view").mode == "3d" and a1:has("placement")
-                and at.x == 1 and at.z == 2 and a1:get("core/script/owner") == false
-                and sync.placement and sync.placement.authority == "client"
-                and sync.Transform and sync.Transform.authority == "client" and sync.Transform.reliable == false
-                and sync["scope/portal"] and sync["scope/portal"].authority == "server"
-                and sync["scope/portal/view"] and sync["scope/portal/hosted"]
-                and sync["scope/portal/hosted"].authority == "server", "")
-        T("P2_a_key_that_is_not_canonical_is_refused", named(world, "zz/portal/ask", "a2") == nil, "")
-        T("P3_this_worlds_own_scope_is_refused", named(world, "zz/portal/ask", "a3") == nil, "")
-        T("P4_an_owner_gets_at_most_eight", owned_by(world, 9) == 8, "client 9 holds " .. owned_by(world, 9))
-        ask(commands, 9, "n10", { ["scope/portal"] = { target = SIXTH } })
-        step("capped")
-
-    elseif phase == "capped" and clock > 0.4 then
-        T("P5_the_cap_counts_what_is_held", named(world, "zz/portal/ask", "n10") == nil and owned_by(world, 9) == 8, "")
-        commands:spawn({
-            ["core/world/status"] = { scope_key = OTHER, mode = "server", status = "ready",
-                ports = { world = 47730, peer = bound_port } },
-            ["core/net/sync"] = false,
-        })
-        commands:spawn({
-            ["core/world/status"] = { scope_key = FOURTH, mode = "server", status = "ready",
-                ports = { world = 47732, peer = 47733 } },
-            ["core/net/sync"] = false,
-        })
-        for _, p in ipairs({ { "l1", OTHER }, { "l2", OTHER }, { "l4", FOURTH }, { "l5", THIRD } }) do
-            commands:spawn({ ["scope/portal"] = { target = p[2] }, ["core/net/sync"] = false, ["zz/portal/p"] = { name = p[1] } })
-        end
-        step("linking")
 
     elseif phase == "linking" then
         local up = links(world, OTHER)[1]
@@ -197,12 +152,21 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                     ["zz/portal/h"] = { name = h[1] },
                 })
             end
+            -- Cooling as a handed player arrives: a `cooldown` timer, which `cooldown` turns into the mark.
+            commands:spawn({
+                player = { client_id = 21, spawn_index = 0 },
+                ["core/net/owner"] = { client_id = 21 },
+                ["core/net/peer/share"] = { stable_id = "player_21" },
+                cooldown = { ["scope/portal/cooling"] = { remaining = 3 } },
+                ["core/net/sync"] = false,
+                ["zz/portal/h"] = { name = "hc" },
+            })
             step("players")
         end
 
-    elseif phase == "players" and clock > 0.3 then
+    elseif phase == "players" and clock > 0.3 and named(world, "zz/portal/h", "hc"):has("scope/portal/cooling") then
         local function id(name) return named(world, "zz/portal/h", name):id() end
-        local walked = { id("h7"), id("hm"), id("hn") }
+        local walked = { id("h7"), id("hm"), id("hn"), id("hc") }
         commands:entity(named(world, "zz/portal/p", "l1"):id()):insert({
             collision_trigger = { entered = walked, exited = {}, inside = walked },
         })
@@ -216,8 +180,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P11_with_no_welcomed_link_nothing", switched.h8 == nil, tostring(switched.h8))
         T("P12_a_peer_mirror_or_a_player_without_a_share_is_not_handed_over",
             switched.hm == nil and switched.hn == nil, "")
+        T("P17_a_player_still_cooling_is_not_handed_over", switched.hc == nil
+            and named(world, "zz/portal/h", "hc"):has("scope/portal/cooling"), tostring(switched.hc))
         local l1 = named(world, "zz/portal/p", "l1")
-        local a1 = named(world, "zz/portal/ask", "a1")
+        local a1 = named(world, "zz/portal/p", "a1")
         local ball = l1:get("Collider3d")
         T("P13_a_placed_portal_has_a_fixed_ball_and_a_trigger_one_being_placed_none",
             l1:get("RigidBody3d") == "Fixed" and l1:has("Collider3d") and l1:has("collision_trigger")
@@ -229,7 +195,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("taken")
 
     elseif phase == "taken" and clock > 0.5 then
-        local a1 = named(world, "zz/portal/ask", "a1")
+        local a1 = named(world, "zz/portal/p", "a1")
         T("P14_placed_it_gets_them", a1:get("RigidBody3d") == "Fixed" and a1:has("Collider3d") and a1:has("collision_trigger"), "")
         local holder = world:get_entity(link_holder)
         local gone = true
@@ -247,6 +213,17 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P16_another_portal_to_that_target_takes_the_link",
             #others == 1 and now ~= link_holder and names ~= nil and names.target == OTHER,
             string.format("links=%d under %s, was %s", #others, tostring(now), tostring(link_holder)))
+        link_holder = now
+        step("cooled")
+
+    elseif phase == "cooled" and not named(world, "zz/portal/h", "hc"):has("scope/portal/cooling")
+        and world:get_entity(link_holder):has("scope/portal/hosted") then
+        local hc = named(world, "zz/portal/h", "hc"):id()
+        commands:entity(link_holder):insert({ collision_trigger = { entered = { hc }, exited = {}, inside = { hc } } })
+        step("walked_again")
+
+    elseif phase == "walked_again" and clock > 0.3 then
+        T("P18_once_it_has_cooled_walking_in_hands_it_over", switched.hc == OTHER, tostring(switched.hc))
         phase = "done"
         suite.finish("ScopePortalServerSuite")
     end

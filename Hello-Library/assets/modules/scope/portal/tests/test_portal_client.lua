@@ -10,6 +10,8 @@
 --   C4  a remote player walking in asks none
 --   C5  once the player inside a hosted portal stops being this client's, one flip to its target
 --   C6  in a world that only observes, walking in asks none
+--   C7  a local player still cooling from its crossing (the `cooldown` its server synced) asks none
+--   C8  ...and once it has cooled, walking in asks one
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -21,6 +23,7 @@ local HERE = "github:zzportalc/here:main"
 local OTHER = "github:zzportalc/other:main"
 local SECOND = "github:zzportalc/second:main"
 local THIRD = "github:zzportalc/third:main"
+local FIFTH = "github:zzportalc/fifth:main"
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -111,6 +114,34 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "watched" and clock > 0.3 then
         T("C6_in_a_world_that_only_observes_walking_in_asks_none", flips(world, THIRD) == 0, "")
+        commands:entity(world:query({ with = { "zz/pc/row" } })[1]:id()):insert({
+            ["core/world/status"] = { scope_key = HERE, mode = "client", status = "ready", observer = false },
+        })
+        -- What a handed player arrives with from its server, which `cooldown` turns into the mark here.
+        commands:entity(named(world, "zz/pc/h", "me"):id()):insert({
+            cooldown = { ["scope/portal/cooling"] = { remaining = 3 } },
+        })
+        commands:spawn({ ["scope/portal"] = { target = FIFTH }, ["core/net/sync"] = false, ["zz/pc/p"] = { name = "c5" } })
+        step("cooling")
+
+    elseif phase == "cooling" and #world:query({ with = { "zz/pc/h", "scope/portal/cooling" } }) == 1
+        and named(world, "zz/pc/p", "c5") ~= nil
+        and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 5 and clock > 0.5 then
+        walk(commands, world, "c5", { "me" })
+        step("cooled_walk")
+
+    elseif phase == "cooled_walk" and clock > 0.3 then
+        T("C7_a_player_still_cooling_asks_none", flips(world, FIFTH) == 0
+            and #world:query({ with = { "zz/pc/h", "scope/portal/cooling" } }) == 1, "")
+        step("cooled")
+
+    elseif phase == "cooled" and #world:query({ with = { "zz/pc/h", "scope/portal/cooling" } }) == 0 then
+        walk(commands, world, "c5", { "me" })
+        step("walked_cooled")
+
+    elseif phase == "walked_cooled" and clock > 0.3 then
+        local n, shaped = flips(world, FIFTH)
+        T("C8_once_it_has_cooled_walking_in_asks_one", n == 1 and shaped, "flips=" .. n)
         phase = "done"
         suite.finish("ScopePortalClientSuite")
     end

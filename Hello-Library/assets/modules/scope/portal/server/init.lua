@@ -1,85 +1,9 @@
--- The server half of a portal: it approves a portal a client places, keeps one peer link to each
--- target this process runs, marks a portal whose target's link is up `scope/portal/hosted`, and
--- hands a player who walks into such a portal to the target's server.
+-- The server half of a portal: it keeps one peer link to each target this process runs, marks a
+-- portal whose target's link is up `scope/portal/hosted`, and hands a player who walks into such a
+-- portal to the target's server, unless the player is still cooling from its last crossing.
 --
 -- The mod's return declares no sync: a portal a scene spawns on each side (a glTF door) is never
--- replicated. A placed portal gets its sync from the approval.
-
-local Canonical = require("modules/core/world/canonical.lua")
-
--- A client asks for a portal by predicting it. Only the target is taken from the ask, after its
--- checks; the cap counts what the owner holds here, and what this run approved.
-app:add_systems(Update, {
-    Query[{ added = { "core/net/predict" } }],
-    Query[{ with = { "scope/portal", "core/net/owner" } }],
-    Query[{
-        with = { "core/world/status", "WorldShared" },
-        without = { "WorldMirror" },
-    }],
-    Commands,
-}, function(asks, owned, rows, commands)
-    local me = rows:iter()[1]
-    local mine = me and me:get("core/world/status").scope_key
-    local held = {}
-    for _, p in ipairs(owned:iter()) do
-        local client_id = p:get("core/net/owner").client_id
-        held[client_id] = (held[client_id] or 0) + 1
-    end
-    for _, ask in ipairs(asks:iter()) do
-        local predict = ask:get("core/net/predict")
-        local requested = predict.requested or {}
-        local portal = requested["scope/portal"]
-        if portal ~= nil then
-            local target = portal.target
-            local parts = type(target) == "string" and Canonical.parse(target) or nil
-            local refused
-            if not (parts and parts.provider == "github" and not parts.reserved
-                and Canonical.canonical(parts) == target) then
-                refused = "not a canonical github scope key"
-            elseif target == mine then
-                refused = "this world's own scope"
-            elseif (held[predict.client_id] or 0) >= 8 then
-                refused = "8 portals already"
-            end
-            if refused then
-                commands:entity(ask:id()):despawn()
-                print(string.format("[SCOPE/PORTAL] client %s's portal to %s refused: %s",
-                    tostring(predict.client_id), tostring(target), refused))
-            else
-                held[predict.client_id] = (held[predict.client_id] or 0) + 1
-                local view = requested["scope/portal/view"]
-                local mode = view and (view.mode == "none" or view.mode == "3d") and view.mode or "3d"
-                local placing = requested.placement ~= nil
-                local t = requested.Transform
-                local at = type(t) == "table" and type(t.translation) == "table" and t.translation or {}
-                local entity = commands:entity(ask:id())
-                entity:insert({
-                    ["scope/portal"] = { target = target },
-                    ["scope/portal/view"] = { mode = mode },
-                    placement = placing and {} or nil,
-                    Transform = {
-                        translation = {
-                            x = tonumber(at.x) or 0,
-                            y = tonumber(at.y) or 0,
-                            z = tonumber(at.z) or 0,
-                        },
-                    },
-                    ["core/net/sync"] = {
-                        placement = placing and { authority = "client" } or nil,
-                        Transform = placing and { authority = "client", reliable = false } or { authority = "server" },
-                        ["scope/portal"] = { authority = "server" },
-                        ["scope/portal/view"] = { authority = "server" },
-                        ["scope/portal/hosted"] = { authority = "server" },
-                    },
-                    ["core/script/owner"] = false,
-                })
-                entity:remove("core/net/predict")
-                print(string.format("[SCOPE/PORTAL] client %s placed a portal to %s",
-                    tostring(predict.client_id), target))
-            end
-        end
-    end
-end):in_set("scope/portal/server")
+-- replicated. A portal a player opens gets its sync where it is spawned (`git/panel`).
 
 -- One peer link to each target a placed portal names that runs as a server in this process: its
 -- row, mirrored from the sibling world's VM, is ready with a peer port. Links are children of a
@@ -217,7 +141,8 @@ end):in_set("scope/portal/server")
 
 -- Walking into a portal whose target's link is up hands the player over: core's peer switch sends
 -- its synced state to the target's server and demotes it here to a mirror. A demoted player has no
--- `core/net/owner`, so it matches nothing here again.
+-- `core/net/owner`, so it matches nothing here again. A player handed in here cools for a while
+-- (`player/spawner`), so it does not bounce straight back through a portal where it arrives.
 app:add_systems(Update, {
     Query[{
         changed = { "collision_trigger" },
@@ -226,7 +151,7 @@ app:add_systems(Update, {
     }],
     Query[{
         with = { "player", "core/net/owner", "core/net/peer/share" },
-        without = { "core/net/peer/mirror", "WorldMirror" },
+        without = { "core/net/peer/mirror", "WorldMirror", "scope/portal/cooling" },
     }],
     Query[{ with = { "core/net/peer/link", "core/net/peer/link/state" } }],
     Query[{
