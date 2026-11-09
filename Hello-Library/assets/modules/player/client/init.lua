@@ -28,6 +28,28 @@ app:add_systems(First, {
     end
 end):in_set("player/local")
 
+-- The player stopped being this client's and stays: another world's server took it, and it is
+-- now moved by what this world's server sends. Its body goes back to the server's kind, at rest.
+app:add_systems(First, {
+    Query[{
+        removed = { "core/net/local" },
+        with = { "player" },
+        optional = { "RigidBody3d", "Velocity3d" },
+    }],
+    Commands,
+}, function(released, commands)
+    for _, e in ipairs(released:iter()) do
+        if e:has("RigidBody3d") then
+            commands:entity(e:id()):insert({ RigidBody3d = "KinematicPositionBased" })
+        end
+        if e:has("Velocity3d") then
+            commands:entity(e:id()):insert({
+                Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
+            })
+        end
+    end
+end):in_set("player/local")
+
 -- `player` was taken off an entity that stays: take off what this half added. A despawned
 -- entity has no row in `parts`.
 app:add_systems(First, {

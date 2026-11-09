@@ -35,3 +35,4 @@ end):in_set("my/camera")
 ## Notes
 
 - The server half only declares sync (client authority, sent to the owner); it declares no defaults.
+- A player handed over through a portal to another world's server keeps its `yaw`, `pitch` and `distance`: `player/spawner` sends them in the switch, and the target's spawner spawns the player with them and with this component's sync, so they reach the owner in the spawn, before the client's own defaults would. `height` and `offset` are the new world's.

@@ -15,10 +15,12 @@ local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")
 
+-- A player another world's server shares here is that world's (`core/net/peer/mirror`), and is
+-- not set up as one of this world's.
 app:add_systems(First, {
     Query[{
         added = { "player" },
-        without = { "WorldMirror" },
+        without = { "WorldMirror", "core/net/peer/mirror" },
     }],
     Commands,
 }, function(added, commands)
@@ -75,12 +77,13 @@ app:add_systems(Update, {
     end
 end):in_set("player/identity")
 
--- Follows, so it polls: the server's Transform eases toward the owner's.
+-- Follows, so it polls: the server's Transform eases toward the owner's. A player handed to
+-- another world stays here as that world's mirror, moved by its peer, and its shadow goes stale.
 app:add_systems(Update, {
     Res[Time],
     Query[{
         with = { "player", "core/net/sync/Transform", Mut["Transform"] },
-        without = { "WorldMirror" },
+        without = { "WorldMirror", "core/net/peer/mirror" },
     }],
 }, function(time, players)
     local dt = time:delta_secs()

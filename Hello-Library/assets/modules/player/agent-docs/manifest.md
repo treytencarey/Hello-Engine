@@ -31,11 +31,12 @@ The owning client drives its player's Transform, as there is no client predictio
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First (server) | `player/init` | On an added `player`, add the camera, movement, the model, the abilities, what agents look for and hear, the file browser panel and the VR stack |
+| First (server) | `player/init` | On an added `player` that is neither a `WorldMirror` nor a peer mirror (`core/net/peer/mirror`), add the camera, movement, the model, the abilities, what agents look for and hear, the file browser panel and the VR stack |
 | Update (server) | `player/identity` | On a changed `core/player/attest` on a connection, and on an added `player`: set `player.user_id` from the connection with its `client_id`. Who the client is lives on the connection, so a player spawned again for it is who it was |
-| Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`) |
+| Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`). Not a peer mirror: a player handed to another world stays here as that world's mirror, moved by its peer, and its shadow is stale |
 | First (server) | `player/removed` | When `player` is removed from an entity that stays, remove the camera, movement, the model, the abilities, what agents look for and hear, the file browser panel and the VR stack |
 | First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar with its profiler and sign-in panels, and make its body dynamic |
+| First (client) | `player/local` | When `core/net/local` leaves a player that stays (another world's server took it through a portal), make its body `KinematicPositionBased` again with zero velocity: it is moved by what this world's server sends |
 | First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar and its profiler and sign-in panels |
 
 ## Use
@@ -49,7 +50,8 @@ commands:spawn({ ["player/spawner"] = {}, ChildOf = boot:id() })
 
 ## Notes
 
-- Mirrored players from another world (`WorldMirror`) are not set up here.
-- The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches.
-- Not done yet: the streaming panels and the account providers, whose mods are not in this library yet, and crossing between worlds (promotion, demotion, transfer).
-- Suites: a server one (headless) and a client one (windowed: input and the sidebar act on a window).
+- Mirrored players from another world (`WorldMirror`, or a peer mirror, `core/net/peer/mirror`) are not set up here.
+- The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches. The server's body is kinematic throughout, and core's peer switch zeroes its velocity when it hands the player over.
+- Crossing between worlds through a portal: `player/spawner` gives every player its `core/net/peer/share` and places a handed player where it stood; `scope/portal` hands it over.
+- Not done yet: the streaming panels and the account providers, whose mods are not in this library yet.
+- Suites: a server one and a client one (windowed: input and the sidebar act on a window); `test_player_handover.lua` and `test_player_handover_client.lua` for crossing, headless.

@@ -21,6 +21,12 @@ local Vec3 = require("bevy::math::Vec3")
 -- watching. A spawner added later serves the clients already connected: this mod loads
 -- with it, and a mod's first run sees every connection as changed. A point given in this
 -- run counts as taken: what this run spawned is not in a query until the run ends.
+--
+-- A player another world's server handed over arrives in the connection's `synced_state`
+-- while the client still only watches: it stands where it stood there, still claiming a
+-- point, and keeps its camera's yaw, pitch and distance. Nothing else of that state is
+-- taken, as this world's defaults are its own. The camera's sync rides the spawn, so the
+-- carried camera reaches the owner before its own defaults would.
 app:add_systems(First, {
     Query[{ changed = { "core/net/connection" } }],
     Query[{ with = { "player", "core/net/owner" } }],
@@ -46,20 +52,31 @@ app:add_systems(First, {
                 at = Vec3.add(at, Quat.mul_vec3(Quat.from_rotation_y(index / s.count * 2 * math.pi),
                     { x = s.radius, y = 0, z = 0 }))
             end
+            local handed = connection.synced_state or {}
+            local stood = handed.Transform
+            local facing = { x = 0, y = 0, z = 0, w = 1 }
+            if stood and stood.translation then
+                at = stood.translation
+                facing = stood.rotation or facing
+            end
+            local camera = handed.camera
             commands:spawn({
                 player = { client_id = connection.client_id, spawn_index = index },
-                Transform = { translation = at },
+                Transform = { translation = at, rotation = facing },
                 RigidBody3d = "KinematicPositionBased",
                 Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
                 LockedAxes3d = "ROTATION_LOCKED",
                 Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
+                camera = camera and { yaw = camera.yaw, pitch = camera.pitch, distance = camera.distance } or nil,
                 ["core/net/owner"] = { client_id = connection.client_id },
-                ["core/net/sync/Transform"] = { translation = at, rotation = { x = 0, y = 0, z = 0, w = 1 } },
+                ["core/net/peer/share"] = { stable_id = "player_" .. tostring(connection.client_id) },
+                ["core/net/sync/Transform"] = { translation = at, rotation = facing },
                 ["core/net/sync"] = {
                     Transform = { authority = "client", reliable = false },
                     RigidBody3d = { authority = "server" },
                     Collider3d = { authority = "server" },
                     LockedAxes3d = { authority = "server" },
+                    camera = camera and { authority = "client", target = "owner" } or nil,
                 },
                 ["core/script/owner"] = false,
             })
@@ -93,6 +110,25 @@ app:add_systems(PreUpdate, {
         end
     end
 end):in_set("player/spawner/left")
+
+-- A player handed to another world takes its camera's yaw, pitch and distance in the switch itself,
+-- which core sends in this same frame: the target's mirror of the player may be an update behind.
+app:add_systems(PostUpdate, {
+    Query[{
+        added = { "core/net/peer/switch" },
+        with = { "player", Mut["core/net/peer/share"] },
+        optional = { "camera" },
+    }],
+}, function(leaving)
+    for _, p in ipairs(leaving:iter_mut()) do
+        local camera = p:get("camera")
+        if camera ~= nil then
+            p:get_mut("core/net/peer/share").transfer_data = {
+                camera = { yaw = camera.yaw, pitch = camera.pitch, distance = camera.distance },
+            }
+        end
+    end
+end):in_set("player/spawner/left"):before("core/net/peer/authority_switch")
 
 return {
     defaults = {
