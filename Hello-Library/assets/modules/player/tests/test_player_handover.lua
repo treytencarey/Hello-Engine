@@ -11,8 +11,9 @@
 --   H5  a peer mirror of a player is not set up as this world's player
 --   H6  a peer mirror is not eased toward a shadow nobody writes any more
 --   H7  a player being handed over carries its camera's yaw, pitch and distance in the switch
---   H8  a handed player arrives cooling for 3 s (`scope/portal/cooling`), the timer synced to its
---       owner in the spawn; a player that was not handed has no timer
+--   H8  a handed player keeps the timers that crossed with it (a portal's `scope/portal/cooling`), synced
+--       to its owner in the spawn; a player that was not handed has no timer
+--   H9  leaving, the camera's entry joins what the portal put in `transfer_data`, and replaces none of it
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerHandoverSuite")
@@ -24,6 +25,7 @@ local HANDED = {
         rotation = { x = 0, y = 0.70710677, z = 0, w = 0.70710677 },
     },
     camera = { yaw = 1.1, pitch = -0.2, distance = 5, height = 9 },
+    cooldown = { ["scope/portal/cooling"] = { remaining = 3 } },
     movement = { speed = 99 },
     player = { client_id = 7, spawn_index = 6, user_id = "zz-elsewhere" },
     ["core/net/sync"] = { camera = { authority = "client", target = "owner" } },
@@ -134,6 +136,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:entity(player_of(world, 8):id()):insert({
             ["core/net/peer/switch"] = { target_scope = "github:zzhandover/elsewhere:main" },
         })
+        commands:entity(player_of(world, 8):id()):entry("core/net/peer/share"):and_modify(function(share)
+            share.transfer_data = { cooldown = { ["scope/portal/cooling"] = { remaining = 3 } } }
+        end)
         step("leaving")
 
     elseif phase == "leaving" and clock > 0.2 then
@@ -143,6 +148,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             carried.yaw == 0.5 and carried.pitch == -0.1 and carried.distance == 6 and carried.height == nil
                 and share.stable_id == "player_8",
             string.format("yaw=%s distance=%s", tostring(carried.yaw), tostring(carried.distance)))
+        local timers = share.transfer_data and share.transfer_data.cooldown or {}
+        T("H9_the_camera_joins_what_the_portal_put_in_the_switch", timers["scope/portal/cooling"] ~= nil
+            and timers["scope/portal/cooling"].remaining == 3, "")
         phase = "done"
         suite.finish("PlayerHandoverSuite")
     end

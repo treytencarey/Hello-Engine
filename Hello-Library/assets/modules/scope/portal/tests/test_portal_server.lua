@@ -15,6 +15,7 @@
 --   P14 ...and gets them once placed
 --   P15 taking `scope/portal` off a portal that stays takes its body, trigger, mark and link
 --   P16 ...and another portal to that target takes the link
+--   P10b ...taking a 3 s crossing timer with it in `transfer_data`
 --   P17 a player still cooling from its crossing (`cooldown`'s `scope/portal/cooling`) is not handed
 --       over
 --   P18 ...and once it has cooled, walking in again hands it over
@@ -62,15 +63,20 @@ end
 
 -- Core's switch takes `core/net/peer/switch` off in the same frame when it finds no peer for the
 -- target, so what the portal asked for is read on its edge, right after the portal's systems.
-local switched = {}
+local switched, carried = {}, {}
 app:add_systems(Update, {
     Query[{
         added = { "core/net/peer/switch" },
         with = { "zz/portal/h" },
+        optional = { "core/net/peer/share" },
     }],
 }, function(rows)
     for _, r in ipairs(rows:iter()) do
-        switched[r:get("zz/portal/h").name] = r:get("core/net/peer/switch").target_scope
+        local name = r:get("zz/portal/h").name
+        switched[name] = r:get("core/net/peer/switch").target_scope
+        local share = r:get("core/net/peer/share") or {}
+        local timers = share.transfer_data and share.transfer_data.cooldown or {}
+        carried[name] = timers["scope/portal/cooling"] and timers["scope/portal/cooling"].remaining
     end
 end):in_set("zz/portal_switch_seen"):after("scope/portal/server")
 
@@ -177,6 +183,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "walked" and clock > 0.3 then
         T("P10_walking_into_a_hosted_portal_hands_the_player_over", switched.h7 == OTHER, tostring(switched.h7))
+        T("P10b_taking_a_3_s_crossing_timer_in_transfer_data", carried.h7 == 3, tostring(carried.h7))
         T("P11_with_no_welcomed_link_nothing", switched.h8 == nil, tostring(switched.h8))
         T("P12_a_peer_mirror_or_a_player_without_a_share_is_not_handed_over",
             switched.hm == nil and switched.hn == nil, "")

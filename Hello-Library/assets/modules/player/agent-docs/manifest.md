@@ -52,6 +52,6 @@ commands:spawn({ ["player/spawner"] = {}, ChildOf = boot:id() })
 
 - Mirrored players from another world (`WorldMirror`, or a peer mirror, `core/net/peer/mirror`) are not set up here.
 - The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches. The server's body is kinematic throughout, and core's peer switch zeroes its velocity when it hands the player over.
-- Crossing between worlds through a portal: `player/spawner` gives every player its `core/net/peer/share`, and places a handed player where it stood, cooling for 3 s (`scope/portal/cooling`); `scope/portal` hands it over.
+- Crossing between worlds through a portal: `player/spawner` gives every player its `core/net/peer/share`, and places a handed player where it stood, with the timers that crossed with it; `scope/portal` hands it over and sends its 3 s crossing timer (`scope/portal/cooling`) along.
 - Not done yet: the streaming panels and the account providers, whose mods are not in this library yet.
 - Suites: a server one and a client one (windowed: input and the sidebar act on a window); `test_player_handover.lua` and `test_player_handover_client.lua` for crossing, headless.

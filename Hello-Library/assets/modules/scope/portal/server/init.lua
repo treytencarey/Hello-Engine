@@ -141,8 +141,9 @@ end):in_set("scope/portal/server")
 
 -- Walking into a portal whose target's link is up hands the player over: core's peer switch sends
 -- its synced state to the target's server and demotes it here to a mirror. A demoted player has no
--- `core/net/owner`, so it matches nothing here again. A player handed in here cools for a while
--- (`player/spawner`), so it does not bounce straight back through a portal where it arrives.
+-- `core/net/owner`, so it matches nothing here again. The player takes a 3 s crossing timer with it,
+-- in what crosses with it (`transfer_data`, which the target keeps only if it accepts `cooldown`), so
+-- it does not bounce straight back through a portal where it arrives; a cooling player is skipped here.
 app:add_systems(Update, {
     Query[{
         changed = { "collision_trigger" },
@@ -175,6 +176,13 @@ app:add_systems(Update, {
         if up[target] and target ~= mine then
             for _, player in ipairs(players:iter_many(entered)) do
                 commands:entity(player:id()):insert({ ["core/net/peer/switch"] = { target_scope = target } })
+                commands:entity(player:id()):entry("core/net/peer/share"):and_modify(function(share)
+                    local carried = share.transfer_data or {}
+                    local timers = carried.cooldown or {}
+                    timers["scope/portal/cooling"] = { remaining = 3 }
+                    carried.cooldown = timers
+                    share.transfer_data = carried
+                end)
                 print(string.format("[SCOPE/PORTAL] client %s walks into %s: handing the player over",
                     tostring(player:get("core/net/owner").client_id), target))
             end

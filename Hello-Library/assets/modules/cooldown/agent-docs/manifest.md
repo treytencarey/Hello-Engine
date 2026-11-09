@@ -6,7 +6,7 @@ exposes: [cooldown, cooldown/left]
 
 # cooldown
 
-Named timers on an entity. While a timer runs, the entity carries the component the timer is named after; when it ends or is cancelled, both are removed. Runs on both sides and declares no sync: each side runs the timers started on it. Where a spawn syncs `cooldown` from the server (a player handed in from another world, `player/spawner`), the client starts the same timers from the entries it receives, and an entry the server ends goes from the client with the next update. A timer a client needs (to show time left, to predict) is started on both sides from synced data, by the using mod's `shared/` half (`projectile`); the server's side decides what the end does.
+Named timers on an entity. While a timer runs, the entity carries the component the timer is named after; when it ends or is cancelled, both are removed. Runs on both sides and declares no sync: each side runs the timers started on it. A spawn may sync `cooldown` from the server to the entity's owner (`{ authority = "server", target = "owner" }`), as `player/spawner` does for a player handed in from another world: the owner then starts the same timers from the entries it receives, and an entry the server ends goes from the owner with the next update. The cost: every server timer on that entity syncs too, and each update replaces the owner's whole `cooldown`, so a timer the owner started for itself is wiped by the next update that lacks it. A timer a client needs (to show time left, to predict) is started on both sides from synced data, by the using mod's `shared/` half (`projectile`); the server's side decides what the end does.
 
 ## Components
 
