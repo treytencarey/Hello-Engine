@@ -15,8 +15,8 @@ The panel's button is in the bar only while the player is signed in to GitHub (r
 ## Components
 
 - `git/panel = {}` on the player, on the world's server. `player/server` adds and removes it. It syncs from the server to the owner alone (the server half's return declares `{ authority = "server", target = "owner" }`), so only the owner's client has the panel, and only on its own player.
-- `git/panel/request = { op = "portal", target_sk }`: the owner's ask of the world's server, on the carrier. The owner's client writes it and only the owner's connection carries it (`{ authority = "client", target = "owner" }`). `target_sk` is the scope key of the world the portal is to lead to. `{}` is the ask taken back. `sidebar/invites` writes the same slot for an accepted invite's portal.
-- `git/panel/response = { op = "portal", scope, status, message }`: the server's answer, on the carrier, synced to the owner alone (`{ authority = "server", target = "owner" }`). `scope` is the target asked for, `status` is `"opened"` or `"failed"`, and `message` says why it failed: `"not a scope key"`, `"this world's own scope"` or `"8 portals already"`. It stands until the owner takes its ask back, and is then `{}`.
+- `git/panel/request = { op = "portal" | "drop_portal", target_sk }`: the owner's ask of the world's server, on the carrier. The owner's client writes it and only the owner's connection carries it (`{ authority = "client", target = "owner" }`). `target_sk` is the scope key of the world the portal is to lead to. `{}` is the ask taken back. `portal` is the panel's ask, a portal to place; `drop_portal` is `sidebar/invites`' ask for an accepted invite's portal, which stands 3 m ahead, placed.
+- `git/panel/response = { op, scope, status, message }`: the server's answer, `op` the op it answers, on the carrier, synced to the owner alone (`{ authority = "server", target = "owner" }`). `scope` is the target asked for, `status` is `"opened"` or `"failed"`, and `message` says why it failed: `"not a scope key"`, `"this world's own scope"` or `"8 portals already"`. It stands until the owner takes its ask back, and is then `{}`.
 - `git/panel/state = { open, repo, branch }` on the owner's carrier, client only, added by the client half when the carrier arrives, if it has none. `open`: whether the panel is open, kept through a reload. `repo`: the chosen repository, the string `"<owner>/<name>"` as GitHub spells it (`git/collaborators` reads it). `branch`: the chosen branch. It goes with the carrier, and with `git/panel`.
 - `git/panel/button`: marks the client half's `sidebar/button` (`title = "GitHub"`, `order = 3`), in the bar, only while the player is signed in to GitHub.
 - `git/panel/view`: on the panel, a plain `sidebar/panel` in the container, there only while the panel is open.
@@ -39,9 +39,9 @@ The target is the chosen repository's canonical key, `github:<owner>/<name>:<bra
 
 ## The portal the server opens
 
-On an ask with `op = "portal"`, the server checks only that `target_sk` is a string, not empty, at most 512 bytes, and not this world's own scope (`scope_key` of this world's own `core/world/status`, with `WorldShared` and without `WorldMirror`), and that the owner holds fewer than 8 portals here (counted by query over `scope/portal` with `core/net/owner`, with the ones this run opened). No library mod checks that a scope key is canonical: root canonicalizes the target when a client's view observes it, and a target root refuses ends as a locked portal with root's reason (`scope/portal/view`).
+On an ask with `op = "portal"` or `"drop_portal"`, the server checks only that `target_sk` is a string, not empty, at most 512 bytes, and not this world's own scope (`scope_key` of this world's own `core/world/status`, with `WorldShared` and without `WorldMirror`), and that the owner holds fewer than 8 portals here (counted by query over `scope/portal` with `core/net/owner`, with the ones this run opened). No library mod checks that a scope key is canonical: root canonicalizes the target when a client's view observes it, and a target root refuses ends as a locked portal with root's reason (`scope/portal/view`).
 
-A refused ask is answered `failed` with its reason and opens nothing. An accepted one is answered `opened`, and the server spawns, for everyone to see and the owner to place:
+A refused ask is answered `failed` with its reason and opens nothing. An accepted one is answered `opened`, with the op it answers. For `portal` the server spawns, for everyone to see and the owner to place:
 
 ```lua
 {
@@ -61,9 +61,13 @@ A refused ask is answered `failed` with its reason and opens nothing. An accepte
 }
 ```
 
-The owner's client marks it `core/net/local` and places it (`placement`); confirming hands its `Transform` back to the server. It is the world's, not the panel's: closing the panel, taking `git/panel` off or reloading either half keeps it.
+The owner's client marks it `core/net/local` and places it (`placement`); confirming hands its `Transform` back to the server.
 
-The slot is a handshake. The client half takes its ask back (`git/panel/request = {}`) when an answer with an `op` lands, so the next ask is a change even when it asks the same; the server then takes its answer back (`git/panel/response = {}`). An ask that the standing answer already answers (same `op`, `scope` equal to `target_sk`) is not answered again: a reload of the server half runs it over every standing ask. While an answer stands on the client, a Portal click asks nothing, so an ask for the same target never meets the answer to the last one.
+For `drop_portal` the server spawns the same portal with no `placement`, already placed, 3 m ahead of the carrier on the ground plane (the carrier's translation plus 3 times the x and z of its rotation applied to +Z, Bevy's `back()`, as v0.7.0 did; the height kept), with `Transform` synced from the server (`{ authority = "server" }`) and no `placement` sync.
+
+Either portal is the world's, not the panel's: closing the panel, taking `git/panel` off or reloading either half keeps it.
+
+The slot is a handshake. The client half takes its ask back (`git/panel/request = {}`) when an answer with an `op` lands, so the next ask is a change even when it asks the same; the server then takes its answer back (`git/panel/response = {}`). An ask that the standing answer already answers (same `op`, `scope` equal to `target_sk`) is not answered again: a reload of the server half runs it over every standing ask. An ask with the other op is answered, so `sidebar/invites`' ask is never taken for the panel's. While an answer stands on the client, a Portal click asks nothing, so an ask for the same target never meets the answer to the last one.
 
 ## The rows
 
@@ -105,7 +109,7 @@ Clicks are `On[Pointer[Click]]` observers on the rows' buttons. A picker's open 
 commands:entity(player):insert_if_new({ ["git/panel"] = {} })
 
 -- another mod asking for a portal on the owner's client: on the local player, which carries git/panel
-commands:entity(player):insert({ ["git/panel/request"] = { op = "portal", target_sk = scope } })
+commands:entity(player):insert({ ["git/panel/request"] = { op = "drop_portal", target_sk = scope } })
 ```
 
 ## Notes

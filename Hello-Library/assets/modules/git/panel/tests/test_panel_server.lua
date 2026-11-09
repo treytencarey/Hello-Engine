@@ -15,6 +15,9 @@
 --       open one
 --   PS7 taking `git/panel` off a carrier that stays takes the two sync entries this half added
 --   PS8 a reload of this half keeps the portals it opened: they are the world's, not the file's
+--   PS9 a `drop_portal` ask opens a portal standing 3 m ahead of the asker (its back(), on the ground
+--       plane), placed, its Transform the server's, answered with op `drop_portal`
+--   PS10 ...though the answer to a `portal` ask for the same target still stands
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -103,7 +106,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         for _, c in ipairs({ { "seven", 7, 4 }, { "eight", 8, -4 } }) do
             commands:spawn({
                 ["git/panel"] = {},
-                Transform = { translation = { x = c[3], y = 1, z = 2 } },
+                -- Turned a quarter about Y, so ahead (+Z turned) is +X.
+                Transform = {
+                    translation = { x = c[3], y = 1, z = 2 },
+                    rotation = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 },
+                },
                 ["core/net/owner"] = { client_id = c[2] },
                 ["core/net/sync"] = {},
                 ["zz/carrier"] = { name = c[1] },
@@ -143,6 +150,26 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and sync["scope/portal/hosted"] and sync["scope/portal/hosted"].authority == "server", "")
         T("PS2_answered_opened", said.op == "portal" and said.scope == OTHER and said.status == "opened",
             tostring(said.status))
+        -- What sidebar/invites writes, while the answer to the panel's ask still stands.
+        ask(commands, world, "seven", { op = "drop_portal", target_sk = OTHER })
+        step("dropped")
+
+    elseif phase == "dropped" and answer_of(world, "seven").op == "drop_portal" and clock > 0.2 then
+        local placed = nil
+        for _, p in ipairs(portals(world, 7)) do
+            if not p:has("placement") then placed = p end
+        end
+        local at = placed and placed:get("Transform").translation
+        local sync = placed and placed:get("core/net/sync") or {}
+        local said = answer_of(world, "seven")
+        T("PS9_drop_portal_stands_a_portal_3_m_ahead_of_the_asker", placed ~= nil and #portals(world, 7) == 2
+            and math.abs(at.x - 7) < 0.01 and math.abs(at.y - 1) < 0.01 and math.abs(at.z - 2) < 0.01,
+            at and string.format("%.2f %.2f %.2f", at.x, at.y, at.z) or "none")
+        T("PS9_placed_its_transform_the_server_s", placed ~= nil and placed:get("scope/portal").target == OTHER
+            and sync.placement == nil and sync.Transform and sync.Transform.authority == "server"
+            and sync["scope/portal"] and sync["scope/portal/hosted"] and placed:get("core/net/owner").client_id == 7, "")
+        T("PS9_answered_with_its_op", said.scope == OTHER and said.status == "opened", tostring(said.status))
+        T("PS10_though_the_portal_ask_s_answer_stood", placed ~= nil, "")
         ask(commands, world, "seven", {})
         step("taken_back")
 
@@ -154,7 +181,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "own" and answer_of(world, "seven").status ~= nil and clock > 0.2 then
         local said = answer_of(world, "seven")
-        T("PS4_this_world_s_own_scope_opens_nothing", #portals(world) == 1 and said.status == "failed"
+        T("PS4_this_world_s_own_scope_opens_nothing", #portals(world) == 2 and said.status == "failed"
             and said.message == "this world's own scope" and said.scope == HERE, tostring(said.message))
         ask(commands, world, "seven", {})
         step("own_back")
@@ -175,11 +202,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "long" and answer_of(world, "seven").status ~= nil and clock > 0.2 then
         local said = answer_of(world, "seven")
-        T("PS5_a_target_that_is_not_a_string_or_too_long_opens_nothing", table_refused and #portals(world) == 1
+        T("PS5_a_target_that_is_not_a_string_or_too_long_opens_nothing", table_refused and #portals(world) == 2
             and said.status == "failed" and said.message == "not a scope key", tostring(said.message))
         ask(commands, world, "seven", {})
         -- Seven held here before, which the cap counts with the one it opened.
-        for i = 1, 7 do
+        for i = 1, 6 do
             commands:spawn({
                 ["scope/portal"] = { target = "github:zzpanelsrv/held:" .. i },
                 ["core/net/owner"] = { client_id = 7 },

@@ -1,8 +1,8 @@
 -- The player's invites to other worlds: one card each, answered through root, and what follows an
 -- accepted one. Root holds the Site session and answers; this mod asks it and shows what it says.
 -- An accepted invite has root load the host's world join-only, then asks this world's server for a
--- portal to it on `git/panel/request`, the slot the player's panel asks on, and the server spawns
--- it for the player to place. Local UI: never synced.
+-- portal to it on `git/panel/request`, the slot the player's panel asks on, and the server stands
+-- it 3 m ahead of the player. Local UI: never synced.
 --
 -- sidebar/invites = {}
 --
@@ -472,7 +472,7 @@ app:add_systems(Update, {
             end
         elseif not open and not asked[scope] then
             asked[scope] = true
-            commands:entity(carrier:id()):insert({ ["git/panel/request"] = { op = "portal", target_sk = scope } })
+            commands:entity(carrier:id()):insert({ ["git/panel/request"] = { op = "drop_portal", target_sk = scope } })
             commands:spawn({
                 ["sidebar/invites/request"] = { op = "drop_portal", scope_key = scope },
                 ["core/script/owner"] = false,
@@ -498,7 +498,7 @@ app:add_systems(Update, {
         local said = carrier:get("git/panel/response")
         for _, record in ipairs(records:iter_many(carrier:get("Children") or {})) do
             local r = record:get("sidebar/invites/request")
-            if r.op == "drop_portal" and said.op == "portal" and said.scope == r.scope_key then
+            if r.op == "drop_portal" and said.op == "drop_portal" and said.scope == r.scope_key then
                 if said.status == "opened" then
                     say(commands, carrier:id(), "ok", "Portal opened - walk through to join")
                 else

@@ -209,7 +209,7 @@ end
 -- The world's server's answer on the panel's slot.
 local function answer(commands, scope, status, message)
     commands:entity(player):insert({
-        ["git/panel/response"] = { op = "portal", scope = scope, status = status, message = message },
+        ["git/panel/response"] = { op = "drop_portal", scope = scope, status = status, message = message },
     })
 end
 
@@ -305,7 +305,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "debug_dropped" and clock > 0.5 then
         local ask = slot(world)
-        T("D4_a_debug_accept_asks_the_server_for_one_portal_at_once", ask.op == "portal"
+        T("D4_a_debug_accept_asks_the_server_for_one_portal_at_once", ask.op == "drop_portal"
             and ask.target_sk == DEBUG_SCOPE and #records(world) == 1,
             tostring(ask.target_sk) .. " records=" .. #records(world))
         T("D4_and_spawns_none_itself", #portals(world) == 0, tostring(#portals(world)))
@@ -445,7 +445,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "ready" and clock > 0.5 then
         local ask = slot(world)
-        T("IA3_ready_asks_the_server_for_one_portal_to_it", ask.op == "portal" and ask.target_sk == HOST_A
+        T("IA3_ready_asks_the_server_for_one_portal_to_it", ask.op == "drop_portal" and ask.target_sk == HOST_A
             and #records(world) == 1, tostring(ask.target_sk) .. " records=" .. #records(world))
         T("IA3_and_spawns_none_itself", #portals(world, HOST_A) == 0, tostring(#portals(world, HOST_A)))
         commands:entity(mark.a_load):insert({ ["core/world/load"] = { scope = HOST_A, join_only = true, status = "ready", waited = 1 } })

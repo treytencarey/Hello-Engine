@@ -6,7 +6,7 @@ exposes: [sidebar/invites, sidebar/invites/state, sidebar/invites/notification, 
 
 # sidebar/invites
 
-The player's invites to other worlds, one card each, answered from the card. Root holds the player's Hello! session and makes every Site call: this mod asks root's `core/registry/invites` for the list and `core/registry/invites/answer` for each answer, and shows what root says. An accepted invite then has root load the host's world join-only, and asks this world's server for a portal to it on `git/panel`'s request slot; the server opens it for the player to place. Sending invites is `git/collaborators`'s. Local UI: never synced, and it needs no open panel: the cards are `notification` toasts.
+The player's invites to other worlds, one card each, answered from the card. Root holds the player's Hello! session and makes every Site call: this mod asks root's `core/registry/invites` for the list and `core/registry/invites/answer` for each answer, and shows what root says. An accepted invite then has root load the host's world join-only, and asks this world's server for a portal to it on `git/panel`'s request slot; the server stands it 3 m ahead of the player. Sending invites is `git/collaborators`'s. Local UI: never synced, and it needs no open panel: the cards are `notification` toasts.
 
 ## Components
 
@@ -23,7 +23,7 @@ Root's requests carry nothing of this mod's and outlive a reload of it (`core/sc
 - an answer, a child of its hold: `{ ["core/registry/invites/answer"] = { id, action }, Request = {} }`, replied `{ status = "asking" | "ok" | "refused", scope, reason }`.
 - the load of an accepted world, a child of the carrier: `{ ["core/world/load"] = { scope, join_only = true }, WorldShared = {}, ["core/net/sync"] = false }`. Root claims it and writes `status` (`"ready"` or `"failed"` with `reason`) on it.
 
-The portal ask: `git/panel/request = { op = "portal", target_sk = <scope> }` on the carrier, the slot `git/panel` gives the player, and cross-mod input through a sub-component. The server answers on `git/panel/response { op, scope, status }` and spawns the portal itself, with `placement`, so the player places it; it reaches this client as the player's own (`core/net/local`, `core/net/owner`). The carrier must carry `git/panel`.
+The portal ask: `git/panel/request = { op = "drop_portal", target_sk = <scope> }` on the carrier, the slot `git/panel` gives the player, and cross-mod input through a sub-component. The server answers on `git/panel/response { op = "drop_portal", scope, status }` and spawns the portal itself, placed, 3 m ahead of the player (`git/panel`); it reaches this client as the player's own (`core/net/local`, `core/net/owner`). The carrier must carry `git/panel`.
 
 ## Systems
 
@@ -36,7 +36,7 @@ The portal ask: `git/panel/request = { op = "portal", target_sk = <scope> }` on 
 | Update | `sidebar/invites` | On an answer's reply turning `ok` or `refused`: say the outcome; for an accepted `ok`, spawn the join-only load for the reply's `scope` (else the hold's `scope_key`) unless the carrier already has one for it; despawn the hold, with its request, if its timer has ended |
 | Update | `sidebar/invites` | When a hold's timer ends, despawn it, with its request, if root has answered |
 | Update | `sidebar/invites` | On a carrier's load turning `ready`, or a debug accept, ask for the portal after the checks below, and spawn the ask's record; on `failed`, say why and despawn the load |
-| Update | `sidebar/invites` | On a changed `git/panel/response` answering one of the carrier's records (`op = "portal"`, `scope` equal to the record's `scope_key`): `opened` says "Portal opened - walk through to join"; anything else says "You have too many portals open" and despawns the carrier's load for that scope; the record goes either way |
+| Update | `sidebar/invites` | On a changed `git/panel/response` answering one of the carrier's records (`op = "drop_portal"`, `scope` equal to the record's `scope_key`): `opened` says "Portal opened - walk through to join"; anything else says "You have too many portals open" and despawns the carrier's load for that scope; the record goes either way |
 | Update | `sidebar/invites` | A portal going despawns the carrier's load for its target when no other portal of this player names it |
 
 ## What the card says and does
@@ -73,7 +73,7 @@ commands:entity(player):insert_if_new({ ["sidebar/invites"] = {} })
 - Only the card's own requests count: an answer is read off a request under the carrier's hold, with neither `RequestFrom` nor `WorldMirror`; a load is read only off a child of the carrier. A load another world shares arrives as a root, so it drops nothing.
 - Once root claims a load, the asker's copy is a mirror of root's, and despawning it there doesn't reach root: root keeps its load, and the observed world, until another ask for that scope replaces it.
 - The scope's canonical form is checked by no library mod: root canonicalizes it when the portal's view observes it, and a scope root cannot take ends as a locked portal with root's reason.
-- The portal comes to be placed, where the old one dropped 3 m behind the player: the server spawns every portal a player asks for with `placement`.
+- The ask's op is not the panel's (`portal`), so an answer the panel's ask left standing never stands for it.
 - A record whose ask the server never answers stays until `sidebar/invites` goes, and asks for that scope wait on it.
 - A reload takes the cards' content and may take the cards (a card handed to the overlay stays); the carrier's new edge redraws or respawns each once. Holds, requests and loads outlive it.
 - Taking `sidebar/invites` off an entity that stays while a hold runs: the hold goes as a part of this mod, and `cooldown`'s next tick of it can log Bevy's warning about a missing entity.
