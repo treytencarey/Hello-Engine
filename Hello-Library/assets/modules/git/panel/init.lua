@@ -263,8 +263,7 @@ app:add_systems(First, {
     end
 end):in_set("git/panel")
 
--- This world's own branch is preferred over the first listed, so the panel opens on what the player
--- is in. An ask for a choice moved on from is closed, which stops root's call for it.
+-- An ask for a choice moved on from is closed, which stops root's call for it.
 app:add_systems(Update, {
     Query[{
         with = { "git/panel", Mut["git/panel/state"] },
@@ -279,14 +278,8 @@ app:add_systems(Update, {
         optional = { "vault/github/branches/reply" },
     }],
     Query[{ with = { "vault/github/commits", "Request" } }],
-    Query[{
-        with = { "core/world/status", "WorldShared" },
-        without = { "WorldMirror" },
-    }],
     Commands,
-}, function(carriers, repo_asks, branch_asks, commit_asks, statuses, commands)
-    local me = statuses:iter()[1]
-    local scope = me and me:get("core/world/status").scope_key
+}, function(carriers, repo_asks, branch_asks, commit_asks, commands)
     for _, carrier in ipairs(carriers:iter_mut()) do
         local kids = carrier:get("Children") or {}
         local state = carrier:get_mut("git/panel/state")
@@ -312,12 +305,7 @@ app:add_systems(Update, {
         end
         local branches = kept and kept:has("vault/github/branches/reply") and kept:get("vault/github/branches/reply").branches
         if state.branch == nil and branches and branches[1] ~= nil then
-            local prefix = scope_of(state.repo, "")
-            local own = scope ~= nil and scope:sub(1, #prefix) == prefix and scope:sub(#prefix + 1) or nil
             state.branch = branches[1]
-            for _, b in ipairs(branches) do
-                if b == own then state.branch = b end
-            end
         end
 
         local branch = state.branch
@@ -402,21 +390,48 @@ end):in_set("git/panel"):run_if({
     return not changed:is_empty()
 end)
 
--- The button goes in the bar for a local player with the panel: on a new bar (the sidebar built
--- or reloaded), and on the panel itself (added, or this mod reloaded).
+-- The button is in the bar only while the player is signed in to GitHub, as root answers the
+-- panel's sign-in ask; before root has answered, nothing changes, so a re-ask doesn't flicker it.
+-- It comes on a new bar (the sidebar built or reloaded), on the panel itself (added, or this mod
+-- reloaded) and on a sign-in. A sign-out takes it, and the panel with it: with its button gone, the
+-- panel could not be closed.
 app:add_systems(Update, {
-    Query[{ with = { "git/panel", "core/net/local" } }],
+    Query[{
+        with = { "git/panel", "core/net/local", Mut["git/panel/state"] },
+        optional = { "Children" },
+    }],
+    Query[{
+        with = { "vault/github/repos", "Request" },
+        optional = { "Children" },
+    }],
+    Query[{ with = { "vault/github/signin", "vault/github/signin/reply", "Request" } }],
     Query[{ with = { "sidebar/bar" } }],
     Query[{ with = { "git/panel/button" } }],
+    Query[{ with = { "git/panel/view" } }],
     Commands,
-}, function(carriers, bars, buttons, commands)
+}, function(carriers, repo_asks, signins, bars, buttons, views, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and not carriers:is_empty() and buttons:is_empty() then
-        commands:spawn({
-            ["sidebar/button"] = { title = "GitHub", order = 3 },
-            ["git/panel/button"] = {},
-            ChildOf = bar:id(),
-        })
+    for _, carrier in ipairs(carriers:iter_mut()) do
+        local repos = repo_asks:iter_many(carrier:get("Children") or {})[1]
+        local said = repos and signins:iter_many(repos:get("Children") or {})[1]
+        local login = said and said:get("vault/github/signin/reply").login
+        if said and login ~= nil and bar ~= nil and buttons:is_empty() then
+            commands:spawn({
+                ["sidebar/button"] = { title = "GitHub", order = 3 },
+                ["git/panel/button"] = {},
+                ChildOf = bar:id(),
+            })
+        elseif said and login == nil then
+            for _, b in ipairs(buttons:iter()) do
+                commands:entity(b:id()):despawn()
+            end
+            for _, view in ipairs(views:iter()) do
+                commands:entity(view:id()):despawn()
+            end
+            if carrier:get("git/panel/state").open then
+                carrier:get_mut("git/panel/state").open = false
+            end
+        end
     end
 end):in_set("git/panel"):run_if({
     Query[{ added = { "sidebar/bar" } }],
@@ -426,8 +441,9 @@ end):in_set("git/panel"):run_if({
         },
         with = { "git/panel", "core/net/local" },
     }],
-}, function(new_bars, new_carriers)
-    return not new_bars:is_empty() or not new_carriers:is_empty()
+    Query[{ changed = { "vault/github/signin/reply" } }],
+}, function(new_bars, new_carriers, signins)
+    return not new_bars:is_empty() or not new_carriers:is_empty() or not signins:is_empty()
 end)
 
 -- A new button that was open before a reload opens again, by the path a click takes. It waits for the

@@ -3,12 +3,14 @@
 -- suite's, and core's flip driver stays idle. `player/client` adds the carrier, and real clicks drive
 -- the panel.
 --
--- A0  player/client adds the carrier and one "GitHub" button in the bar
+-- A0  player/client adds the carrier
 -- A1  the carrier asks root for the player's repositories once, with a sign-in ask under that ask
--- V1  signed out, the panel shows only "Sign in to GitHub in Accounts"
+-- G1  before root answers, and signed out of GitHub, there is no "GitHub" button
 -- I1  signing in asks again for the repositories root answered signed out
+-- G2  ...and one "GitHub" button comes, in the bar
 -- R1  the base repository is listed first and chosen, and its branches asked
--- B1  this world's own branch is chosen when the repository is this world's, and its commits asked
+-- B1  the first branch listed is chosen, though this world's own is listed too, and its commits asked
+-- B3  choosing a branch asks its commits in place of the old ones
 -- C1  on this world's own branch: "● Current", Pull, and a Portal that does nothing
 -- K1  8 of root's 10 commits, the message's first line cut to 30
 -- U1  Pull asks the world to pull its commit, and reads "⏳ Pulling…" while the ask is out
@@ -23,6 +25,7 @@
 -- X1  the carrier taken off closes its asks, and its button and panel go
 -- R2  with no base named, the first repository listed is chosen
 -- I2  signing out asks again for the repositories root answered signed in
+-- V1  ...and takes the button, closing the open panel
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -226,55 +229,52 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:entity(player):insert({ ["core/net/local"] = {} })
         step("button")
 
-    elseif phase == "button" and #buttons(world) > 0 and clock > 0.3 then
+    elseif phase == "button" and clock > 0.6 then
         local me = world:query({ with = { "zz/player" }, optional = { "git/panel" } })[1]
-        local b = buttons(world)[1]
-        local bar = world:query({ with = { "sidebar/bar" } })[1]
-        T("A0_player_client_adds_the_carrier_and_one_github_button_in_the_bar", me:has("git/panel")
-            and #buttons(world) == 1 and b:get("ChildOf") == bar:id() and b:get("sidebar/button").title == "GitHub")
+        T("A0_player_client_adds_the_carrier", me:has("git/panel"))
+        T("G1_before_root_answers_there_is_no_github_button", #buttons(world) == 0, tostring(#buttons(world)))
         local repos = asks(world, "vault/github/repos")
         local signins = repos[1] and asks(world, "vault/github/signin", repos[1].id) or {}
         T("A1_the_carrier_asks_root_for_the_repositories_once", #repos == 1 and next(repos[1].wish) == nil,
             tostring(#repos))
         T("A1_with_a_sign_in_ask_under_that_ask", #signins == 1 and next(signins[1].wish) == nil, tostring(#signins))
         T("A1_and_nothing_else_yet", #asks(world, "vault/github/branches") == 0 and #asks(world, "vault/github/commits") == 0)
-        commands:entity(player):insert({ ["sidebar/open"] = {} })
-        click(commands, b:id())
-        step("opening")
-
-    elseif phase == "opening" and #views(world) == 1 and views(world)[1]:get("sidebar/panel").title ~= nil and clock > 0.5 then
-        T("V0_the_title_is_github", views(world)[1]:get("sidebar/panel").title == "GitHub")
-        local repos = asks(world, "vault/github/repos")[1]
-        reply(commands, repos.id, "vault/github/repos/reply", { error = "not signed in to GitHub" })
-        reply(commands, asks(world, "vault/github/signin", repos.id)[1].id, "vault/github/signin/reply", { pending = false })
-        mark.repos = repos.id
+        reply(commands, repos[1].id, "vault/github/repos/reply", { error = "not signed in to GitHub" })
+        reply(commands, signins[1].id, "vault/github/signin/reply", { pending = false })
+        mark.repos = repos[1].id
         step("signed_out")
 
-    elseif phase == "signed_out" and has_text(panel_texts(world), "Sign in to GitHub in Accounts") and clock > 0.3 then
-        local shown = panel_texts(world)
-        T("V1_signed_out_the_panel_shows_only_the_sign_in_line", #shown == 1, table.concat(shown, "|"))
+    elseif phase == "signed_out" and clock > 0.6 then
+        T("G1_signed_out_there_is_no_github_button", #buttons(world) == 0, tostring(#buttons(world)))
         reply(commands, asks(world, "vault/github/signin", mark.repos)[1].id, "vault/github/signin/reply",
             { login = "zz-octo", pending = false })
         step("signed_in")
 
     elseif phase == "signed_in" and asks(world, "vault/github/repos")[1] ~= nil
-        and asks(world, "vault/github/repos")[1].id ~= mark.repos and clock > 0.3 then
+        and asks(world, "vault/github/repos")[1].id ~= mark.repos and #buttons(world) > 0 and clock > 0.5 then
         local repos = asks(world, "vault/github/repos")
         local signins = asks(world, "vault/github/signin", repos[1].id)
+        local b = buttons(world)[1]
+        local bar = world:query({ with = { "sidebar/bar" } })[1]
         T("I1_signing_in_asks_again_for_what_root_answered_signed_out", #repos == 1 and repos[1].reply == nil
             and #signins == 1, #repos .. " " .. #signins)
+        T("G2_signed_in_one_github_button_in_the_bar", #buttons(world) == 1 and b:get("ChildOf") == bar:id()
+            and b:get("sidebar/button").title == "GitHub")
         reply(commands, signins[1].id, "vault/github/signin/reply", { login = "zz-octo", pending = false })
         reply(commands, repos[1].id, "vault/github/repos/reply", { repos = {
             { name = "Other-Repo", owner = "ZzOwner", default_branch = "main", is_base = false },
             { name = "world", owner = "zzpanel", default_branch = "main", is_base = true },
             { name = "third", owner = "zzpanel", default_branch = "main", is_base = false },
         } })
+        commands:entity(player):insert({ ["sidebar/open"] = {} })
+        click(commands, b:id())
         step("repos")
 
     elseif phase == "repos" and state_of(world).repo ~= nil and #asks(world, "vault/github/branches") == 1
-        and picker(world, "REPOSITORY") ~= nil and #picker(world, "REPOSITORY").options == 3 then
+        and #views(world) == 1 and picker(world, "REPOSITORY") ~= nil and #picker(world, "REPOSITORY").options == 3 then
         local p = picker(world, "REPOSITORY")
         local wish = asks(world, "vault/github/branches")[1].wish
+        T("V0_the_title_is_github", views(world)[1]:get("sidebar/panel").title == "GitHub")
         T("R1_the_base_repository_is_chosen", state_of(world).repo == "zzpanel/world" and p.chosen == "world",
             tostring(state_of(world).repo))
         T("R1_and_listed_first", table.concat(p.options, "|") == "world|Other-Repo|third", table.concat(p.options, "|"))
@@ -285,12 +285,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("branches")
 
     elseif phase == "branches" and state_of(world).branch ~= nil and #asks(world, "vault/github/commits") == 1
-        and button_labelled(world, "● Current") ~= nil then
+        and button_labelled(world, "↗ Switch") ~= nil then
         local wish = asks(world, "vault/github/commits")[1].wish
-        local shown = panel_texts(world)
-        T("B1_this_world_s_own_branch_is_chosen_not_the_first", state_of(world).branch == "main",
+        T("B1_the_first_branch_listed_is_chosen_though_this_world_s_own_is_listed", state_of(world).branch == "alpha",
             tostring(state_of(world).branch))
-        T("B1_and_its_commits_asked", wish.owner == "zzpanel" and wish.name == "world" and wish.branch == "main")
+        T("B1_and_its_commits_asked", wish.owner == "zzpanel" and wish.name == "world" and wish.branch == "alpha")
+        mark.commits = asks(world, "vault/github/commits")[1].id
+        click(commands, option(world, "BRANCH", "main"))
+        step("current")
+
+    elseif phase == "current" and state_of(world).branch == "main" and #asks(world, "vault/github/commits") == 1
+        and asks(world, "vault/github/commits")[1].id ~= mark.commits and button_labelled(world, "● Current") ~= nil then
+        local c = asks(world, "vault/github/commits")
+        local shown = panel_texts(world)
+        T("B3_choosing_a_branch_asks_its_commits_in_place_of_the_old", c[1].wish.branch == "main", tostring(c[1].wish.branch))
         T("C1_on_this_world_s_branch_current_pull_and_portal", has_text(shown, "⭳ Pull") and has_text(shown, "🌀 Portal")
             and not has_text(shown, "↗ Switch"), table.concat(shown, "|"))
         reply(commands, asks(world, "vault/github/commits")[1].id, "vault/github/commits/reply", { commits = commits(10) })
@@ -453,17 +461,24 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         } })
         step("first")
 
-    elseif phase == "first" and state_of(world).repo ~= nil and clock > 0.3 then
+    elseif phase == "first" and state_of(world).repo ~= nil and #buttons(world) == 1 and clock > 0.5 then
         T("R2_with_no_base_named_the_first_listed_is_chosen", state_of(world).repo == "zz/b-repo", tostring(state_of(world).repo))
+        click(commands, buttons(world)[1]:id())
+        step("reopened")
+
+    elseif phase == "reopened" and #views(world) == 1 and state_of(world).open and clock > 0.3 then
         mark.repos = asks(world, "vault/github/repos")[1].id
         reply(commands, asks(world, "vault/github/signin", mark.repos)[1].id, "vault/github/signin/reply", { pending = false })
         step("signed_off")
 
     elseif phase == "signed_off" and asks(world, "vault/github/repos")[1] ~= nil
-        and asks(world, "vault/github/repos")[1].id ~= mark.repos and clock > 0.3 then
+        and asks(world, "vault/github/repos")[1].id ~= mark.repos and clock > 0.5 then
         local repos = asks(world, "vault/github/repos")
         T("I2_signing_out_asks_again_for_what_root_answered_signed_in", #repos == 1 and repos[1].reply == nil
             and #asks(world, "vault/github/signin", repos[1].id) == 1)
+        T("V1_signing_out_takes_the_button", #buttons(world) == 0, tostring(#buttons(world)))
+        T("V1_and_closes_the_panel", #views(world) == 0 and state_of(world).open == false,
+            #views(world) .. " " .. tostring(state_of(world).open))
         phase = "done"
         finish()
     end

@@ -8,13 +8,13 @@ exposes: [git/panel, git/panel/state, git/panel/button, git/panel/view, git/pane
 
 A sidebar panel, "GitHub", 280 px wide: the player's GitHub repositories and a repository's branches, with Switch to move to a branch's world, Portal to drop a portal to it, Pull on this world's own branch, and the chosen branch's latest commits. Root holds the GitHub token and makes every GitHub call (`vault/github`); the panel asks root and shows only what root answers. Local UI, at root `init.lua`: nothing here is synced, and the world's server does the deciding for the portal and the pull.
 
-Signed out of GitHub (root's sign-in reply names no `login`), the panel shows only "Sign in to GitHub in Accounts". The sign-in itself is the Accounts panel's (`sidebar/profile`).
+The panel's button is in the bar only while the player is signed in to GitHub (root's reply to the panel's sign-in ask names a `login`). Until root has answered, the button stays as it was. Signing out takes the button and closes the panel, saving it closed. The sign-in itself is the Accounts panel's (`sidebar/profile`). If the panel ever renders while signed out, it shows only "Sign in to GitHub in Accounts".
 
 ## Components
 
 - `git/panel = {}` on the local player, beside `sidebar`. `player/client` adds and removes it.
 - `git/panel/state = { open, repo, branch }` on the carrier, added by this mod when the carrier arrives, if it has none. `open`: whether the panel is open, kept through a reload. `repo`: the chosen repository, `"<owner>/<name>"` as GitHub spells it. `branch`: the chosen branch. It goes with the carrier, and with `git/panel`.
-- `git/panel/button`: marks this mod's `sidebar/button` (`title = "GitHub"`, `order = 3`), in the bar. It is there whether or not the player is signed in.
+- `git/panel/button`: marks this mod's `sidebar/button` (`title = "GitHub"`, `order = 3`), in the bar, only while the player is signed in to GitHub.
 - `git/panel/view`: on the panel, a plain `sidebar/panel` in the container, there only while the panel is open.
 - `git/panel/row`: marks each top-level row in the panel's scroll area, in this order: the REPOSITORY picker, the BRANCH picker, the actions (Switch, Pull, Portal), the portal refusal line, the RECENT COMMITS header and one row per commit; or the one signed-out line.
 
@@ -54,7 +54,7 @@ The target is the chosen repository's canonical key, `github:<owner>/<name>:<bra
 - **REPOSITORY:** root's repositories, the one root marks `is_base` (the repository root launched from) first, the rest in GitHub's order (most recently updated first). The button shows the chosen repository's name, or "(none)", and "▼" shut or "▲" open. The open list is 180 px tall at most and scrolls 20 px per wheel step, without scrolling the panel. The chosen option is highlighted and has no click.
 - **BRANCH:** the chosen repository's branches, the same way.
 - Opening one picker closes the other. Choosing an option closes its picker.
-- **Defaults:** with no repository chosen, the first listed is chosen (so the base one when root names it). With no branch chosen, this world's own branch when the chosen repository is this world's and lists it, else the first listed.
+- **Defaults:** with no repository chosen, the first listed is chosen (so the base one when root names it). With no branch chosen, the first listed, even when this world's own branch is listed too.
 - **Choosing a repository** clears the branch: its branches ask and the commits ask close, and its own branches are asked. **Choosing a branch** closes the commits ask and asks that branch's.
 - **Switch** ("↗ Switch") spawns the flip ask for the target, and asks the target's commits again. Its label follows the flip asks naming the target: "⏳ Switching…" while one is resolving, loading or promoting; "⚠ <reason> — retry" after one failed, and a click is the retry (root's driver retires the failed ask); "● Current" when the target is this world's own scope (`core/world/status.scope_key` of this world's own row), never before the world has switched. Current has no click.
 - **Pull** ("⭳ Pull") is offered only on this world's own branch. It reads "⏳ Pulling…", with no click, while a `git/world/head/pull` ask is out in this world.
@@ -70,7 +70,7 @@ The target is the chosen repository's canonical key, `github:<owner>/<name>:<bra
 | First | `git/panel` | When `git/panel` is removed from an entity that stays, close its asks |
 | Update | `git/panel` | On the state or a repositories or branches reply changing: choose the defaults, and keep one branches ask for the chosen repository and one commits ask for the chosen branch, closing the others |
 | Update | `git/panel` | On a sign-in reply under the panel's repositories ask changing: ask again what root answered the other way (an error while now signed in, an answer while now signed out) |
-| Update | `git/panel` | On a new bar or a new local carrier, spawn the button in the bar, if there is none |
+| Update | `git/panel` | On a new bar, a new local carrier or a sign-in reply changing: while signed in, spawn the button in the bar if there is none; signed out, despawn the button and the panel and save it closed; with no reply yet, nothing |
 | Update | `git/panel` | When the sidebar has made a new button an icon, open it if the state says the panel was open |
 | Update | `git/panel` | When the button is opened, spawn the panel in the container and save it open |
 | Update | `git/panel` | When a button still here is closed, despawn the panel and save it closed |
