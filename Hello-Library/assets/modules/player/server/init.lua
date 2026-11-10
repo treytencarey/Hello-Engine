@@ -40,6 +40,24 @@ app:add_systems(First, {
     end
 end):in_set("player/init")
 
+-- Such a player casts here too: its press arrives with the mirror, and the ability runs from the
+-- mirror's own place and look as this world's own projectile, which flies and explodes here.
+app:add_systems(First, {
+    Query[{
+        added = { "player" },
+        with = { "core/net/peer/mirror" },
+        without = { "WorldMirror" },
+    }],
+    Commands,
+}, function(added, commands)
+    for _, e in ipairs(added:iter()) do
+        commands:entity(e:id()):insert_if_new({
+            ["abilities/fireball"] = {},
+            ["abilities/grenade"] = {},
+        })
+    end
+end):in_set("player/init")
+
 -- Who the player is, from the join ticket its client presented: `core/player/attest` on the
 -- server's `core/net/connection` with the player's `client_id`. It lives on the connection, so a
 -- player spawned again for the same connection is who it was.

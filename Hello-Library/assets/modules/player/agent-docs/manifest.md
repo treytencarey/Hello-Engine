@@ -32,6 +32,7 @@ The owning client drives its player's Transform, as there is no client predictio
 | Schedule | Set | Purpose |
 |----------|-------|---------|
 | First (server) | `player/init` | On an added `player` that is neither a `WorldMirror` nor a peer mirror (`core/net/peer/mirror`), add the camera, movement, the model, the abilities, what agents look for and hear, the file browser and GitHub panels and the VR stack |
+| First (server) | `player/init` | On an added `player` that is a peer mirror (not a `WorldMirror`): add only `abilities/fireball` and `abilities/grenade`, so the player's cast shows here too (below) |
 | Update (server) | `player/identity` | On a changed `core/player/attest` on a connection, and on an added `player`: set `player.user_id` from the connection with its `client_id`. Who the client is lives on the connection, so a player spawned again for it is who it was |
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`). Not a peer mirror: a player handed to another world stays here as that world's mirror, moved by its peer, and its shadow is stale |
 | First (server) | `player/removed` | When `player` is removed from an entity that stays, remove the camera, movement, the model, the abilities, what agents look for and hear, the file browser and GitHub panels and the VR stack |
@@ -50,7 +51,7 @@ commands:spawn({ ["player/spawner"] = {}, ChildOf = boot:id() })
 
 ## Notes
 
-- Mirrored players from another world (`WorldMirror`, or a peer mirror, `core/net/peer/mirror`) are not set up here.
+- Mirrored players from another world (`WorldMirror`, or a peer mirror, `core/net/peer/mirror`) are not set up here, except that a peer mirror gets the abilities: its press arrives from its source's server with the mirror (the press's sync crosses the peer link), and the ability casts here from the mirror's own place and look (`Transform` and `camera`, which cross too) as this world's own projectile, which flies and explodes on this world's geometry. Nothing cast crosses: the source world casts its own, a few milliseconds apart, and a mirror sends nothing back. Each world runs its own cooldown.
 - The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches. The server's body is kinematic throughout, and core's peer switch zeroes its velocity when it hands the player over.
 - Crossing between worlds through a portal: `player/spawner` gives every player its `core/net/peer/share`, and places a handed player where it stood, with the timers that crossed with it; `scope/portal` hands it over and sends its 3 s crossing timer (`scope/portal/cooling`) along.
 - Not done yet: the streaming panels and the account providers, whose mods are not in this library yet.

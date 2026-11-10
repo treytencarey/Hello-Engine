@@ -44,3 +44,30 @@ app:add_systems(First, {
         end
     end
 end):in_set("abilities/unsync")
+
+-- A peer mirror's press comes from its source's server, which sends what changes and never a
+-- removal, so the press would stay and the next one would be no new press here. Once this world
+-- has read it (the abilities ran on it in `Update`), it is taken off. An empty `added` list would
+-- match every Lua component.
+app:add_systems(PostUpdate, {
+    Query[{
+        with = { "abilities", "core/net/peer/mirror" },
+        without = { "WorldMirror" },
+    }],
+    Commands,
+}, function(mirrors, commands)
+    local names = {}
+    for _, e in ipairs(mirrors:iter()) do
+        for name in pairs(e:get("abilities")) do
+            names[#names + 1] = "input/game/abilities/" .. name
+        end
+    end
+    if #names == 0 then return end
+    for _, e in ipairs(mirrors:with_columns({ ["or"] = { added = names } }):iter()) do
+        for name in pairs(e:get("abilities")) do
+            if e:is_added("input/game/abilities/" .. name) then
+                commands:entity(e:id()):try_remove("input/game/abilities/" .. name)
+            end
+        end
+    end
+end):in_set("abilities/server")

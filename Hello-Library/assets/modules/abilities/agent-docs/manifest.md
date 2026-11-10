@@ -32,6 +32,7 @@ A player's abilities, generically: each has a key and a cooldown, and what it do
 | First (both) | `abilities/removed` | When `abilities` is removed from an entity that stays, stop its cooldowns |
 | First (server) | `abilities/sync` | Declare each ability's action for sync; drop entries for abilities that went |
 | First (server) | `abilities/unsync` | When `abilities` is removed from an entity that stays, take off the action sync entries |
+| PostUpdate (server) | `abilities/server` | On a peer mirror (`core/net/peer/mirror`, not a `WorldMirror`) with `abilities`: take off each press (`input/game/abilities/<name>`) added this frame, once the abilities have read it. The peer link sends what changes and never a removal, so without this a press would stay on the mirror and the source's next press would be no new press here |
 | First (client) | `abilities/bind` | Bind each ability's key into `input/game.abilities` on the local player; again when `input` is added, and when the abilities change |
 | First (client) | `abilities/unbind` | When `abilities` is removed from an entity that stays, remove the bindings |
 

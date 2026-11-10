@@ -8,7 +8,7 @@
 --   H2  a client with no handed state gets a spawn point, and every player its share's stable id
 --   H3  once it stops watching, a handed player arrives where it stood, still claiming a point
 --   H4  ...with its camera's yaw, pitch and distance, and nothing else of the handed state
---   H5  a peer mirror of a player is not set up as this world's player
+--   H5  a peer mirror of a player is not set up as this world's player, but gets its abilities, to cast here
 --   H6  a peer mirror is not eased toward a shadow nobody writes any more
 --   H7  a player being handed over carries its camera's yaw, pitch and distance in the switch
 --   H8  a handed player keeps the timers that crossed with it (a portal's `scope/portal/cooling`), synced
@@ -88,10 +88,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("index=%s at %.2f %.2f %.2f", tostring(eight:get("player").spawn_index), pos.x, pos.y, pos.z))
         local mirror = world:query({
             with = { "zz/ph/mirror" },
-            optional = { "movement", "abilities/fireball", "camera/third_person", "Transform" },
+            optional = { "movement", "abilities/fireball", "abilities/grenade", "camera/third_person", "Transform" },
         })[1]
         T("H5_a_peer_mirror_is_not_set_up_here",
-            not mirror:has("movement") and not mirror:has("abilities/fireball") and not mirror:has("camera/third_person"), "")
+            not mirror:has("movement") and not mirror:has("camera/third_person"), "")
+        T("H5_but_gets_its_abilities_to_cast_here", mirror:has("abilities/fireball") and mirror:has("abilities/grenade"), "")
         T("H6_a_peer_mirror_is_not_eased_toward_a_stale_shadow",
             near(mirror:get("Transform").translation.x, 5), "x=" .. tostring(mirror:get("Transform").translation.x))
         local seven = world:query({ with = { "zz/ph/seven" } })[1]
