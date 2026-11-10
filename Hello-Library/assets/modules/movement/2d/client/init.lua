@@ -1,7 +1,7 @@
--- The client half: the owner's body walks in the plane; others' bodies follow their synced
--- Transform. Input is the `input/game.movement_2d` group: an action is held while its
--- component exists. A 2D body never turns. The net client marks its own player
--- `core/net/local` frames after the player arrives, so both edges count.
+-- The client half: the owner's body walks in the plane, once the player mod has turned it
+-- dynamic; others' bodies follow their synced Transform. Input is the `input/game.movement_2d`
+-- group: an action is held while its component exists. A 2D body never turns. The net client
+-- marks its own player `core/net/local` frames after the player arrives, so both edges count.
 
 local Vec2 = require("bevy::math::Vec2")
 local Vec3 = require("bevy::math::Vec3")
@@ -45,22 +45,9 @@ app:add_systems(First, {
     end
 end):in_set("movement/2d/shadow")
 
--- The body arrives kinematic, as the server has it, and is simulated only on its owner's
--- client, so walls stop it there. It only changes type, as it arrived with its collider.
-app:add_systems(First, {
-    Query[{
-        ["or"] = {
-            added = { "movement/2d", "core/net/local" },
-        },
-        with = { "movement/2d", "core/net/local", Mut["RigidBody2d"] },
-    }],
-}, function(own)
-    for _, e in ipairs(own:iter_mut()) do
-        if e:get("RigidBody2d") ~= "Dynamic" then
-            e:set({ RigidBody2d = "Dynamic" })
-        end
-    end
-end):in_set("movement/2d/own")
+-- This client's own body is never turned dynamic here: the player mod decides when it may move, so
+-- a game's player can wait for its map's colliders. Until then it stays kinematic and the velocity
+-- written below moves nothing.
 
 -- Polls while the body moves, as the velocity eases over time. While a key is held it eases
 -- toward the keys' direction at `speed`, and with none held it eases to rest and writes no more.

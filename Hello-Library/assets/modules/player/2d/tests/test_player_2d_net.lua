@@ -5,7 +5,7 @@
 --
 --   N1  this client's player arrives and is marked its own, without an attest (who it is stays on the server), and nothing 3D
 --   N2  it starts in game input with its sidebar, its keys bound
---   N3  its own body turns dynamic, as it arrived with its collider
+--   N3  its own body turns dynamic, by `player/2d` (`movement/2d` leaves it alone), as it arrived with its collider
 --   N4  its camera arrives at 1:1, and an eye is there at that scale
 --   N5  its sprite's settings cross whole, naming no image
 --   N6  a key walks it here, its clip follows, and the server's Transform follows what the owner sends

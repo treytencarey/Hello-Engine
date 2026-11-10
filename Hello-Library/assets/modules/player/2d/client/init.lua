@@ -1,6 +1,8 @@
--- The client half of a 2D player: the local player starts in game input with its sidebar. The
--- net client marks its own player `core/net/local` frames after the player arrives, so both
--- edges count.
+-- The client half of a 2D player: the local player starts in game input with its sidebar, and
+-- its own body turns dynamic, because this client drives its Transform. The body arrives from
+-- the server with its collider and only changes type here: a body added after its collider
+-- never attaches. The net client marks its own player `core/net/local` frames after the player
+-- arrives, so both edges count.
 
 app:add_systems(First, {
     Query[{
@@ -8,15 +10,19 @@ app:add_systems(First, {
             added = { "player/2d", "core/net/local" },
         },
         with = { "player/2d", "core/net/local" },
+        optional = { Mut["RigidBody2d"] },
     }],
     Commands,
 }, function(owned, commands)
-    for _, e in ipairs(owned:iter()) do
+    for _, e in ipairs(owned:iter_mut()) do
         commands:entity(e:id()):patch({
             input = {},
             ["input/mode"] = { mode = "input/game" },
             sidebar = {},
         })
+        if e:has("RigidBody2d") then
+            e:set({ RigidBody2d = "Dynamic" })
+        end
     end
 end):in_set("player/2d/local")
 

@@ -4,7 +4,8 @@
 --
 --   M0   nothing is bound, and the body stays as the server sent it, before the player is ours
 --   M1   missing fields get defaults; a body with no velocity gets one
---   M2   the owner binds its keys, and its own body turns dynamic
+--   M2   the owner binds its keys, and its own body stays kinematic while its player waits: the
+--        player mod turns it dynamic
 --   M3   up walks up at `speed`, with no gravity and no turn; right walks right
 --   M4   two keys at once are no faster than one
 --   M5   letting go eases it to rest, and at rest it writes no more
@@ -103,7 +104,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and me:has("Velocity2d") and other:has("Velocity2d"), "")
         local keys = (me:get("input/game") or {}).movement_2d
         suite.assert_test("M2a_the_owner_binds_its_keys", keys ~= nil and keys.up.key == "KeyW" and keys.right.key == "KeyD", "")
-        suite.assert_test("M2b_its_own_body_turns_dynamic", me:get("RigidBody2d") == "Dynamic", tostring(me:get("RigidBody2d")))
+        -- No player mod here, as in a world whose player waits for its map.
+        suite.assert_test("M2b_a_player_that_waits_keeps_its_own_body_kinematic",
+            me:get("RigidBody2d") == "KinematicPositionBased", tostring(me:get("RigidBody2d")))
+        -- The player mod turns its body dynamic then; `movement/2d` leaves this client's own body alone.
+        me:patch({ RigidBody2d = "Dynamic" })
         other:patch({ ["core/net/sync/Transform"] = { translation = { x = 300, y = 200, z = 0 } } })
         start = placed(world, me).translation
         key("KeyW", "Pressed")

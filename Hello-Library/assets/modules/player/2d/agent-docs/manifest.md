@@ -8,7 +8,7 @@ exposes: [player/2d]
 
 A top-down 2D player: what every 2D player has, who it is, and how its Transform moves. `player/2d/spawner` spawns them on a world's server; this mod sets each one up on both sides. It is a mod of its own: `player` means the 3D stack, and an entity carries one or the other.
 
-The owning client drives its player's Transform, as there is no client prediction yet: the server's body is kinematic, the owner's turns dynamic (`movement/2d`), and the server eases its Transform toward what the owner sends.
+The owning client drives its player's Transform, as there is no client prediction yet: the server's body is kinematic, the owner's turns dynamic here (`movement/2d` never changes it), and the server eases its Transform toward what the owner sends.
 
 ## Components
 
@@ -23,7 +23,7 @@ The owning client drives its player's Transform, as there is no client predictio
 
 - What each player gets, by side:
   - server: `camera/2d`, `movement/2d` and `animation/sprite`;
-  - the owning client: `input`, `input/mode = { mode = "input/game" }` and `sidebar`.
+  - the owning client: `input`, `input/mode = { mode = "input/game" }` and `sidebar`, and its `RigidBody2d` switched to `Dynamic`. The body arrived from the server with its collider, so only its type changes: a body added after its collider never attaches.
 
   If `player/2d` is removed from an entity that stays, each half removes what it added.
 
@@ -35,7 +35,7 @@ The owning client drives its player's Transform, as there is no client predictio
 | Update (server) | `player/2d/identity` | On a changed `core/player/attest` on a connection, and on an added `player/2d`: set `player/2d.user_id` from the connection with its `client_id`. Who the client is lives on the connection, so a player spawned again for it is who it was |
 | Update (server) | `player/2d/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`), its translation only |
 | First (server) | `player/2d/removed` | When `player/2d` is removed from an entity that stays, remove the camera, movement and the sprite |
-| First (client) | `player/2d/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input and the sidebar |
+| First (client) | `player/2d/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input and the sidebar, and turn its body `Dynamic`: it is simulated only here, so walls stop it. A game whose player must wait for its map uses its own player mod |
 | First (client) | `player/2d/removed` | When `player/2d` is removed from an entity that stays, remove input and the sidebar |
 
 ## Use
