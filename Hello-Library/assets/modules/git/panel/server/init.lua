@@ -1,7 +1,7 @@
 -- The server half of the "GitHub" panel: what the owner asks of this world's server, on a slot only
 -- the owner writes, and the answer, which only the owner hears. A portal it opens is the world's, and
--- everyone sees it: `portal` gives the owner the portal to place, `drop_portal` stands it 3 m ahead
--- of the owner, placed. It builds no UI.
+-- everyone sees it, and it starts 3 m ahead of the owner: `portal` gives the owner it to place,
+-- `drop_portal` stands it there, placed. It builds no UI.
 --
 -- git/panel = {}
 --
@@ -113,11 +113,13 @@ app:add_systems(Update, {
                 print(string.format("[GIT/PANEL] client %s's portal refused: %s", tostring(client_id), why))
             else
                 held[client_id] = (held[client_id] or 0) + 1
+                -- Both stand 3 m ahead of the carrier, its back() (its rotation applied to +Z) on the
+                -- ground plane: a portal to place starts in view, and placed where it started it
+                -- holds nobody who asked for it.
                 local t = e:has("Transform") and e:get("Transform") or nil
                 local at = t and t.translation or { x = 0, y = 0, z = 0 }
+                local ahead = t and Quat.mul_vec3(t.rotation, { x = 0, y = 0, z = 1 }) or { x = 0, y = 0, z = 0 }
                 if op == "drop_portal" then
-                    -- Ahead is the carrier's back(), its rotation applied to +Z, on the ground plane.
-                    local ahead = t and Quat.mul_vec3(t.rotation, { x = 0, y = 0, z = 1 }) or { x = 0, y = 0, z = 0 }
                     commands:spawn({
                         ["scope/portal"] = { target = target },
                         ["scope/portal/view"] = { mode = "3d" },
@@ -136,7 +138,7 @@ app:add_systems(Update, {
                         ["scope/portal"] = { target = target },
                         ["scope/portal/view"] = { mode = "3d" },
                         placement = {},
-                        Transform = { translation = { x = at.x, y = at.y, z = at.z } },
+                        Transform = { translation = { x = at.x + ahead.x * 3, y = at.y, z = at.z + ahead.z * 3 } },
                         ["core/net/owner"] = { client_id = client_id },
                         ["core/net/sync"] = {
                             placement = { authority = "client" },

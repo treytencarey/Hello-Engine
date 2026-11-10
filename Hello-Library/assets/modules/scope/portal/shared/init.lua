@@ -1,6 +1,6 @@
 -- A portal: a way into another world, named by its scope key. One-ended: the way back is the
--- other world's own portal. Once placed, on both sides, it is a fixed ball of radius 1.2 that
--- says who walks into it (`collision_trigger`).
+-- other world's own portal. On both sides it is a fixed ball of radius 1.2 that says who walks
+-- into it (`collision_trigger`), from its spawn on, while it is still being placed too.
 --
 -- scope/portal = {
 --     target = <the scope key of the world it leads to>,
@@ -14,22 +14,17 @@
 -- }
 --
 -- scope/portal/cooling = {}: on a player handed in from another world, for 3 s, while it may not
--- cross again. It is a `cooldown` timer, which `player/spawner` starts.
+-- cross again. It is a `cooldown` timer that crosses with the player from the portal it took.
 
--- `insert_if_new`: a reload sees every portal as added again, and a fresh `collision_trigger`
--- would read whoever stands inside as walking in.
+-- The trigger is there while the portal is placed too, so whoever stands where it is placed is
+-- already inside when placing ends, and has not walked in; only a portal no longer being placed
+-- takes a walk-in. `insert_if_new`: a reload sees every portal as added again, and a fresh
+-- `collision_trigger` would read whoever stands inside as walking in.
 app:add_systems(First, {
-    Query[{
-        ["or"] = {
-            added = { "scope/portal" },
-            removed = { "placement" },
-        },
-        with = { "scope/portal" },
-        without = { "placement" },
-    }],
+    Query[{ added = { "scope/portal" } }],
     Commands,
-}, function(placed, commands)
-    for _, e in ipairs(placed:iter()) do
+}, function(portals, commands)
+    for _, e in ipairs(portals:iter()) do
         commands:entity(e:id()):insert_if_new({
             RigidBody3d = "Fixed",
             Collider3d = { ball = { radius = 1.2 } },

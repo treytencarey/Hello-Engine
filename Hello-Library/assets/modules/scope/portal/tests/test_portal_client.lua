@@ -12,6 +12,9 @@
 --   C6  in a world that only observes, walking in asks none
 --   C7  a local player still cooling from its crossing (the `cooldown` its server synced) asks none
 --   C8  ...and once it has cooled, walking in asks one
+--   C9  with real physics: a portal placed where the player stands asks nothing, as the player did
+--       not walk in, though it was inside while the portal was being placed
+--   C10 ...and walking out and back in asks one
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -24,6 +27,7 @@ local OTHER = "github:zzportalc/other:main"
 local SECOND = "github:zzportalc/second:main"
 local THIRD = "github:zzportalc/third:main"
 local FIFTH = "github:zzportalc/fifth:main"
+local SIXTH = "github:zzportalc/sixth:main"
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
@@ -142,6 +146,40 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "walked_cooled" and clock > 0.3 then
         local n, shaped = flips(world, FIFTH)
         T("C8_once_it_has_cooled_walking_in_asks_one", n == 1 and shaped, "flips=" .. n)
+        -- Real physics from here: the player is a body, and the trigger mod reads Rapier's overlaps.
+        commands:entity(named(world, "zz/pc/h", "me"):id()):insert({
+            Transform = { translation = { x = 50, y = 0, z = 0 } },
+            RigidBody3d = "Dynamic",
+            Collider3d = { ball = { radius = 0.3 } },
+            GravityScale3d = { value = 0 },
+        })
+        commands:spawn({
+            ["scope/portal"] = { target = SIXTH },
+            placement = {},
+            Transform = { translation = { x = 50, y = 0, z = 0 } },
+            ["core/net/sync"] = false,
+            ["zz/pc/p"] = { name = "c6" },
+        })
+        step("placing")
+
+    elseif phase == "placing" and clock > 1 then
+        T("C9_a_portal_being_placed_asks_nothing_of_the_player_inside", flips(world, SIXTH) == 0, "")
+        commands:entity(named(world, "zz/pc/p", "c6"):id()):remove("placement")
+        step("placed_here")
+
+    elseif phase == "placed_here" and clock > 1 then
+        T("C9_placed_where_the_player_stands_it_asks_nothing", flips(world, SIXTH) == 0,
+            "flips=" .. flips(world, SIXTH))
+        commands:entity(named(world, "zz/pc/h", "me"):id()):insert({ Transform = { translation = { x = 60, y = 0, z = 0 } } })
+        step("out")
+
+    elseif phase == "out" and clock > 1 then
+        commands:entity(named(world, "zz/pc/h", "me"):id()):insert({ Transform = { translation = { x = 50, y = 0, z = 0 } } })
+        step("back_in")
+
+    elseif phase == "back_in" and clock > 1 then
+        local n, shaped = flips(world, SIXTH)
+        T("C10_walking_out_and_back_in_asks_one", n == 1 and shaped, "flips=" .. n)
         phase = "done"
         suite.finish("ScopePortalClientSuite")
     end

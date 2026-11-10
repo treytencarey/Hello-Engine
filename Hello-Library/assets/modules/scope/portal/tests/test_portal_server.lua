@@ -11,8 +11,9 @@
 --   P10 a player walking into a hosted portal is handed over to its target
 --   P11 with no welcomed link to the target, nothing
 --   P12 a peer mirror, or a player with no share, is not handed over
---   P13 a placed portal has a fixed ball body of radius 1.2 and a trigger; one being placed has none
---   P14 ...and gets them once placed
+--   P13 a portal has a fixed ball body of radius 1.2 and a trigger, one still being placed too
+--   P14 ...and keeps them once placed
+--   P19 a player walking into a portal still being placed is not handed over
 --   P15 taking `scope/portal` off a portal that stays takes its body, trigger, mark and link
 --   P16 ...and another portal to that target takes the link
 --   P10b ...taking a 3 s crossing timer with it in `transfer_data`
@@ -173,6 +174,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "players" and clock > 0.3 and named(world, "zz/portal/h", "hc"):has("scope/portal/cooling") then
         local function id(name) return named(world, "zz/portal/h", name):id() end
         local walked = { id("h7"), id("hm"), id("hn"), id("hc") }
+        commands:entity(named(world, "zz/portal/p", "a1"):id()):insert({
+            collision_trigger = { entered = { id("h8") }, exited = {}, inside = { id("h8") } },
+        })
         commands:entity(named(world, "zz/portal/p", "l1"):id()):insert({
             collision_trigger = { entered = walked, exited = {}, inside = walked },
         })
@@ -185,6 +189,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P10_walking_into_a_hosted_portal_hands_the_player_over", switched.h7 == OTHER, tostring(switched.h7))
         T("P10b_taking_a_3_s_crossing_timer_in_transfer_data", carried.h7 == 3, tostring(carried.h7))
         T("P11_with_no_welcomed_link_nothing", switched.h8 == nil, tostring(switched.h8))
+        T("P19_a_portal_still_being_placed_hands_nobody_over", switched.h8 == nil, tostring(switched.h8))
         T("P12_a_peer_mirror_or_a_player_without_a_share_is_not_handed_over",
             switched.hm == nil and switched.hn == nil, "")
         T("P17_a_player_still_cooling_is_not_handed_over", switched.hc == nil
@@ -192,9 +197,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local l1 = named(world, "zz/portal/p", "l1")
         local a1 = named(world, "zz/portal/p", "a1")
         local ball = l1:get("Collider3d")
-        T("P13_a_placed_portal_has_a_fixed_ball_and_a_trigger_one_being_placed_none",
+        T("P13_a_portal_has_a_fixed_ball_and_a_trigger_one_being_placed_too",
             l1:get("RigidBody3d") == "Fixed" and l1:has("Collider3d") and l1:has("collision_trigger")
-                and not a1:has("RigidBody3d") and not a1:has("Collider3d") and not a1:has("collision_trigger"),
+                and a1:has("placement") and a1:get("RigidBody3d") == "Fixed" and a1:has("Collider3d")
+                and a1:has("collision_trigger"),
             "collider " .. tostring(ball and (ball.ball and ball.ball.radius)))
         commands:entity(a1:id()):remove("placement")
         local holder = world:get_entity(link_holder)
@@ -203,7 +209,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "taken" and clock > 0.5 then
         local a1 = named(world, "zz/portal/p", "a1")
-        T("P14_placed_it_gets_them", a1:get("RigidBody3d") == "Fixed" and a1:has("Collider3d") and a1:has("collision_trigger"), "")
+        T("P14_placed_it_keeps_them", a1:get("RigidBody3d") == "Fixed" and a1:has("Collider3d") and a1:has("collision_trigger"), "")
         local holder = world:get_entity(link_holder)
         local gone = true
         for _, child in ipairs(holder:get("Children") or {}) do

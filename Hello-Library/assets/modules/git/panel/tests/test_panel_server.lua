@@ -6,7 +6,7 @@
 --
 --   PS1 `player/server` gives a player `git/panel`, which declares its own sync to the owner, and the
 --       request slot (client, owner) and the answer (server, owner) on the player's sync
---   PS2 a portal ask opens one portal, at the asker, for the asker to place, owned by it on the net,
+--   PS2 a portal ask opens one portal, 3 m ahead of the asker, for the asker to place, owned by it on the net,
 --       with the sync every client needs; it is answered "opened"
 --   PS3 the owner taking its ask back takes the answer back
 --   PS4 an ask for this world's own scope opens nothing, answered "failed"
@@ -140,7 +140,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("PS2_a_portal_ask_opens_one_portal_to_the_target", #portals(world) == 1 and #mine == 1
             and p:get("scope/portal").target == OTHER and p:get("scope/portal/view").mode == "3d",
             tostring(#portals(world)))
-        T("PS2_at_the_asker_for_it_to_place", p ~= nil and p:has("placement") and at.x == 4 and at.y == 1 and at.z == 2, "")
+        T("PS2_3_m_ahead_of_the_asker_for_it_to_place", p ~= nil and p:has("placement") and math.abs(at.x - 7) < 0.01
+            and math.abs(at.y - 1) < 0.01 and math.abs(at.z - 2) < 0.01, at and string.format("%.2f %.2f %.2f", at.x, at.y, at.z) or "")
         T("PS2_owned_by_the_asker_on_the_net", p ~= nil and p:get("core/net/owner").client_id == 7, "")
         T("PS2_with_the_sync_every_client_needs",
             sync.placement and sync.placement.authority == "client"
