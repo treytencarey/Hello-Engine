@@ -21,6 +21,8 @@
 --     root would push the ref the anonymous ticket names
 -- S14 ...and root's join record bound to the player afterwards (the new ticket) asks for it once
 -- S11 in both-mode (root's `core/process`), turning them on asks for no proof
+-- S15 signed in, turning them on shows no notice
+-- S16 signed out, turning them on says once that edits stay local, in a `git/merge/notice`
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -60,12 +62,21 @@ app:add_systems(Startup, { Commands }, function(commands)
     })
 end)
 
+local STAY_LOCAL = "This world uses your checkout, but you are not signed in — edits stay local until you connect your account"
+
 local added = 0
+local notices, notice_text, notice_timeout = 0, nil, nil
 app:add_systems(First, {
     Query[{ added = { "git/world/served/status" } }],
     Query[{ added = { "git/world/served/merge" } }],
-}, function(status_rows, merge_rows)
+    Query[{ added = { "git/merge/notice" }, optional = { "notification" } }],
+}, function(status_rows, merge_rows, notice_rows)
     added = added + #status_rows:iter() + #merge_rows:iter()
+    for _, row in ipairs(notice_rows:iter()) do
+        notices = notices + 1
+        notice_text = row:get("git/merge/notice").text
+        notice_timeout = row:has("notification") and row:get("notification").timeout or nil
+    end
 end):in_set("zz/served_count")
 
 -- How many proof requests have opened. One is open at a time here, as the suite answers each at
@@ -132,6 +143,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             "the carrier lacks its sub-mods after it arrived in a world whose tree is the checkout")
         T("S7_the_proof_is_asked_once_under_the_carrier", pushes == 1 and push_parent == c:id() and push_nonce == nil,
             string.format("%d asked, under %s, nonce %s", pushes, tostring(push_parent), tostring(push_nonce)))
+        T("S15_signed_in_shows_no_notice", notices == 0,
+            string.format("%d notice(s), the last '%s'", notices, tostring(notice_text)))
         step("s8")
 
     elseif phase == "s8" and (#requests == 0 or clock > 5) then
@@ -161,12 +174,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local me = world:query({ with = { "core/player/identity", "zz/served/identity" } })[1]
         commands:entity(me:id()):insert({ ["core/player/identity"] = {} })
         seen_pushes = pushes
+        notices = 0
         edits(true)
         step("s10")
 
     elseif phase == "s10" and ((watching and clock > 0.5) or clock > 5) then
         T("S10_signed_out_asks_for_no_proof", watching and pushes == seen_pushes,
             string.format("on=%s, %d asked", tostring(watching), pushes - seen_pushes))
+        T("S16_signed_out_says_once_that_edits_stay_local", notices == 1 and notice_text == STAY_LOCAL
+            and notice_timeout == 20,
+            string.format("%d notice(s), the last '%s', timeout %s", notices, tostring(notice_text), tostring(notice_timeout)))
         local me = world:query({ with = { "core/player/identity", "zz/served/identity" } })[1]
         commands:entity(me:id()):insert({ ["core/player/identity"] = { site_user_id = "zz-user" } })
         step("s12")

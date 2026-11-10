@@ -46,6 +46,22 @@ local function provable(identities, joins, processes)
     return bound
 end
 
+--- Whether root says the player is signed out: its identity is here without a `site_user_id`, and
+--- this is not both-mode, where nothing is sent anyway. No identity from root yet says nothing.
+local function signed_out(identities, processes)
+    local seen = false
+    for _, row in ipairs(identities:iter()) do
+        if from_root(row) then
+            if row:get("core/player/identity").site_user_id ~= nil then return false end
+            seen = true
+        end
+    end
+    for _, row in ipairs(processes:iter()) do
+        if from_root(row) and row:get("core/process").mode == "both" then return false end
+    end
+    return seen
+end
+
 app:add_systems(Update, {
     Query[{
         with = { "git/world/served" },
@@ -76,12 +92,27 @@ app:add_systems(Update, {
         if scope ~= nil and declared.ref == scope and declared.edits == true then holds = true end
     end
     local proving = provable(identities, joins, processes)
+    local local_only = signed_out(identities, processes)
     for _, e in ipairs(carriers:iter()) do
         local status_on, merge_on = e:has("git/world/served/status"), e:has("git/world/served/merge")
         if holds and not (status_on and merge_on) then
             commands:entity(e:id()):insert_if_new({ ["git/world/served/status"] = {}, ["git/world/served/merge"] = {} })
             if proving then push(commands, e) end
             print(string.format("[GIT/WORLD/SERVED] '%s' is your checkout: watching your edits", tostring(scope)))
+            -- Signed out, git/world/served/status sends nothing, and a save would otherwise pass
+            -- without a word.
+            if local_only then
+                print("[GIT/WORLD/SERVED] this world uses your checkout, but you are not signed in — "
+                    .. "edits stay local until you connect your account")
+                commands:spawn({
+                    ["git/merge/notice"] = {
+                        text = "This world uses your checkout, but you are not signed in — "
+                            .. "edits stay local until you connect your account",
+                    },
+                    notification = { timeout = 20 },
+                    ["core/script/owner"] = false,
+                })
+            end
         elseif not holds and (status_on or merge_on) then
             commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge")
             print(string.format("[GIT/WORLD/SERVED] '%s' is no longer your checkout: stopped watching", tostring(scope)))
