@@ -1,5 +1,5 @@
 ---
-depends_on: [vault/git, core/process]
+depends_on: [vault/git, core/process, git/merge/notice, notification]
 conflicts_with: []
 exposes: [git/world/served/status, git/world/served/status/scan]
 ---
@@ -35,12 +35,17 @@ Git answers the branch-switch case by itself. A `git checkout` rewrites many fil
 - A path that left the list because HEAD moved, a commit or a branch switch, is dropped at once.
 - A scan that failed changes nothing.
 
+## A refused edit
+
+When this world refuses an edit that was not stale, core marks the path's edit `core/library/edit/refused = {}` and takes the mark off when the path goes up again. On the mark's `added` edge, for an edit under a status carrier, this mod prints "this world refused your edit of <path>" and spawns a `git/merge/notice` with the title `REFUSED`, the text "This world refused your edit of <path>. It stays in your copy only.", `notification = { timeout = 20 }` and `["core/script/owner"] = false`. A stale refusal is held and merged instead, and shows nothing here.
+
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-----|---------|
 | Update | `git/world/served/status` | While a carrier exists, outside both-mode and while signed in: asks root every 2 s, one request at a time. A request root has not answered in 10 s is closed and asked again |
 | Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, and closes the request. Runs on the reply's edge |
+| Update | `git/world/served/status` | On `added core/library/edit/refused`, for an edit under a carrier: the `REFUSED` notice |
 | Update | none | When `git/world/served/status` is taken off an entity that stays: despawns its edits and its open request |
 
 ## Use

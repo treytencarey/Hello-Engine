@@ -171,6 +171,33 @@ app:add_systems(Update, {
     end
 end):in_set("git/world/served/status")
 
+-- An edit this world refused stays in the player's copy only, and nothing else says so. Core marks
+-- the edit `core/library/edit/refused` for each refusal that is not stale; a stale one is merged
+-- instead and marks nothing.
+app:add_systems(Update, {
+    Query[{ added = { "core/library/edit/refused" }, with = { "core/library/edit", "ChildOf" } }],
+    Query[{ with = { "git/world/served/status" }, without = { "WorldMirror" } }],
+    Commands,
+}, function(refused, carriers, commands)
+    for _, row in ipairs(refused:iter()) do
+        if carriers:get(row:get("ChildOf")) then
+            local path = row:get("core/library/edit").path
+            print("[GIT/WORLD/SERVED/STATUS] this world refused your edit of " .. tostring(path))
+            commands:spawn({
+                ["git/merge/notice"] = {
+                    title = "REFUSED",
+                    text = "This world refused your edit of " .. tostring(path) .. ". It stays in your copy only.",
+                },
+                notification = { timeout = 20 },
+                ["core/script/owner"] = false,
+            })
+        end
+    end
+end):in_set("git/world/served/status")
+    :run_if({ Query[{ added = { "core/library/edit/refused" } }] }, function(refused)
+        return not refused:is_empty()
+    end)
+
 -- git/world/served/status taken off an entity that stays: its edits and its open request go with
 -- it. A despawned carrier takes its children itself.
 app:add_systems(Update, {

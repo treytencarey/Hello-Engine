@@ -16,6 +16,8 @@
 -- W12 git/world/served/status taken off an entity that stays: its edits and its request go
 -- W13 signed out (root's identity without `site_user_id`) nothing is asked; signing in asks again
 -- W14 in both-mode (root's `core/process`) nothing is asked; out of it, it asks again
+-- W15 an edit under the carrier that core marks `core/library/edit/refused` is told once, in a
+--     `git/merge/notice` titled REFUSED; a marked edit under no carrier is not
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -65,6 +67,18 @@ end
 local phase, clock = "start", 0
 local queued, asks_at_answer = nil, 0
 local seen = {}
+
+-- Every notice spawned, as title, text and its notification's timeout.
+local notices = {}
+app:add_systems(First, {
+    Query[{ added = { "git/merge/notice" }, optional = { "notification" } }],
+}, function(rows)
+    for _, row in ipairs(rows:iter()) do
+        local n = row:get("git/merge/notice")
+        notices[#notices + 1] = { title = n.title, text = n.text,
+            timeout = row:has("notification") and row:get("notification").timeout or nil }
+    end
+end):in_set("zz/watch_notices")
 
 local function scan(head, entries) queued = { status = "ok", head = head, entries = entries } end
 
@@ -237,6 +251,32 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "w14 in" and (asks > seen.asks or clock > 5) then
         T("W14_in_both_mode_asks_nothing_and_out_of_it_asks_again", seen.out == 0 and asks == seen.asks + 1,
             string.format("%d asked in both-mode, %d after", seen.out, asks - seen.asks))
+        scan(H2, { { path = "assets/zz/a.lua", op = "write", mtime = 4000 } })
+        step("w15 edit")
+
+    elseif phase == "w15 edit" and (A or clock > 5) then
+        -- Core marks an edit the world refused. One with no status carrier above it is not this mod's.
+        for _, e in ipairs(world:query({ with = { "core/library/edit", "ChildOf" } })) do
+            if e:get("core/library/edit").path == "zz/a.lua" then
+                commands:entity(e:id()):insert({ ["core/library/edit/refused"] = {} })
+            end
+        end
+        commands:spawn({
+            ["core/library/edit"] = { path = "zz/loose.lua", seq = 1 },
+            ["core/library/edit/refused"] = {},
+            ["core/net/sync"] = false,
+        })
+        notices = {}
+        step("w15")
+
+    elseif phase == "w15" and clock > 1.5 then
+        local n = notices[1] or {}
+        T("W15_a_refused_edit_under_the_carrier_is_told_once",
+            #notices == 1 and n.title == "REFUSED"
+                and n.text == "This world refused your edit of zz/a.lua. It stays in your copy only."
+                and n.timeout == 20,
+            string.format("%d notice(s), the first %s: '%s', timeout %s", #notices, tostring(n.title),
+                tostring(n.text), tostring(n.timeout)))
         finish()
     end
 
