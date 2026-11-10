@@ -343,6 +343,12 @@ app:add_systems(Update, {
                     line("Only collaborators of this world can invite", "text_bad", 10)
                 elseif reply.reason == "sign-in-required" then
                     line("Sign in on the Profile panel to send invites", "text_bad", 10)
+                elseif reply.reason == "no-invitee" then
+                    line("No one selected to invite", "text_bad", 10)
+                elseif reply.reason == "not-joined" then
+                    line("No active world to invite into", "text_bad", 10)
+                elseif reply.reason == "no-gateway" then
+                    line("No Gateway connection to send the invite through", "text_bad", 10)
                 else
                     line("Invite failed: " .. tostring(reply.reason), "text_bad", 10)
                 end

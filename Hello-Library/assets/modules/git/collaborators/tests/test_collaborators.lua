@@ -14,6 +14,8 @@
 -- S1  online, Invite asks root to invite that login into this world, with "Inviting <login>..."
 -- S2  root's ok says "Invited <login>"; a second click closes the first request
 -- S3  "not-a-collaborator" and other refusals each say why
+-- S4  root's `no-invitee`, `not-joined` and `no-gateway` say "No one selected to invite", "No active
+--     world to invite into" and "No Gateway connection to send the invite through", in `text_bad`
 -- F1  what sidebar/invites last said shows under them
 -- G1  git/panel's chosen repository is listed instead, with no Invite buttons; unchosen, this
 --     world's again
@@ -150,6 +152,13 @@ local function has_row(world, text)
     return false
 end
 
+-- The style role of the status line reading `text`.
+local function line_role(world, text)
+    for _, r in ipairs(world:query({ with = { "git/collaborators/row", "Text" }, optional = { "ui/style" } })) do
+        if r:get("Text") == text then return (r:get("ui/style") or {}).text end
+    end
+end
+
 -- The row whose texts start with the avatar letter and `login`.
 local function row_of(world, login)
     for _, r in ipairs(world:query({ with = { "git/collaborators/row" } })) do
@@ -201,6 +210,13 @@ local COLLABORATORS = {
     { github_id = "2", login = "Alice", role = "write" },
     { github_id = "3", login = "bob" },
     { login = "noid", role = "read" },
+}
+
+-- Root's own refusals of a send, and what the panel says for each.
+local REFUSALS = {
+    { reason = "no-invitee", text = "No one selected to invite", case = "S4a_no_invitee_says_no_one_selected" },
+    { reason = "not-joined", text = "No active world to invite into", case = "S4b_not_joined_says_no_active_world" },
+    { reason = "no-gateway", text = "No Gateway connection to send the invite through", case = "S4c_no_gateway_says_no_gateway_connection" },
 }
 
 local phase, clock = "arrived", 0
@@ -342,8 +358,35 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "failed" and has_row(world, "Invite failed: rate-limited") and clock > 0.3 then
         T("S3_other_refusals_say_invite_failed", true)
-        commands:entity(player):insert({ ["sidebar/invites/state"] = { feedback = "Portal opened - walk through to join", feedback_kind = "ok" } })
-        step("feedback")
+        mark.refusal = 1
+        step("refusal_click")
+
+    elseif phase == "refusal_click" and clock > 0.3 then
+        mark.before = {}
+        for _, s in ipairs(sends(world)) do mark.before[s.id] = true end
+        click(commands, button_in(world, row_of(world, "Alice"), "Invite"))
+        step("refusal_sent")
+
+    elseif phase == "refusal_sent" and clock > 0.4 then
+        local fresh
+        for _, s in ipairs(sends(world)) do
+            if not mark.before[s.id] and s.wish.invitee == "Alice" then fresh = s end
+        end
+        if fresh then
+            reply(commands, fresh.id, "core/registry/invites/send/reply", { status = "refused", reason = REFUSALS[mark.refusal].reason })
+        end
+        step("refusal_shown")
+
+    elseif phase == "refusal_shown" and clock > 0.5 then
+        local r = REFUSALS[mark.refusal]
+        T(r.case, has_row(world, r.text) and line_role(world, r.text) == "text_bad", table.concat(rows_text(world), " / "))
+        mark.refusal = mark.refusal + 1
+        if REFUSALS[mark.refusal] then
+            step("refusal_click")
+        else
+            commands:entity(player):insert({ ["sidebar/invites/state"] = { feedback = "Portal opened - walk through to join", feedback_kind = "ok" } })
+            step("feedback")
+        end
 
     elseif phase == "feedback" and has_row(world, "Portal opened - walk through to join") and clock > 0.3 then
         T("F1_sidebar_invites_feedback_shows", true)
