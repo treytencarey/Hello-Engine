@@ -17,6 +17,9 @@
 --     changed, and the sub-mods are not added again
 -- S10 signed out (root's identity without `site_user_id`), turning them on asks for no proof
 -- S12 signing in while they are on asks for the proof once
+-- S13 signing in while root's join record is still bound to the anonymous player asks for no proof:
+--     root would push the ref the anonymous ticket names
+-- S14 ...and root's join record bound to the player afterwards (the new ticket) asks for it once
 -- S11 in both-mode (root's `core/process`), turning them on asks for no proof
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
@@ -41,6 +44,12 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({
         ["core/player/identity"] = { site_user_id = "zz-user" },
         ["zz/served/identity"] = {},
+        ["core/net/sync"] = false,
+    })
+    -- Root's join record for this world, its ticket bound to the signed-in player.
+    commands:spawn({
+        ["core/world/join"] = { endpoint = "127.0.0.1:15990", scope = SCOPE, ticket = "zz-join-1", requester = "zz-user" },
+        ["zz/served/join"] = {},
         ["core/net/sync"] = false,
     })
     -- This world's own content library, already the player's checkout before the mod exists.
@@ -76,6 +85,14 @@ end
 
 local function own(world)
     return world:query({ with = { "core/library", "zz/served/own" } })[1]
+end
+
+local function identity(world)
+    return world:query({ with = { "core/player/identity", "zz/served/identity" } })[1]
+end
+
+local function join(world)
+    return world:query({ with = { "core/world/join", "zz/served/join" } })[1]
 end
 
 local phase, clock = "carrier", 0
@@ -156,6 +173,30 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "s12" and ((pushes > seen_pushes and clock > 1) or clock > 5) then
         T("S12_signing_in_while_on_asks_once", pushes == seen_pushes + 1,
+            string.format("%d asked", pushes - seen_pushes))
+        -- Signed out, and joined again anonymously.
+        commands:entity(identity(world):id()):insert({ ["core/player/identity"] = {} })
+        commands:entity(join(world):id()):insert({ ["core/world/join"] = {
+            endpoint = "127.0.0.1:15990", scope = SCOPE, ticket = "zz-join-anon", requester = "zz-anon",
+        } })
+        step("s13 in")
+
+    elseif phase == "s13 in" and clock > 0.3 then
+        seen_pushes = pushes
+        commands:entity(identity(world):id()):insert({ ["core/player/identity"] = { site_user_id = "zz-user" } })
+        step("s13")
+
+    elseif phase == "s13" and clock > 1 then
+        T("S13_signing_in_with_an_anonymous_join_asks_for_no_proof", pushes == seen_pushes,
+            string.format("%d asked", pushes - seen_pushes))
+        seen_pushes = pushes
+        commands:entity(join(world):id()):insert({ ["core/world/join"] = {
+            endpoint = "127.0.0.1:15990", scope = SCOPE, ticket = "zz-join-2", requester = "zz-user",
+        } })
+        step("s14")
+
+    elseif phase == "s14" and ((pushes > seen_pushes and clock > 1) or clock > 5) then
+        T("S14_the_join_bound_to_the_player_asks_once", pushes == seen_pushes + 1,
             string.format("%d asked", pushes - seen_pushes))
         commands:spawn({ ["core/process"] = { mode = "both" }, ["zz/served/process"] = {}, ["core/net/sync"] = false })
         edits(false)

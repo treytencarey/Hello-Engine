@@ -19,6 +19,33 @@ local function push(commands, carrier)
     })
 end
 
+--- Whether root's statement `row` is root's own: any world can share a `core/process`, a
+--- `core/player/identity` or a `core/world/join` of its own.
+local function from_root(row)
+    return (row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0) == 0
+end
+
+--- Whether a push would prove anything: the player is signed in, not in both-mode, where nothing is
+--- uploaded, and root's join record for this world is bound to them. Root pushes the ref that
+--- record's ticket names, and a world joined anonymously holds an anonymous ticket until root has
+--- the Site sign a new one after the sign-in, so a push before then names a ticket the world's
+--- host never sees again.
+local function provable(identities, joins, processes)
+    local user
+    for _, row in ipairs(identities:iter()) do
+        local id = row:get("core/player/identity").site_user_id
+        if from_root(row) and id ~= nil then user = tostring(id) end
+    end
+    local bound = false
+    for _, row in ipairs(joins:iter()) do
+        if from_root(row) and user ~= nil and tostring(row:get("core/world/join").requester) == user then bound = true end
+    end
+    for _, row in ipairs(processes:iter()) do
+        if from_root(row) and row:get("core/process").mode == "both" then return false end
+    end
+    return bound
+end
+
 app:add_systems(Update, {
     Query[{
         with = { "git/world/served" },
@@ -34,8 +61,12 @@ app:add_systems(Update, {
         with = { "core/process" },
         optional = { "WorldMirror" },
     }],
+    Query[{
+        with = { "core/world/join" },
+        optional = { "WorldMirror" },
+    }],
     Commands,
-}, function(carriers, libraries, statuses, identities, processes, commands)
+}, function(carriers, libraries, statuses, identities, processes, joins, commands)
     local me = statuses:iter()[1]
     local status = me and me:get("core/world/status")
     local scope = status and status.scope_key
@@ -44,23 +75,12 @@ app:add_systems(Update, {
         local declared = lib:get("core/library")
         if scope ~= nil and declared.ref == scope and declared.edits == true then holds = true end
     end
-    -- The proof is asked as git/world/served/status asks: only while the player is signed in, as an
-    -- anonymous player can't write, and not in both-mode, where nothing is uploaded. Only root's
-    -- statements count: any world can share a `core/process` or a `core/player/identity` of its own.
-    local signed_in, both = false, false
-    for _, row in ipairs(identities:iter()) do
-        local from = row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0
-        if from == 0 and row:get("core/player/identity").site_user_id ~= nil then signed_in = true end
-    end
-    for _, row in ipairs(processes:iter()) do
-        local from = row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0
-        if from == 0 and row:get("core/process").mode == "both" then both = true end
-    end
+    local proving = provable(identities, joins, processes)
     for _, e in ipairs(carriers:iter()) do
         local status_on, merge_on = e:has("git/world/served/status"), e:has("git/world/served/merge")
         if holds and not (status_on and merge_on) then
             commands:entity(e:id()):insert_if_new({ ["git/world/served/status"] = {}, ["git/world/served/merge"] = {} })
-            if signed_in and not both then push(commands, e) end
+            if proving then push(commands, e) end
             print(string.format("[GIT/WORLD/SERVED] '%s' is your checkout: watching your edits", tostring(scope)))
         elseif not holds and (status_on or merge_on) then
             commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge")
@@ -77,11 +97,21 @@ end):in_set("git/world/served")
         return not touched:is_empty()
     end)
 
--- Signing in while the sub-mods are on asks too. Root's identity changes for other reasons while
--- signed in (a linked account), so a push already open is not asked again.
+-- Signing in while the sub-mods are on asks too, once root's join record is bound to the player:
+-- on the identity's edge when the record already is (a launch signed in), else on the record's
+-- edge when root has the new ticket. Root's identity changes for other reasons while signed in (a
+-- linked account), so a push already open is not asked again.
 app:add_systems(Update, {
     Query[{
-        changed = { "core/player/identity" },
+        ["or"] = { added = { "core/world/join" }, changed = { "core/player/identity", "core/world/join" } },
+        optional = { "WorldMirror" },
+    }],
+    Query[{
+        with = { "core/player/identity" },
+        optional = { "WorldMirror" },
+    }],
+    Query[{
+        with = { "core/world/join" },
         optional = { "WorldMirror" },
     }],
     Query[{
@@ -94,23 +124,29 @@ app:add_systems(Update, {
     }],
     Query[{ with = { "vault/git/proof", "Request" } }],
     Commands,
-}, function(identities, processes, carriers, open, commands)
-    local signed_in, both = false, false
-    for _, row in ipairs(identities:iter()) do
-        local from = row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0
-        if from == 0 and row:get("core/player/identity").site_user_id ~= nil then signed_in = true end
+}, function(touched, identities, joins, processes, carriers, open, commands)
+    local by_root = false
+    for _, row in ipairs(touched:iter()) do
+        if from_root(row) then by_root = true end
     end
-    for _, row in ipairs(processes:iter()) do
-        local from = row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0
-        if from == 0 and row:get("core/process").mode == "both" then both = true end
-    end
+    if not by_root or not provable(identities, joins, processes) then return end
     for _, e in ipairs(carriers:iter()) do
-        if signed_in and not both and open:iter_many(e:get("Children") or {})[1] == nil then
+        if open:iter_many(e:get("Children") or {})[1] == nil then
             push(commands, e)
             print("[GIT/WORLD/SERVED] signed in: asking root for the writer proof")
         end
     end
 end):in_set("git/world/served")
+    :run_if({
+        Query[{
+            ["or"] = {
+                added = { "core/world/join" },
+                changed = { "core/player/identity", "core/world/join" },
+            },
+        }],
+    }, function(touched)
+        return not touched:is_empty()
+    end)
 
 -- git/world/served was taken off an entity that stays: the sub-mods it added go. A despawned
 -- carrier is in the `removed` rows too, which `try_remove` passes by.
