@@ -78,7 +78,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "arrived" and clock > 0.3 then
         local game = named(world, "me"):get("input/game") or {}
         suite.assert_test("V0b_nothing_is_bound_before_the_player_is_ours", game.movement == nil, "")
-        named(world, "me"):patch({ ["core/net/local"] = {} })
+        -- The player mod turns its body dynamic then; `movement` leaves this client's own body alone.
+        named(world, "me"):patch({ ["core/net/local"] = {}, RigidBody3d = "Dynamic" })
         step("standing")
 
     elseif phase == "standing" and clock > 1.0 then

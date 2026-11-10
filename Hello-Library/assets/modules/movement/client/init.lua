@@ -67,18 +67,9 @@ app:add_systems(First, {
     end
 end):in_set("movement/copy")
 
--- This client's own body arrives a frame before it is marked as its own, so the system above has
--- made it kinematic by then. It is simulated here, so it turns back.
-app:add_systems(First, {
-    Query[{
-        added = { "core/net/local" },
-        with = { "movement", Mut["RigidBody3d"] },
-    }],
-}, function(own)
-    for _, e in ipairs(own:iter_mut()) do
-        e:set({ RigidBody3d = "Dynamic" })
-    end
-end):in_set("movement/own"):after("movement/copy")
+-- This client's own body is never turned dynamic here: the player mod decides when it may fall. A
+-- game's player can wait for its map's colliders, and a body made dynamic first falls through the
+-- map before it loads.
 
 -- Walking: while a key is held, the horizontal velocity follows the keys, turned by the
 -- camera's yaw, and the player turns to face that way. It polls while a key is held (ground
