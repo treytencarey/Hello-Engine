@@ -17,6 +17,7 @@
 -- K1  8 of root's 10 commits, the message's first line cut to 30
 -- U1  Pull asks the world to pull its commit, and reads "⏳ Pulling…" while the ask is out
 -- P1  a picker opens on a click, and opening one closes the other; the chosen option can't be clicked
+-- P2  the wheel over an open picker's list scrolls it, 20 px a step, and no further than its content
 -- P3  choosing a repository closes the picker, clears the branch and the commits, asks its branches
 -- B2  another repository's first branch is chosen
 -- S1  Switch asks core's flip for the target, in canonical lower case, and asks the commits again
@@ -36,6 +37,7 @@ require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
+local Scroll = require("bevy::picking::prelude::Scroll")
 local MessageReader = require("bevy::prelude").MessageReader
 
 local suite = helpers.create_suite("GitPanelSuite")
@@ -352,6 +354,37 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P1_a_click_opens_the_picker", repo.arrow == "▲" and branch.shown == false and branch.arrow == "▼")
         T("P1_the_chosen_option_can_t_be_clicked", option(world, "REPOSITORY", "world") == false
             and option(world, "REPOSITORY", "third") ~= nil)
+        -- Headless, nothing lays the list out: it stands as Bevy's layout leaves a list taller than its
+        -- 180 px, and the wheel step lands on it, as picking's bubbling from an option row does.
+        mark.list = repo.list
+        commands:entity(repo.list):insert({
+            ComputedNode = { size = { x = 264, y = 180 }, content_size = { x = 264, y = 230 } },
+        })
+        step("wheel")
+
+    elseif phase == "wheel" and clock > 0.2 then
+        commands:trigger(Pointer[Scroll], {
+            entity = mark.list,
+            pointer_location = { target = { None = { width = 0, height = 0 } } },
+            event = { unit = "Line", y = -2, hit = { camera = camera } },
+        })
+        step("wheeled")
+
+    elseif phase == "wheeled" and clock > 0.3 then
+        local list = world:query({ iter_many = { mark.list }, optional = { "ScrollPosition" } })[1]
+        local at = list and list:get("ScrollPosition")
+        T("P2_the_wheel_scrolls_an_open_picker_s_list", at ~= nil and at.y == 40, tostring(at and at.y))
+        commands:trigger(Pointer[Scroll], {
+            entity = mark.list,
+            pointer_location = { target = { None = { width = 0, height = 0 } } },
+            event = { unit = "Line", y = -5, hit = { camera = camera } },
+        })
+        step("wheeled_far")
+
+    elseif phase == "wheeled_far" and clock > 0.3 then
+        local list = world:query({ iter_many = { mark.list }, optional = { "ScrollPosition" } })[1]
+        local at = list and list:get("ScrollPosition")
+        T("P2_and_stops_at_the_end_of_its_content", at ~= nil and at.y == 50, tostring(at and at.y))
         click(commands, picker(world, "BRANCH").trigger)
         step("branch_open")
 

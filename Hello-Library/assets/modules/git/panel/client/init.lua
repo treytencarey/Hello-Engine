@@ -157,7 +157,8 @@ local function spawn_picker(commands, scroll, label, chosen, open, options)
         ["ui/style"] = { background = "bg", border = "border" },
         ChildOf = block,
     })
-    -- The wheel scrolls the list, not the panel under it as well.
+    -- The wheel scrolls the list, not the panel under it as well. `ScrollPosition` is written whole:
+    -- a field set on its working copy is dropped.
     list:observe(On[Pointer[Scroll]], {
         Query[{
             with = { Mut["ScrollPosition"] },
@@ -169,7 +170,7 @@ local function spawn_picker(commands, scroll, label, chosen, open, options)
             local node = l:get("ComputedNode")
             local room = node and math.max(0, node.content_size.y - node.size.y) or 0
             local at = l:get("ScrollPosition").y
-            l:get_mut("ScrollPosition").y = math.max(0, math.min(room, at - event.event.y * 20))
+            l:get_mut("ScrollPosition"):set_if_neq({ x = 0, y = math.max(0, math.min(room, at - event.event.y * 20)) })
         end
     end)
     local picks = {}
