@@ -10,7 +10,7 @@ end)
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/name" },
-        optional = { "map/default", "RigidBody3d", "Collider3d", "Mesh3d" },
+        optional = { "map/default", "RigidBody3d", "Collider3d", "Mesh3d", "Children" },
     })) do
         if e:get("zz/name").name == name then
             return e
@@ -32,6 +32,21 @@ local function ball(commands, name, x)
 end
 
 local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-3) end
+
+-- The map's spawn points, among its children, and where the first one is.
+local function points(world, name)
+    return world:query({ with = { "player/spawner/point", "Name" }, iter_many = named(world, name):get("Children") or {} })
+end
+
+local function point_at(world, name)
+    local p = points(world, name)[1]
+    return p and world:get_entity(p:id()).GlobalTransform:compute_transform().translation
+end
+
+local function player_at(world)
+    local p = world:query({ with = { "player", "core/net/owner" } })[1]
+    return p and world:get_entity(p:id()).GlobalTransform:compute_transform().translation
+end
 
 local phase, clock = "spawn", 0
 
@@ -69,13 +84,31 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("M4_its_size_sets_its_edge", y_of(world, "off") < -1,
             string.format("y=%.3f", y_of(world, "off")))
         suite.assert_test("M5_the_server_draws_nothing", not map:has("Mesh3d"), "")
+        local top = point_at(world, "small")
+        suite.assert_test("M8_the_map_carries_one_spawn_point_on_the_centre_of_its_top",
+            #points(world, "small") == 1 and top ~= nil and near(top.x, 0) and near(top.y, 0.5) and near(top.z, 0),
+            string.format("%d points, first at y=%s", #points(world, "small"), tostring(top and top.y)))
         map:patch({ ["map/default"] = { size = { x = 20, y = 1, z = 10 } } })
         ball(commands, "later", 8)
+        commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+        commands:spawn({ ["core/net/connection"] = { client_id = 1, observer = false }, ["core/net/sync"] = false })
         step("grown")
 
     elseif phase == "grown" and clock > 2.0 then
         suite.assert_test("M7_a_changed_size_moves_its_edge", near(y_of(world, "later"), 1.0, 0.05),
             string.format("y=%.3f", y_of(world, "later")))
+        local at = player_at(world)
+        suite.assert_test("M9_a_client_gets_its_player_on_the_maps_point",
+            at ~= nil and near(at.x, 0) and near(at.y, 1.5) and near(at.z, 0),
+            at and string.format("at %.2f %.2f %.2f", at.x, at.y, at.z) or "none")
+        named(world, "small"):patch({ ["map/default"] = { size = { x = 20, y = 3, z = 10 } } })
+        step("thick")
+
+    elseif phase == "thick" and clock > 0.5 then
+        local top = point_at(world, "small")
+        suite.assert_test("M10_a_changed_height_moves_the_point_to_the_new_top",
+            #points(world, "small") == 1 and top ~= nil and near(top.y, 1.5),
+            string.format("%d points, first at y=%s", #points(world, "small"), tostring(top and top.y)))
         named(world, "small"):remove("map/default")
         step("removed")
 
@@ -84,6 +117,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("M6_removing_map_default_takes_off_the_ground",
             map ~= nil and not map:has("RigidBody3d") and not map:has("Collider3d") and y_of(world, "on") < 0,
             string.format("y=%.3f", y_of(world, "on")))
+        suite.assert_test("M11_and_its_spawn_point", #points(world, "small") == 0, "")
         phase = "done"
         suite.finish("MapServerSuite")
     end

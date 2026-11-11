@@ -35,14 +35,53 @@ app:add_systems(First, {
     end
 end):in_set("map/default/ground")
 
--- `map/default` was taken off an entity that stays: take off the body this mod added.
--- `removed` also fires on despawn, so the removal must not fail on an entity that is gone.
+-- The map's spawn point, on the centre of the box's top: `player/spawner` puts players only on a
+-- point the map carries. A change of size moves it.
 app:add_systems(First, {
-    Query[{ removed = { "map/default" } }],
+    Query[{
+        changed = { "map/default" },
+        optional = { "Children" },
+    }],
+    Query[{ with = { "player/spawner/point", Mut["Transform"] } }],
     Commands,
-}, function(maps, commands)
+}, function(maps, points, commands)
+    for _, e in ipairs(maps:iter()) do
+        local m = e:get("map/default")
+        if m.size ~= nil then
+            -- Bevy propagates a transform only through a chain where every link has one.
+            commands:entity(e:id()):insert_if_new({ Transform = {} })
+            local top = { x = 0, y = m.size.y / 2, z = 0 }
+            local point = points:iter_many_mut(e:get("Children") or {})[1]
+            if point ~= nil then
+                point:get_mut("Transform").translation = top
+            else
+                commands:spawn({
+                    Name = "map/default",
+                    Transform = { translation = top },
+                    ["player/spawner/point"] = {},
+                    ChildOf = e:id(),
+                })
+            end
+        end
+    end
+end):in_set("map/default/ground")
+
+-- `map/default` was taken off an entity that stays: take off the body this mod added, and its
+-- spawn point. `removed` also fires on despawn, so the removal must not fail on an entity that is
+-- gone.
+app:add_systems(First, {
+    Query[{
+        removed = { "map/default" },
+        optional = { "Children" },
+    }],
+    Query[{ with = { "player/spawner/point" } }],
+    Commands,
+}, function(maps, points, commands)
     for _, e in ipairs(maps:iter()) do
         commands:entity(e:id()):try_remove("RigidBody3d", "Collider3d")
+        for _, point in ipairs(points:iter_many(e:get("Children") or {})) do
+            commands:entity(point:id()):try_despawn()
+        end
     end
 end):in_set("map/default/removed")
 
