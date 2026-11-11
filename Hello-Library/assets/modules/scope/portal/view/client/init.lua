@@ -14,9 +14,12 @@ local StandardMaterial = require("bevy::pbr::StandardMaterial")
 local Sphere = require("bevy::math::primitives::Sphere")
 
 -- One ask per placed portal, its child: it goes with the portal, and root loads each target once
--- however many ask. `hosted` makes root ask once more after a `not-running` refusal. The ask is
--- not this file's to reap: a reload that took it would make root drop the observed world and
--- load it again.
+-- however many ask. `hosted` makes root ask once more after a `not-running` refusal. A portal
+-- seen being placed asks with `join_only = false`: root starts its world if nobody runs it and
+-- this player may (the Gateway's start gate), and otherwise looks in join-only. A portal that was
+-- placed already when it arrived (a scene's door, an invite's portal, one placed before this
+-- client came) asks join-only. The ask is not this file's to reap: a reload that took it would
+-- make root drop the observed world and load it again.
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal", "scope/portal/view" },
@@ -36,8 +39,16 @@ app:add_systems(Update, {
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
+    Query[{
+        removed = { "placement" },
+        with = { "scope/portal" },
+    }],
     Commands,
-}, function(portals, asks, records, rows, commands)
+}, function(portals, asks, records, rows, just_placed, commands)
+    local placed = {}
+    for _, p in ipairs(just_placed:iter()) do
+        placed[#placed + 1] = p:id()
+    end
     local me = rows:iter()[1]
     local scope = me and me:get("core/world/status").scope_key
     local libraries = {}
@@ -51,6 +62,10 @@ app:add_systems(Update, {
     for _, p in ipairs(portals:iter()) do
         local target = p:get("scope/portal").target
         local hosted = p:has("scope/portal/hosted") or nil
+        local start = nil
+        for _, id in ipairs(placed) do
+            if id == p:id() then start = false end
+        end
         local kept
         for _, ask in ipairs(asks:iter_many(p:get("Children") or {})) do
             if kept == nil and target ~= scope and ask:get("core/world/observe").ref == target then
@@ -60,20 +75,23 @@ app:add_systems(Update, {
             end
         end
         if kept ~= nil then
-            if kept:get("core/world/observe").hosted ~= hosted then
+            local was = kept:get("core/world/observe")
+            if was.hosted ~= hosted or (start == false and was.join_only ~= false) then
                 commands:entity(kept:id()):entry("core/world/observe"):and_modify(function(ask)
                     ask.hosted = hosted
+                    if start == false then ask.join_only = false end
                 end)
             end
         elseif target ~= scope then
             commands:spawn({
-                ["core/world/observe"] = { ref = target, libraries = libraries, hosted = hosted },
+                ["core/world/observe"] = { ref = target, libraries = libraries, hosted = hosted, join_only = start },
                 WorldShared = {},
                 ["core/net/sync"] = false,
                 ["core/script/owner"] = false,
                 ChildOf = p:id(),
             })
-            print(string.format("[SCOPE/PORTAL/VIEW] asking root to look into %s", target))
+            print(string.format("[SCOPE/PORTAL/VIEW] asking root to look into %s%s", target,
+                start == false and ", starting it if nobody runs it" or ""))
         end
     end
 end):in_set("scope/portal/view/client")

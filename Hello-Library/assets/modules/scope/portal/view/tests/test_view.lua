@@ -8,6 +8,8 @@
 --   V2  two portals to one world each get their own ask
 --   V3  a portal to this world's own scope gets none
 --   V4  a portal being placed gets none, and one once placed
+--   V14 a portal seen being placed asks to start its world (`join_only = false`); one placed
+--       already when it came (a door, one placed before) asks join-only
 --   V5  `scope/portal/hosted` puts `hosted` on its ask, and taking it off takes `hosted` out
 --   V6  root's `allowed` puts the stencil on a 3d portal
 --   V7  a lookalike answer, another world's mirror or this world's own entity, changes nothing
@@ -112,6 +114,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "placed" and clock > 0.3 then
         local placing = asks_of(world, portal(world, "placing"))
         T("V4b_once_placed_it_asks", #placing == 1 and placing[1].ask.ref == SECOND, "asks=" .. #placing)
+        local door = asks_of(world, portal(world, "door"))
+        T("V14_a_portal_seen_being_placed_asks_to_start_its_world", #placing == 1 and placing[1].ask.join_only == false,
+            tostring(placing[1] and placing[1].ask.join_only))
+        local before = asks_of(world, portal(world, "a"))
+        T("V14_one_placed_when_it_came_asks_join_only", #before == 1 and before[1].ask.join_only == nil and #door == 1
+            and door[1].ask.join_only == nil, "")
         local a = asks_of(world, portal(world, "a"))
         T("V5a_hosted_rides_the_ask", #a == 1 and a[1].ask.hosted == true, "")
         commands:entity(portal(world, "a"):id()):remove("scope/portal/hosted")

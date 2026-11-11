@@ -88,6 +88,17 @@ local boot = Instances.boot_data()
 local ts = helpers.shared_state("GitPanelNetState", boot.DEFAULTS)
 local me = boot.NAME
 
+-- Each client VM is a world, with its own row: without one, core's root-only systems (observe, the
+-- load lane) take this VM for root. The row says it only watches, so a placed portal's view asks
+-- root nothing: root would resolve its target through the registry, which a suite never reaches.
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({
+        ["core/world/status"] = { scope_key = "zz:panelnet:" .. me, mode = "client", status = "ready", observer = true },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
+end)
+
 local joined = false
 app:add_systems(Update, {
     Query[{ with = { "core/net", "core/net/state" } }],
