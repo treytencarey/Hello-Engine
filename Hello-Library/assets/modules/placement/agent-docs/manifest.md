@@ -6,7 +6,7 @@ exposes: [placement]
 
 # placement
 
-A client places an entity it spawned: while the entity carries `placement`, it follows where this client's player points, onto the first collider the ray meets, and every other client sees it move. Left click (the right trigger in VR) confirms it, and the server takes it over. Escape (B in VR) or a right click cancels it, despawning it everywhere.
+A client places an entity it spawned: while the entity carries `placement`, it follows where this client's player points, onto the first thing the ray meets, a collider or a visible mesh (skipping a mesh or collider whose `Pickable.is_hoverable` is false), and every other client sees it move. Left click (the right trigger in VR) confirms it, and the server takes it over. Escape (B in VR) or a right click cancels it, despawning it everywhere.
 
 ## Components
 
@@ -37,7 +37,7 @@ Bindings, on this client's player while it owns an entity being placed:
 |----------|-------|---------|
 | First (client) | `placement/bind` | On an entity of this client's starting to be placed, or `input` arriving while one is: bind `input/ui.placement` |
 | First (client) | `placement/unbind` | When `placement` goes and none is left being placed: unbind |
-| Update (client) | `placement/follow` | Polls: cast the ray (`vr/pointer/ray` if the player has it, else the mouse through `camera/3d/eye`) with Rapier, skipping the placed entity and the player with what hangs under each, and move the entity to the hit |
+| Update (client) | `placement/follow` | Polls: take the ray (`vr/pointer/ray` if the player has it, else the mouse: `Camera:viewport_to_world(<cursor>)` on the player's `camera/3d/eye`, which reads the eye's own `GlobalTransform`, and nothing while the camera has no target size yet); cast it with Rapier (colliders) and with `MeshRayCast` (meshes, `visibility = "Visible"`), skipping the placed entity and the player with what hangs under each and anything not pickable (`Pickable.is_hoverable = false`); move the entity to the nearer hit |
 | Update (client) | `placement/confirm` | On the confirm action's press, remove `placement` |
 | Update (client) | `placement/cancel` | On the cancel action's release, despawn what is being placed |
 | First (server) | `placement/taken` | When `placement` goes from an entity that stays, set its `Transform` sync back to the server's authority |
@@ -48,4 +48,4 @@ Bindings, on this client's player while it owns an entity being placed:
 - A client sends a component change only for an entity the server has confirmed. A move made while the spawn waits for that would never reach the server, so the entity's `Transform` is marked again once the confirmation lands.
 - The entity's `Transform` is sent unreliably while it is placed, so the last move before a confirm can be lost; the server then takes it over where it last heard. A spawner that needs the exact place syncs `Transform` reliably.
 - The mouse ray reads the window's physical cursor position: a world VM's camera draws into an image of the window's physical size.
-- Suite: `placement/tests/test_placement_net.lua`, over a real connection, with the VR pointer's ray. The mouse ray needs a window and a real cursor, and is not checked.
+- Suites: `placement/tests/test_placement_net.lua`, over a real connection, with the VR pointer's ray; `placement/tests/test_placement_rays.lua`, headless, what the ray meets: a collider, a visible mesh with no collider, a mesh that is not pickable (the mesh stands in for what a window's visibility and bounds systems give it, `InheritedVisibility` and `Aabb`). The mouse ray needs a window and a real cursor, and is not checked.

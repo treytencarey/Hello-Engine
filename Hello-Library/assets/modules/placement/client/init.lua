@@ -1,5 +1,6 @@
 -- The owning client places an entity: while it carries `placement`, it follows where this client's
--- player points, the VR pointer's ray or else the mouse, onto the first collider the ray meets.
+-- player points, the VR pointer's ray or else the mouse, onto the first thing the ray meets: a
+-- collider or a visible mesh, skipping what is not pickable (`Pickable.is_hoverable = false`).
 -- Left click confirms; Escape (B in VR) or a right click cancels.
 --
 -- placement = {}: on the placed entity, synced with client authority, as is its Transform
@@ -8,6 +9,7 @@
 -- input/ui.placement = { confirm = { button = "Left" }, cancel = { key = "Escape", button = "Right", take = true } }
 
 local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
+local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
 local Vec3 = require("bevy::math::Vec3")
 
 app:add_systems(First, {
@@ -67,8 +69,11 @@ end):in_set("placement/unbind")
 -- Follows, so it polls. The ray skips the placed entity and the player, with what hangs under
 -- each: a ray from the hand starts inside the player's own body. In a world VM the camera draws
 -- into an image the size of the window's physical pixels, so the cursor is read in those.
+-- `viewport_to_world` reads the eye's own `GlobalTransform` and takes only the cursor. A room
+-- may be a mesh with no collider, so both rays are cast and the nearer hit wins.
 app:add_systems(Update, {
     ReadRapierContext,
+    MeshRayCast,
     Query[{ with = { "placement", "core/net/local", Mut["Transform"] } }],
     Query[{
         with = { "input", "core/net/local" },
@@ -76,29 +81,39 @@ app:add_systems(Update, {
     }],
     Query[{ with = { "camera/3d/eye", "Camera", "GlobalTransform" } }],
     Query[{ with = { "Window" } }],
-}, function(rapier, placing, players, eyes, windows)
+    Query[{ with = { "Pickable" } }],
+}, function(rapier, ray_cast, placing, players, eyes, windows, pickables)
     for _, player in ipairs(players:iter()) do
         local ray = player:get("vr/pointer/ray")
         local eye = eyes:iter_many(player:get("Children") or {})[1]
         local window = windows:iter()[1]
         if ray == nil and eye ~= nil and window ~= nil then
             local cursor = window.Window:physical_cursor_position()
-            if cursor ~= nil then
-                ray = eye.Camera:viewport_to_world(eye.GlobalTransform, cursor)
+            -- It fails while the camera has no target size yet.
+            local ok, seen = pcall(function() return cursor ~= nil and eye.Camera:viewport_to_world(cursor) or nil end)
+            if ok and seen ~= nil then
+                -- A `Dir3` may read back as its one field.
+                local direction = seen.direction[1] or seen.direction
+                ray = { origin = seen.origin, direction = direction }
             end
         end
         if ray ~= nil then
             local me = player:id()
             for _, p in ipairs(placing:iter_mut()) do
                 local placed = p:id()
-                local hit = rapier:cast_ray(ray.origin, ray.direction, 100, true, {
-                    predicate = function(entity)
-                        local root = players:root_ancestor(entity)
-                        return root ~= placed and root ~= me
-                    end,
-                })
-                if hit ~= nil then
-                    p:get_mut("Transform").translation = Vec3.add(ray.origin, Vec3.mul(ray.direction, Vec3.splat(hit.toi)))
+                local function passes(entity)
+                    local root = players:root_ancestor(entity)
+                    local pick = pickables:get(entity)
+                    return root ~= placed and root ~= me
+                        and not (pick ~= nil and pick:get("Pickable").is_hoverable == false)
+                end
+                local hit = rapier:cast_ray(ray.origin, ray.direction, 100, true, { predicate = passes })
+                local far = hit ~= nil and hit.toi or nil
+                local mesh = ray_cast:cast_ray(ray, { visibility = "Visible", filter = passes })[1]
+                local near = mesh ~= nil and mesh.ray_mesh_hit.distance or nil
+                if near ~= nil and (far == nil or near < far) then far = near end
+                if far ~= nil then
+                    p:get_mut("Transform").translation = Vec3.add(ray.origin, Vec3.mul(ray.direction, Vec3.splat(far)))
                 end
             end
         end

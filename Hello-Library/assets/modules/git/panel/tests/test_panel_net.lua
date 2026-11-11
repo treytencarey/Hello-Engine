@@ -10,6 +10,8 @@
 --   N3 every client sees the portal: on A it is A's own and being placed; on B it is neither
 --   N4 A hears "opened", and B hears nothing
 --   N5 once A's panel has taken its ask back, the same ask opens a second portal
+--   N6 A placed its portals, then goes off to another world (only watching here, its player gone):
+--      they stay on the server and on B, as the world's
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
@@ -25,6 +27,7 @@ local DEFAULTS = {
     a_placing = 0, a_said = "", a_ask = "",
     b_connected = false, b_panel = false, b_slot = false, b_others = 0, b_portals = 0, b_local = 0,
     b_placing = 0, b_said = "", b_ask = "",
+    a_place = false, a_leave = false, srv_placed = 0, srv_players = 0,
 }
 local ts = helpers.shared_state("GitPanelNetState", DEFAULTS)
 
@@ -48,8 +51,24 @@ end)
 
 app:add_systems(Update, {
     Query[{ with = { "core/net", "core/net/state" } }],
-    Query[{ with = { "scope/portal", "core/net/owner" } }],
-}, function(nets, portals)
+    Query[{ with = { "scope/portal", "core/net/owner" }, optional = { "placement" } }],
+    Query[{ with = { "player" } }],
+    Query[{ with = { Mut["core/net/connection"] } }],
+}, function(nets, portals, players, connections)
+    ts.srv_players = #players:iter()
+    -- A goes off to another world: its client tells this server it only watches now (PRESENCE).
+    local owner = portals:iter()[1]
+    for _, c in ipairs(connections:iter_mut()) do
+        local conn = c:get("core/net/connection")
+        if ts.a_leave and owner ~= nil and conn.client_id == owner:get("core/net/owner").client_id and not conn.observer then
+            c:get_mut("core/net/connection").observer = true
+        end
+    end
+    local placed = 0
+    for _, p in ipairs(portals:iter()) do
+        if not p:has("placement") then placed = placed + 1 end
+    end
+    ts.srv_placed = placed
     for _, n in ipairs(nets:iter()) do
         ts.srv_ready = ts.srv_ready or n:get("core/net/state").bound == true or n:get("core/net/state").listening == true
     end
@@ -117,6 +136,13 @@ app:add_systems(Update, {
         if p:has("placement") then placing = placing + 1 end
     end
     ts[me .. "_portals"], ts[me .. "_local"], ts[me .. "_placing"] = n, mine, placing
+    -- What confirming a placement does, then this client leaving the world.
+    if me == "a" and ts.a_place then
+        for _, p in ipairs(portals:iter()) do
+            if p:has("core/net/local") and p:has("placement") then commands:entity(p:id()):remove("placement") end
+        end
+    end
+
 end):in_set("zz/panel_net_client")
 ]=])
 
@@ -129,6 +155,7 @@ helpers.spawn_vm("modules/test_fixtures/gen_panel_net_client.lua", { DEFAULTS = 
 local steps, at, t, mark = {}, 1, 0, 0
 local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act } end
 local function within(seconds, cond) return function() return cond() or t - mark > seconds end end
+local function after(seconds) return function() return t - mark > seconds end end
 
 step(within(20, function()
     return ts.a_connected and ts.b_connected and ts.a_panel and ts.b_panel and ts.a_slot and ts.b_slot
@@ -157,6 +184,15 @@ end)
 step(within(10, function() return ts.srv_portals == 2 and ts.a_portals == 2 and ts.b_portals == 2 end), function()
     T("N5_once_taken_back_the_same_ask_opens_a_second_portal", ts.srv_portals == 2 and ts.a_portals == 2
         and ts.b_portals == 2, string.format("server %d a %d b %d", ts.srv_portals, ts.a_portals, ts.b_portals))
+    ts.a_place = true
+end)
+step(within(5, function() return ts.srv_placed == 2 end), function()
+    ts.a_leave = true
+end)
+step(within(25, function() return ts.srv_players == 1 end), function() end)
+step(after(1), function()
+    T("N6_the_placer_leaving_takes_no_portal", ts.srv_players == 1 and ts.srv_portals == 2 and ts.b_portals == 2,
+        string.format("players %d server %d b %d", ts.srv_players, ts.srv_portals, ts.b_portals))
 end)
 
 local done = false
