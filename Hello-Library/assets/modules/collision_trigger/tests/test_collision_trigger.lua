@@ -84,15 +84,19 @@ app:add_systems(Update, {
         changed = { "CollidingEntities3d" },
         with = { "zz/carried" },
     }],
-}, function(sensors, events, lists)
-    rewrites = rewrites + #sensors:iter() + #events:iter() + #lists:iter()
+    Query[{
+        changed = { "ActiveCollisionTypes3d" },
+        with = { "zz/carried" },
+    }],
+}, function(sensors, events, lists, types)
+    rewrites = rewrites + #sensors:iter() + #events:iter() + #lists:iter() + #types:iter()
 end):in_set("zz/collision_trigger_suite_rewrites")
 
 local function zones(world)
     local found = {}
     for _, z in ipairs(world:query({
         with = { "zz/zone" },
-        optional = { "collision_trigger", "Sensor3d", "CollidingEntities3d", "ActiveEvents3d" },
+        optional = { "collision_trigger", "Sensor3d", "CollidingEntities3d", "ActiveEvents3d", "ActiveCollisionTypes3d" },
     })) do
         found[z:get("zz/zone").name] = z
     end
@@ -158,7 +162,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("removed")
 
     elseif phase == "removed" and not z.main:has("Sensor3d") and not z.main:has("CollidingEntities3d")
-        and not z.main:has("ActiveEvents3d") then
+        and not z.main:has("ActiveEvents3d") and not z.main:has("ActiveCollisionTypes3d") then
         suite.assert_test("T4_removing_the_trigger_removes_what_it_added", true, "")
         commands:entity(z.spare:id()):despawn()
         step("despawned")
@@ -201,7 +205,25 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("T7_it_keeps_its_list_through_a_reload", #list == 1 and #inside == 1,
             string.format("list %d inside %d", #list, #inside))
         expect("T7_and_nothing_reads_as_exited", "")
-        suite.assert_test("T8_a_reload_writes_none_of_the_three", rewrites == 0, "writes " .. rewrites)
+        suite.assert_test("T8_a_reload_writes_none_of_the_four", rewrites == 0, "writes " .. rewrites)
+        -- A body the server moves by its Transform, as a player's is there, into a fixed trigger.
+        zone(commands, 300, "kinematic")
+        commands:spawn({
+            Transform = { translation = { x = 310, y = 0, z = 0 } },
+            RigidBody3d = "KinematicPositionBased",
+            Collider3d = { ball = { radius = 0.15 } },
+            ["zz/probe"] = { name = "walker" },
+            ["core/net/sync"] = false,
+        })
+        step("kinematic")
+
+    elseif phase == "kinematic" and z.kinematic and z.kinematic:has("Sensor3d") and clock > 0.5 then
+        log = {}
+        move(world, "walker", 300)
+        step("walked")
+
+    elseif phase == "walked" and clock > 0.5 then
+        expect("T9_a_kinematic_body_moved_into_a_fixed_trigger_enters_it", "entered walker")
         phase = "done"
         suite.finish("CollisionTriggerSuite")
     end

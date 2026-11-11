@@ -11,11 +11,13 @@
 -- by then (the server ended it).
 
 -- Adds only what the entity lacks: a reload runs this again, and a fresh `CollidingEntities3d`
--- would read as everything having exited.
+-- would read as everything having exited. Rapier's default collision types leave out a kinematic
+-- body against a fixed one, so a fixed trigger would never see a body moved by its Transform (a
+-- player on the server, another client's player here).
 app:add_systems(First, {
     Query[{
         added = { "collision_trigger" },
-        optional = { "Sensor3d", "CollidingEntities3d", "ActiveEvents3d" },
+        optional = { "Sensor3d", "CollidingEntities3d", "ActiveEvents3d", "ActiveCollisionTypes3d" },
     }],
     Commands,
 }, function(triggers, commands)
@@ -24,6 +26,9 @@ app:add_systems(First, {
         if not e:has("Sensor3d") then entity:try_insert({ Sensor3d = {} }) end
         if not e:has("CollidingEntities3d") then entity:try_insert({ CollidingEntities3d = {} }) end
         if not e:has("ActiveEvents3d") then entity:try_insert({ ActiveEvents3d = "COLLISION_EVENTS" }) end
+        if not e:has("ActiveCollisionTypes3d") then
+            entity:try_insert({ ActiveCollisionTypes3d = "DYNAMIC_DYNAMIC|DYNAMIC_KINEMATIC|DYNAMIC_STATIC|KINEMATIC_STATIC" })
+        end
     end
 end):in_set("collision_trigger/init")
 
@@ -35,7 +40,7 @@ app:add_systems(First, {
     Commands,
 }, function(removed, commands)
     for _, e in ipairs(removed:iter()) do
-        commands:entity(e:id()):try_remove("Sensor3d", "CollidingEntities3d", "ActiveEvents3d")
+        commands:entity(e:id()):try_remove("Sensor3d", "CollidingEntities3d", "ActiveEvents3d", "ActiveCollisionTypes3d")
     end
 end):in_set("collision_trigger/removed")
 

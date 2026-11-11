@@ -12,7 +12,9 @@ Makes an entity a trigger: when what overlaps it changes, `collision_trigger` sa
 
 - `collision_trigger = { entered = { <entity>, ... }, exited = { <entity>, ... }, inside = { <entity>, ... } }`: written on each physics change of what overlaps the entity. `entered` and `exited` hold what changed since the last write; `inside` holds everything overlapping now.
 
-When `collision_trigger` is added, the mod gives it this full shape and adds whichever of `Sensor3d`, `CollidingEntities3d` and `ActiveEvents3d` the entity lacks. One it already has stays as it is, so a hot reload does not read as everything having exited. It removes those three when `collision_trigger` is removed.
+When `collision_trigger` is added, the mod gives it this full shape and adds whichever of `Sensor3d`, `CollidingEntities3d`, `ActiveEvents3d` (`"COLLISION_EVENTS"`) and `ActiveCollisionTypes3d` the entity lacks. One it already has stays as it is, so a hot reload does not read as everything having exited. It removes those four when `collision_trigger` is removed.
+
+`ActiveCollisionTypes3d` is Rapier's default (`DYNAMIC_DYNAMIC|DYNAMIC_KINEMATIC|DYNAMIC_STATIC`) with `KINEMATIC_STATIC`: the default leaves out a kinematic body against a fixed one, so a fixed trigger (a portal, a door) would never see a body moved by its Transform, which is what a player is on the server and another client's player is on a client. `KINEMATIC_KINEMATIC` is left out: no trigger in this library is kinematic.
 
 ## Systems
 
@@ -48,3 +50,5 @@ end)
 - Read it in `Update` or later, never in `First`, where it is written.
 - `collision_trigger` holds only the latest change. A consumer that misses a run still sees `inside`, but not every entry and exit in between.
 - `entered`, `exited` and `inside` hold entity values: compare one with `==` to an `id()`.
+- A fixed trigger sees every kinematic body too: on a client, other players walk in as well as this client's own, so a consumer that cares only for its own player filters for it (`core/net/local`).
+- Suite: `tests/test_collision_trigger.lua`, headless, with real Rapier bodies: T1-T3 entries and exits of dynamic bodies, never a mirror; T4-T5 removal and despawn; T6-T8 a trigger with its own list, through a reload; T9 a kinematic body moved by its Transform into a fixed trigger enters it.
