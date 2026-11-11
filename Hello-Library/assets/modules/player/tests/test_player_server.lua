@@ -39,6 +39,14 @@ end
 
 local function near(a, b, tolerance) return math.abs(a - b) < (tolerance or 1e-2) end
 
+-- The map's points, as a map carries them: `player/spawner` puts players only on one.
+local function points(commands)
+    commands:spawn({ Name = "zz_a", Transform = { translation = { x = 2, y = 0, z = -2 } }, ["player/spawner/point"] = {}, ["core/net/sync"] = false })
+    commands:spawn({ Name = "zz_b", Transform = { translation = { x = -2, y = 0, z = 2 } }, ["player/spawner/point"] = {}, ["core/net/sync"] = false })
+end
+
+local function claim(p) return p and p:get("player").spawn_point end
+
 local phase, clock = "spawn", 0
 
 app:add_systems(Update, { World, Commands }, function(world, commands)
@@ -47,6 +55,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     if phase == "spawn" then
         commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+        points(commands)
         connect(commands, 7)
         connect(commands, 8)
         connect(commands, 9, true)
@@ -59,18 +68,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "joined" and clock > 0.3 then
         local s = world:query({ with = { "player/spawner" } })[1]:get("player/spawner")
-        suite.assert_test("S1_missing_fields_get_defaults", s.count == 8 and s.radius == 3 and s.height == 5, "")
+        suite.assert_test("S1_missing_fields_get_defaults", s.lift == 1, "")
         local seven, eight = players(world, 7), players(world, 8)
         local p = seven[1]
         local pos = p and at(world, p)
-        -- point 1 of 8: a quarter turn of 2 pi / 8 from +x, 3 m out, 5 m up
         suite.assert_test("S2_a_client_gets_one_player_at_a_spawn_point",
-            #seven == 1 and p:get("player").spawn_index == 1
-                and near(pos.x, 2.121) and near(pos.y, 5) and near(pos.z, -2.121)
+            #seven == 1 and claim(p) == "zz_a"
+                and near(pos.x, 2) and near(pos.y, 1) and near(pos.z, -2)
                 and p:get("RigidBody3d") == "KinematicPositionBased",
-            pos and string.format("index=%s at %.2f %.2f %.2f", tostring(p:get("player").spawn_index), pos.x, pos.y, pos.z) or "none")
-        suite.assert_test("S3_the_next_client_gets_the_next_free_point",
-            #eight == 1 and eight[1]:get("player").spawn_index == 2, "")
+            pos and string.format("claim=%s at %.2f %.2f %.2f", tostring(claim(p)), pos.x, pos.y, pos.z) or "none")
+        suite.assert_test("S3_the_next_client_gets_the_next_free_point", #eight == 1 and claim(eight[1]) == "zz_b", "")
         suite.assert_test("S4_a_client_only_watching_gets_no_player", #players(world, 9) == 0, "")
         suite.assert_test("S5_every_player_gets_a_camera_movement_and_its_abilities_and_no_attest_of_its_own",
             not p:has("core/player/attest") and p:has("camera/third_person") and p:has("movement") and p:has("animation") and p:has("abilities/fireball")
@@ -89,7 +96,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local pos = at(world, p)
         suite.assert_test("S6_a_changed_connection_does_not_spawn_another", #players(world, 7) == 1, "")
         suite.assert_test("S7_a_watcher_who_joins_gets_a_player",
-            #players(world, 9) == 1 and players(world, 9)[1]:get("player").spawn_index == 3, "")
+            #players(world, 9) == 1 and claim(players(world, 9)[1]) == "zz_a", "")
         suite.assert_test("S8_the_server_follows_the_owners_transform",
             near(pos.x, 0, 0.05) and near(pos.z, 4, 0.05), string.format("at %.2f %.2f", pos.x, pos.z))
         suite.assert_test("S9_identity_comes_from_the_join_ticket", p:get("player").user_id == "u7", "")
@@ -106,7 +113,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "reused" and clock > 0.3 then
         local ten = players(world, 10)
-        suite.assert_test("S12_a_freed_point_is_used_again", #ten == 1 and ten[1]:get("player").spawn_index == 1, "")
+        suite.assert_test("S12_a_freed_point_is_used_again", #ten == 1 and claim(ten[1]) == "zz_a", "")
         players(world, 8)[1]:remove("player")
         step("removed")
 
@@ -132,7 +139,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "waiting" and clock > 0.3 then
         suite.assert_test("S14_players_outlive_their_spawner", #players(world, 10) == 1 and #players(world, 12) == 0, "")
+        -- The registry takes a mod's parts with it when its last carrier goes, the map's points
+        -- among them, so a new spawner needs the map's points again.
         commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+        points(commands)
         step("new spawner")
 
     elseif phase == "new spawner" and clock > 0.5 then

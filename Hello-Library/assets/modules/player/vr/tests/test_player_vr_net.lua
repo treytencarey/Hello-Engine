@@ -64,7 +64,13 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["core/net/sync"] = false,
     })
     commands:spawn(boot.GROUND)
-    commands:spawn({ ["player/spawner"] = { count = 1, height = 1 }, ["core/net/sync"] = false })
+    commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+    commands:spawn({
+        Name = "zz_start",
+        Transform = { translation = { x = 3, y = 0, z = 0 } },
+        ["player/spawner/point"] = {},
+        ["core/net/sync"] = false,
+    })
     -- Another client's player in VR, as this client sees one.
     commands:spawn({
         ["zz/other"] = {},

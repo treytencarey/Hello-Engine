@@ -82,7 +82,19 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["core/net"] = { mode = "server", name = "zzfb", port = boot.PORT, max_clients = 4 },
         ["core/net/sync"] = false,
     })
-    commands:spawn({ ["player/spawner"] = { count = 4, height = 1 }, ["core/net/sync"] = false })
+    commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+    commands:spawn({
+        Name = "zz_a",
+        Transform = { translation = { x = 0, y = 0, z = -3 } },
+        ["player/spawner/point"] = {},
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({
+        Name = "zz_b",
+        Transform = { translation = { x = -3, y = 0, z = 0 } },
+        ["player/spawner/point"] = {},
+        ["core/net/sync"] = false,
+    })
 end)
 app:add_systems(Update, {
     Query[{

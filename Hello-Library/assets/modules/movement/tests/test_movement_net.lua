@@ -59,7 +59,13 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn(boot.WALKER)
     commands:spawn(boot.OTHER)
     commands:spawn(boot.FLIPS)
-    commands:spawn({ ["player/spawner"] = { count = 1, height = 1 }, ["core/net/sync"] = false })
+    commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+    commands:spawn({
+        Name = "zz_start",
+        Transform = { translation = { x = 3, y = 0, z = 0 } },
+        ["player/spawner/point"] = {},
+        ["core/net/sync"] = false,
+    })
 end)
 -- It walks along x, as steering would make it.
 app:add_systems(Update, { Query[{ with = { "zz/copy", Mut["Velocity3d"], Mut["RigidBody3d"] } }] }, function(bodies)

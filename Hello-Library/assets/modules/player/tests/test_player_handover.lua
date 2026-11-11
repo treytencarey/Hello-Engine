@@ -5,8 +5,10 @@
 -- `core/net/peer/mirror`.
 --
 --   H1  a client still only watching gets no player, handed state or not
---   H2  a client with no handed state gets a spawn point, and every player its share's stable id
---   H3  once it stops watching, a handed player arrives where it stood, still claiming a point
+--   H2  a client with no handed state waits while this world has no point, then gets a player on
+--       the point, and every player its share's stable id
+--   H3  once it stops watching, a handed player arrives where it stood although this world has no
+--       point, and claims none
 --   H4  ...with its camera's yaw, pitch and distance, and nothing else of the handed state
 --   H5  a peer mirror of a player is not set up as this world's player, but gets its abilities, to cast here
 --   H6  a peer mirror is not eased toward a shadow nobody writes any more
@@ -27,7 +29,7 @@ local HANDED = {
     camera = { yaw = 1.1, pitch = -0.2, distance = 5, height = 9 },
     cooldown = { ["scope/portal/cooling"] = { remaining = 3 } },
     movement = { speed = 99 },
-    player = { client_id = 7, spawn_index = 6, user_id = "zz-elsewhere" },
+    player = { client_id = 7, spawn_point = "zz_elsewhere", user_id = "zz-elsewhere" },
     ["core/net/sync"] = { camera = { authority = "client", target = "owner" } },
 }
 
@@ -77,15 +79,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         step("joining")
 
-    elseif phase == "joining" and player_of(world, 8) ~= nil and clock > 0.5 then
+    elseif phase == "joining" and clock > 0.5 then
         T("H1_a_client_still_watching_gets_no_player", player_of(world, 7) == nil, "")
-        local eight = player_of(world, 8)
-        local pos = at(world, eight)
-        local share = eight:get("core/net/peer/share")
-        T("H2_no_handed_state_gets_a_spawn_point_and_the_share",
-            eight:get("player").spawn_index == 1 and near(pos.x, 2.121) and near(pos.y, 5) and near(pos.z, -2.121)
-                and share ~= nil and share.stable_id == "player_8",
-            string.format("index=%s at %.2f %.2f %.2f", tostring(eight:get("player").spawn_index), pos.x, pos.y, pos.z))
+        T("H2_no_handed_state_waits_while_this_world_has_no_point", player_of(world, 8) == nil, "")
         local mirror = world:query({
             with = { "zz/ph/mirror" },
             optional = { "movement", "abilities/fireball", "abilities/grenade", "camera/third_person", "Transform" },
@@ -106,20 +102,17 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local pos = at(world, seven)
         local shadow = seven:get("core/net/sync/Transform").translation
         local share = seven:get("core/net/peer/share")
-        T("H3_a_handed_player_arrives_where_it_stood_still_claiming_a_point",
+        T("H3_a_handed_player_arrives_where_it_stood_with_no_point_here_and_claims_none",
             near(pos.x, 10) and near(pos.y, 2) and near(pos.z, -4)
                 and near(shadow.x, 10) and near(shadow.z, -4)
-                and seven:get("player").spawn_index == 2 and share ~= nil and share.stable_id == "player_7",
-            string.format("at %.2f %.2f %.2f index=%s", pos.x, pos.y, pos.z, tostring(seven:get("player").spawn_index)))
+                and seven:get("player").spawn_point == nil and share ~= nil and share.stable_id == "player_7",
+            string.format("at %.2f %.2f %.2f claim=%s", pos.x, pos.y, pos.z, tostring(seven:get("player").spawn_point)))
         local timer = (seven:get("cooldown") or {})["scope/portal/cooling"]
         local timer_sync = (seven:get("core/net/sync") or {}).cooldown
-        local eight = player_of(world, 8)
         T("H8_a_handed_player_arrives_cooling_with_the_timer_synced_to_its_owner",
             timer ~= nil and timer.remaining == 3 and seven:has("scope/portal/cooling")
                 and timer_sync ~= nil and timer_sync.authority == "server" and timer_sync.target == "owner",
             string.format("timer=%s mark=%s", tostring(timer and timer.remaining), tostring(seven:has("scope/portal/cooling"))))
-        T("H8_a_player_not_handed_has_no_timer", not eight:has("cooldown") and not eight:has("scope/portal/cooling")
-            and (eight:get("core/net/sync") or {}).cooldown == nil, "")
         local cam = seven:get("camera") or {}
         local sync = (seven:get("core/net/sync") or {}).camera
         T("H4_it_keeps_the_cameras_yaw_pitch_and_distance_and_nothing_else",
@@ -127,7 +120,25 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and sync ~= nil and sync.authority == "client" and sync.target == "owner"
                 and (seven:get("movement") or {}).speed ~= 99 and seven:get("player").user_id ~= "zz-elsewhere",
             string.format("yaw=%s distance=%s height=%s", tostring(cam.yaw), tostring(cam.distance), tostring(cam.height)))
-        commands:entity(player_of(world, 8):id()):insert({
+        commands:spawn({
+            Name = "zz_start",
+            Transform = { translation = { x = 2, y = 0, z = -3 } },
+            ["player/spawner/point"] = {},
+            ["core/net/sync"] = false,
+        })
+        step("pointed")
+
+    elseif phase == "pointed" and player_of(world, 8) ~= nil and clock > 0.3 then
+        local eight = player_of(world, 8)
+        local pos = at(world, eight)
+        local share = eight:get("core/net/peer/share")
+        T("H2_then_it_gets_a_player_on_the_point_and_the_share",
+            eight:get("player").spawn_point == "zz_start" and near(pos.x, 2) and near(pos.y, 1) and near(pos.z, -3)
+                and share ~= nil and share.stable_id == "player_8",
+            string.format("claim=%s at %.2f %.2f %.2f", tostring(eight:get("player").spawn_point), pos.x, pos.y, pos.z))
+        T("H8_a_player_not_handed_has_no_timer", not eight:has("cooldown") and not eight:has("scope/portal/cooling")
+            and (eight:get("core/net/sync") or {}).cooldown == nil, "")
+        commands:entity(eight:id()):insert({
             camera = { yaw = 0.5, pitch = -0.1, distance = 6, height = 2 },
         })
         step("looking")

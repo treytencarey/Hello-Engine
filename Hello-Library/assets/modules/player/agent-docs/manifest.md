@@ -12,12 +12,12 @@ The owning client drives its player's Transform, as there is no client predictio
 
 ## Components
 
-- `player = { client_id, spawn_index, user_id, smoothing }`, synced from the server:
+- `player = { client_id, spawn_point, user_id, smoothing }`, synced from the server:
 
   | Field | Meaning | Default |
   |-------|---------|---------|
   | `client_id` | the owning client | set by the spawner |
-  | `spawn_index` | its spawn point, 0 for the centre | set by the spawner |
+  | `spawn_point` | the `Name` of the `player/spawner/point` it spawned on; absent for a player handed over from another world | set by the spawner |
   | `user_id` | who the player is, from its join ticket: the `user` of `core/player/attest` on the server's `core/net/connection` with this `client_id`, while it is `attested`; `""` otherwise | `""` |
   | `smoothing` | how fast the server's Transform follows the owner's, per second | 15 |
 
@@ -42,7 +42,7 @@ The owning client drives its player's Transform, as there is no client predictio
 
 ## Use
 
-A world does not add `player` itself: `player/spawner` spawns one for each client that joins, with its body, collider and sync, and this mod sets it up.
+A world does not add `player` itself: `player/spawner` spawns one for each client that joins, on a spawn point the world's map carries, with its body, collider and sync, and this mod sets it up.
 
 ```lua
 -- in a world's boot, on the server

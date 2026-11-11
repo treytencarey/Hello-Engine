@@ -1,0 +1,8 @@
+{
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [ { "name": "Scene", "nodes": [ 0 ] } ],
+  "nodes": [
+    { "name": "zz_scene_point", "translation": [ 2.0, 0.0, -3.0 ], "rotation": [ 0.0, 1.0, 0.0, 0.0 ] }
+  ]
+}
