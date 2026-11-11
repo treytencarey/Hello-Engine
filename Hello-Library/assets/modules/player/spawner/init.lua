@@ -68,8 +68,7 @@ app:add_systems(PostUpdate, {
             if stood and stood.translation then
                 at = stood.translation
                 facing = stood.rotation or { x = 0, y = 0, z = 0, w = 1 }
-                local carried = handed.camera
-                camera = carried and { yaw = carried.yaw, pitch = carried.pitch, distance = carried.distance }
+                camera = handed.camera
             else
                 for _, r in ipairs(ready) do
                     if claim == nil or (held[r.name] or 0) < (held[claim.name] or 0) then
@@ -151,9 +150,9 @@ app:add_systems(PreUpdate, {
     end
 end):in_set("player/spawner/left")
 
--- A player handed to another world takes its camera's yaw, pitch and distance in the switch itself,
--- which core sends in this same frame: the target's mirror of the player may be an update behind.
--- Only the camera's entry is written: the portal handing it over puts its timer beside it.
+-- A player handed to another world takes its whole camera in the switch itself, which core sends
+-- in this same frame: the target's mirror of the player may be an update behind. Only the camera's
+-- entry is written: the portal handing it over puts its timer beside it.
 app:add_systems(PostUpdate, {
     Query[{
         added = { "core/net/peer/switch" },
@@ -166,7 +165,7 @@ app:add_systems(PostUpdate, {
         if camera ~= nil then
             local share = p:get_mut("core/net/peer/share")
             local carried = share.transfer_data or {}
-            carried.camera = { yaw = camera.yaw, pitch = camera.pitch, distance = camera.distance }
+            carried.camera = camera
             share.transfer_data = carried
         end
     end

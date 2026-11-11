@@ -1,4 +1,9 @@
 -- --host (windowed: input and the sidebar act on a window)
+-- C1 the local player starts in game input with its sidebar
+-- C2 its own body turns dynamic and falls
+-- C3 a remote player is left as the server sent it
+-- C5 the server's kind written over its own body (a new owner's values, sent again) is put back dynamic
+-- C4 removing `player` takes off input and the sidebar
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerClientSuite")
@@ -63,6 +68,15 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("C3_a_remote_player_is_left_as_the_server_sent_it",
             other:get("RigidBody3d") == "KinematicPositionBased" and not other:has("input")
                 and not other:has("sidebar") and not other:has("sidebar/profiler") and math.abs(y_of(world, other) - 3) < 0.01, "")
+        -- As the net client applies a server update: the value whole, over the one this client set.
+        world:get_entity(me:id()):set({ RigidBody3d = "KinematicPositionBased" })
+        step("rewritten")
+
+    elseif phase == "rewritten" and clock > 0.3 then
+        local me, other = named(world, "me"), named(world, "other")
+        suite.assert_test("C5_the_servers_kind_written_over_its_own_body_is_put_back_dynamic",
+            me:get("RigidBody3d") == "Dynamic" and other:get("RigidBody3d") == "KinematicPositionBased",
+            tostring(me:get("RigidBody3d")))
         me:remove("player")
         step("removed")
 

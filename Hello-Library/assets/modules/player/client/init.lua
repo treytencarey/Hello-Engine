@@ -10,11 +10,10 @@ app:add_systems(First, {
             added = { "player", "core/net/local" },
         },
         with = { "player", "core/net/local" },
-        optional = { Mut["RigidBody3d"] },
     }],
     Commands,
 }, function(owned, commands)
-    for _, e in ipairs(owned:iter_mut()) do
+    for _, e in ipairs(owned:iter()) do
         commands:entity(e:id()):patch({
             input = {},
             ["input/mode"] = { mode = "input/game" },
@@ -24,9 +23,23 @@ app:add_systems(First, {
             ["sidebar/invites"] = {},
             ["git/collaborators"] = {},
         })
-        if e:has("RigidBody3d") then
-            e:set({ RigidBody3d = "Dynamic" })
-        end
+    end
+end):in_set("player/local")
+
+-- Its own body, dynamic, and again whenever the server's kind is written over it: a new owner is
+-- sent its values a second time when the player spawns, and that can land after the edges above
+-- (measured: a player walked in through a portal stood frozen).
+app:add_systems(First, {
+    Query[{
+        ["or"] = {
+            added = { "player", "core/net/local" },
+            changed = { "RigidBody3d" },
+        },
+        with = { "player", "core/net/local", Mut["RigidBody3d"] },
+    }],
+}, function(owned)
+    for _, e in ipairs(owned:iter_mut()) do
+        e:get_mut("RigidBody3d"):set_if_neq("Dynamic")
     end
 end):in_set("player/local")
 

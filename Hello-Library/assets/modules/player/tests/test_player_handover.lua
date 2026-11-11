@@ -9,10 +9,10 @@
 --       the point, and every player its share's stable id
 --   H3  once it stops watching, a handed player arrives where it stood although this world has no
 --       point, and claims none
---   H4  ...with its camera's yaw, pitch and distance, and nothing else of the handed state
+--   H4  ...with its whole camera, and nothing else of the handed state
 --   H5  a peer mirror of a player is not set up as this world's player, but gets its abilities, to cast here
 --   H6  a peer mirror is not eased toward a shadow nobody writes any more
---   H7  a player being handed over carries its camera's yaw, pitch and distance in the switch
+--   H7  a player being handed over carries its whole camera in the switch
 --   H8  a handed player keeps the timers that crossed with it (a portal's `scope/portal/cooling`), synced
 --       to its owner in the spawn; a player that was not handed has no timer
 --   H9  leaving, the camera's entry joins what the portal put in `transfer_data`, and replaces none of it
@@ -115,8 +115,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("timer=%s mark=%s", tostring(timer and timer.remaining), tostring(seven:has("scope/portal/cooling"))))
         local cam = seven:get("camera") or {}
         local sync = (seven:get("core/net/sync") or {}).camera
-        T("H4_it_keeps_the_cameras_yaw_pitch_and_distance_and_nothing_else",
-            near(cam.yaw or 0, 1.1) and near(cam.pitch or 0, -0.2) and cam.distance == 5 and cam.height == nil
+        T("H4_it_keeps_its_whole_camera_and_nothing_else",
+            near(cam.yaw or 0, 1.1) and near(cam.pitch or 0, -0.2) and cam.distance == 5 and cam.height == 9
                 and sync ~= nil and sync.authority == "client" and sync.target == "owner"
                 and (seven:get("movement") or {}).speed ~= 99 and seven:get("player").user_id ~= "zz-elsewhere",
             string.format("yaw=%s distance=%s height=%s", tostring(cam.yaw), tostring(cam.distance), tostring(cam.height)))
@@ -156,10 +156,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "leaving" and clock > 0.2 then
         local share = player_of(world, 8):get("core/net/peer/share")
         local carried = share.transfer_data and share.transfer_data.camera or {}
-        T("H7_leaving_it_takes_its_cameras_yaw_pitch_and_distance_in_the_switch",
-            carried.yaw == 0.5 and carried.pitch == -0.1 and carried.distance == 6 and carried.height == nil
+        T("H7_leaving_it_takes_its_whole_camera_in_the_switch",
+            carried.yaw == 0.5 and carried.pitch == -0.1 and carried.distance == 6 and carried.height == 2
                 and share.stable_id == "player_8",
-            string.format("yaw=%s distance=%s", tostring(carried.yaw), tostring(carried.distance)))
+            string.format("yaw=%s distance=%s height=%s", tostring(carried.yaw), tostring(carried.distance),
+                tostring(carried.height)))
         local timers = share.transfer_data and share.transfer_data.cooldown or {}
         T("H9_the_camera_joins_what_the_portal_put_in_the_switch", timers["scope/portal/cooling"] ~= nil
             and timers["scope/portal/cooling"].remaining == 3, "")
