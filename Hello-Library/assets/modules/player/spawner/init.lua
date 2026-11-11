@@ -1,6 +1,7 @@
 -- The player spawner, on a world's server: a player for each connected client, at a free
--- spawn point, despawned when the client leaves. Points sit on a circle around the
--- spawner's origin. Missing fields get defaults when it is added.
+-- spawn point, despawned when the client leaves, and linked to its spawner. Points sit on a
+-- circle around the spawner's origin. Missing fields get defaults when it is added. A game's
+-- spawner has this mod as its base and places the players it links to.
 --
 -- The owning client drives its player's Transform, as there is no client prediction
 -- yet: `Transform` syncs with client authority into the
@@ -12,6 +13,9 @@
 --     radius = <metres from the origin>,
 --     height = <metres above the origin>,
 -- }
+--
+-- player/spawner/player = { entity = <its spawner> }: on a player
+-- player/spawner/players: a spawner's players, kept by the engine
 
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
@@ -64,6 +68,7 @@ app:add_systems(First, {
             local camera = handed.camera
             commands:spawn({
                 player = { client_id = connection.client_id, spawn_index = index },
+                ["player/spawner/player"] = { entity = spawner:id() },
                 Transform = { translation = at, rotation = facing },
                 RigidBody3d = "KinematicPositionBased",
                 Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
@@ -143,5 +148,9 @@ return {
             radius = 3,
             height = 5,
         },
+    },
+    relationships = {
+        -- A player lives as long as its client stays, so its spawner going leaves it, unlinked.
+        ["player/spawner/player"] = { target = "player/spawner/players", linked_spawn = false },
     },
 }
