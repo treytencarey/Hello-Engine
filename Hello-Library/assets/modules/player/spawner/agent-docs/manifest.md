@@ -39,7 +39,7 @@ Players for a world's server: one for each connected client, at a free spawn poi
 commands:spawn({ ["player/spawner"] = { count = 4, radius = 6 }, ChildOf = boot:id() })
 ```
 
-A game's own spawner is a subclass. Its server half returns `{ base = "player/spawner" }`, and the registry adds `player/spawner` beside it, so this mod spawns, links, shares and despawns the players. The subclass decides what a player it is linked to does on arrival, on the link's `added` edge, for the players whose `player/spawner/player.entity` carries its own component (`spawners:contains(link.entity)`), as `ai/archetype/wanderer/spawner` does for `ai/spawner`. Backrooms' `player/spawn` is one: it places each fresh player on a map's spawn point.
+A game's own spawner is a subclass. Its server half returns `{ base = "player/spawner" }`, and the registry adds `player/spawner` beside it, so this mod spawns, links, shares and despawns the players. The subclass decides what a player it is linked to does on arrival, on the link's `added` edge, for the players whose `player/spawner/player.entity` carries its own component (`spawners:contains(link.entity)`), as `ai/archetype/wanderer/spawner` does for `ai/spawner`: a game that places each fresh player on its map's spawn points is one.
 
 ```lua
 -- <game>/spawn/server/init.lua
