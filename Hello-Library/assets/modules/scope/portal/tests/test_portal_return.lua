@@ -27,6 +27,10 @@
 --   R15 each world linked with the source holds only the return end meant for it: the target the
 --       one at the portal to it, the third world the one at the portal to it, from the start to the
 --       end
+--   R16 the return end is what the portal syncs: its view, and a component the suite syncs on the
+--       portal, here and in the target, with no list of them in the server half
+--   R17 ...and a component synced on the portal after its return end stood reaches it too, here
+--       and in the target's sync, by a new return end
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
@@ -38,7 +42,8 @@ local OTHER = "github:zzportalr/other:main"
 local THIRD = "github:zzportalr/third:main"
 local SERVER = "assets/modules/scope/portal/server/init.lua"
 -- What each world accepts from a peer, as a world's boot declares it.
-local ACCEPT = { "Transform", "cooldown", "scope/portal", "scope/portal/view", "scope/portal/hosted" }
+local ACCEPT = { "Transform", "cooldown", "scope/portal", "scope/portal/view", "scope/portal/hosted", "zz/pr/tag",
+    "zz/pr/later" }
 
 local DEFAULTS = {
     x_hosted = false, x_ends = 0, x_end_ok = false, x_end = "", x_door = false, x_placing = false,
@@ -48,6 +53,7 @@ local DEFAULTS = {
     y_arrived = false, y_owned = false, y_handed = false, y_cooling = false, y_inside = false,
     y_mark = false, y_go = "", y_status = "ready",
     x_far_hosted = false, x_far_ends = 0, z_mirrors = 0, z_at = "",
+    x_copied = "", x_later = false, x_add_later = false, y_copied = "", y_later = false,
 }
 local ts = helpers.shared_state("ScopePortalReturnState", DEFAULTS)
 
@@ -81,17 +87,19 @@ app:add_systems(Startup, { Commands }, function(commands)
         WorldShared = {},
         ["core/net/sync"] = false,
     })
-    -- As `git/panel`'s server half drops one.
+    -- As `git/panel`'s server half drops one, with a component another mod would sync on it.
     commands:spawn({
         ["scope/portal"] = { target = boot.OTHER },
         ["scope/portal/view"] = { mode = "3d" },
         Transform = { translation = { x = 2, y = 0, z = 1 } },
         ["core/net/owner"] = { client_id = 41 },
+        ["zz/pr/tag"] = { n = 7 },
         ["core/net/sync"] = {
             Transform = { authority = "server" },
             ["scope/portal"] = { authority = "server" },
             ["scope/portal/view"] = { authority = "server" },
             ["scope/portal/hosted"] = { authority = "server" },
+            ["zz/pr/tag"] = { authority = "server" },
         },
         ["core/script/owner"] = false,
         ["zz/pr/p"] = { name = "drop" },
@@ -145,7 +153,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     })
 end)
 
-local kept, walked_end, walked, gone, placed, unportaled = nil, false, false, false, false, false
+local kept, walked_end, walked, gone, placed, unportaled, added_later = nil, false, false, false, false, false, false
 app:add_systems(Update, { World, Commands }, function(world, commands)
     local portals = {}
     for _, e in ipairs(world:query({
@@ -160,7 +168,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     for _, e in ipairs(world:query({
         with = { "scope/portal", "core/net/peer/share" },
         without = { "core/net/peer/mirror" },
-        optional = { "scope/portal/return", "scope/portal/hosted", "Transform" },
+        optional = { "scope/portal/return", "scope/portal/hosted", "Transform", "scope/portal/view", "zz/pr/tag",
+            "zz/pr/later" },
     })) do
         local link = e:get("scope/portal/return")
         if far ~= nil and link ~= nil and link.entity == far:id() then
@@ -200,10 +209,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             tostring(link ~= nil and drop ~= nil and link.entity == drop:id()), #listed,
             tostring(r:has("scope/portal/hosted")), links)
         ts.x_same = kept ~= nil and r:id() == kept
+        local view, tag, later = r:get("scope/portal/view"), r:get("zz/pr/tag"), r:get("zz/pr/later")
+        ts.x_copied = string.format("view=%s tag=%s", tostring(view and view.mode), tostring(tag and tag.n))
+        ts.x_later = later ~= nil and later.n == 9
     else
-        ts.x_end_ok, ts.x_end, ts.x_same = false, "none", false
+        ts.x_end_ok, ts.x_end, ts.x_same, ts.x_copied, ts.x_later = false, "none", false, "", false
     end
     if ts.x_mark and kept == nil and r ~= nil then kept = r:id() end
+    if ts.x_add_later and not added_later and drop ~= nil then
+        added_later = true
+        commands:entity(drop:id()):insert({ ["zz/pr/later"] = { n = 9 } })
+        commands:entity(drop:id()):entry("core/net/sync"):and_modify(function(sync)
+            sync["zz/pr/later"] = { authority = "server" }
+        end)
+    end
     if ts.x_walk_end and not walked_end and r ~= nil and player ~= nil then
         walked_end = true
         commands:entity(r:id()):insert({
@@ -280,7 +299,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local mirrors = world:query({
         with = { "scope/portal", "core/net/peer/mirror" },
         optional = { "scope/portal/hosted", "Transform", "scope/portal/view", "collision_trigger", "core/net/sync",
-            "RigidBody3d" },
+            "RigidBody3d", "zz/pr/tag", "zz/pr/later" },
     })
     local m = mirrors[1]
     ts.y_mirrors = #mirrors
@@ -300,10 +319,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             tostring(at.x), tostring(at.y), tostring(at.z), tostring(view and view.mode), tostring(listed),
             tostring(m:get("RigidBody3d")))
         ts.y_same = kept ~= nil and m:id() == kept
+        local tag, later = m:get("zz/pr/tag"), m:get("zz/pr/later")
+        ts.y_copied = string.format("tag=%s synced=%s", tostring(tag and tag.n),
+            tostring(type(sync) == "table" and sync["zz/pr/tag"] ~= nil))
+        ts.y_later = later ~= nil and later.n == 9 and type(sync) == "table" and sync["zz/pr/later"] ~= nil
         ts.y_at_x = at.x or 0
         if ts.y_mark and kept == nil then kept = m:id() end
     else
-        ts.y_end_ok, ts.y_end, ts.y_same, ts.y_at_x = false, "none", false, 0
+        ts.y_end_ok, ts.y_end, ts.y_same, ts.y_at_x, ts.y_copied, ts.y_later = false, "none", false, 0, "", false
     end
     local p
     for _, e in ipairs(world:query({
@@ -416,6 +439,15 @@ end), function()
     T("R3_a_door_and_a_portal_being_placed_get_none", ts.x_door and ts.x_placing,
         string.format("door=%s placing=%s", tostring(ts.x_door), tostring(ts.x_placing)))
     T("R4_the_target_hosts_it", ts.y_hosted, ends())
+    T("R16_it_is_what_the_portal_syncs_its_view_and_another_mod_s_component_here_and_there",
+        ts.x_copied == "view=3d tag=7" and ts.y_end_ok and ts.y_copied == "tag=7 synced=true",
+        string.format("x: %s | y: %s view ok=%s", ts.x_copied, ts.y_copied, tostring(ts.y_end_ok)))
+    ts.x_add_later = true
+end)
+step(within(15, function() return ts.x_later and ts.y_later and ts.y_end_ok and ts.y_hosted end), function()
+    T("R17_a_component_synced_on_the_portal_later_reaches_it_here_and_in_the_target_s_sync",
+        ts.x_later and ts.y_later and ts.x_ends == 1 and ts.y_mirrors == 1,
+        string.format("x later=%s y later=%s; %s", tostring(ts.x_later), tostring(ts.y_later), ends()))
     ts.x_walk_end = true
 end)
 step(after(1), function()

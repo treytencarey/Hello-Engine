@@ -158,63 +158,93 @@ end):in_set("scope/portal/server")
 -- named in data: two portals at one place to one target share one return end, and a portal
 -- retargeted or moved gets a new one. It outlives a reload of this file. A mirror is another
 -- world's portal, and its return end is that world's to make.
+--
+-- The return end is what the portal syncs: each component its `core/net/sync` names, copied, under
+-- the same sync, with `scope/portal.target` turned back here, so whatever another mod syncs on a
+-- dropped portal stands in the target too. `scope/portal/hosted` is this half's mark and is not
+-- copied: here the return end is never hosted, and there the target's server marks it. The names
+-- come from data, so the copy reads through `with_columns`. A portal that comes to sync a name its
+-- return end lacks gets a new one, a run later: the target keeps a mirror's sync as it arrived, and
+-- a despawn and spawn of one id sent in one frame would reach it spawn first.
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal", "Transform", "core/net/sync" },
         without = { "placement", "scope/portal/return", "core/net/peer/mirror", "WorldMirror" },
-        optional = { "scope/portal/hosted", "scope/portal/returns", "scope/portal/view" },
+        optional = { "scope/portal/hosted", "scope/portal/returns" },
     }],
-    Query[{ with = { "scope/portal/return", "core/net/peer/share" } }],
+    Query[{ with = { "scope/portal/return", "core/net/peer/share", "core/net/sync" } }],
+    Query[{ with = { "core/net/sync" } }],
     Query[{
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
     Commands,
-}, function(portals, returns, rows, commands)
+}, function(portals, returns, synced, rows, commands)
     local me = rows:iter()[1]
     local mine = me and me:get("core/world/status").scope_key
-    local kept, wanting = {}, {}
+    local kept, wanting, names, named = {}, {}, {}, {}
     for _, p in ipairs(portals:iter()) do
         local target = p:get("scope/portal").target
         local sync = p:get("core/net/sync")
-        local place = p:get("Transform")
         local id
         if mine ~= nil and target ~= mine and p:has("scope/portal/hosted") and type(sync) == "table" then
-            local at = place.translation
+            local at = p:get("Transform").translation
             id = string.format("scope/portal/return:%s>%s@%.3f,%.3f,%.3f", mine, target, at.x, at.y, at.z)
         end
         local held = false
         for _, r in ipairs(returns:iter_many(p:get("scope/portal/returns") or {})) do
-            local share = r:get("core/net/peer/share")
-            if id ~= nil and not held and not kept[id] and share.stable_id == id then
+            local ours = id ~= nil and r:get("core/net/peer/share").stable_id == id
+            local carried = r:get("core/net/sync")
+            local covers = type(carried) == "table"
+            for name, entry in pairs(type(sync) == "table" and sync or {}) do
+                if type(entry) == "table" and covers and carried[name] == nil then covers = false end
+            end
+            if ours and covers and not held and not kept[id] then
                 held, kept[id] = true, true
             else
                 commands:entity(r:id()):despawn()
+                if ours and not covers then
+                    held, kept[id] = true, true
+                    print(string.format("[SCOPE/PORTAL] %s: the portal syncs more, its return end is made again", id))
+                end
             end
         end
         if id ~= nil and not held then
-            wanting[#wanting + 1] = {
-                portal = p:id(), target = target, id = id, place = place, view = p:get("scope/portal/view"),
-            }
+            wanting[#wanting + 1] = { portal = p:id(), target = target, id = id }
+            for name, entry in pairs(sync) do
+                if type(entry) == "table" and not named[name] then
+                    named[name] = true
+                    names[#names + 1] = name
+                end
+            end
         end
     end
+    local copied = synced:with_columns({ optional = names })
     for _, w in ipairs(wanting) do
-        if not kept[w.id] then
+        local row = copied:get(w.portal)
+        if row ~= nil and not kept[w.id] then
             kept[w.id] = true
-            commands:spawn({
-                ["scope/portal"] = { target = mine },
-                ["scope/portal/return"] = { entity = w.portal },
-                ["scope/portal/view"] = w.view,
-                Transform = w.place,
-                ["core/net/peer/share"] = { stable_id = w.id, to = { w.target } },
-                ["core/net/sync"] = {
-                    Transform = { authority = "server" },
-                    ["scope/portal"] = { authority = "server" },
-                    ["scope/portal/view"] = { authority = "server" },
-                    ["scope/portal/hosted"] = { authority = "server" },
-                },
-                ["core/script/owner"] = false,
-            })
+            local sync = row:get("core/net/sync")
+            local spawn = {}
+            for name, entry in pairs(sync) do
+                if type(entry) == "table" and name ~= "scope/portal/hosted" then
+                    spawn[name] = row:get(name)
+                end
+            end
+            -- A new table: the one `get` answers is the portal's own value, and changing it would
+            -- turn the portal itself back here.
+            local portal = row:get("scope/portal")
+            local back = {}
+            for field, value in pairs(portal) do
+                back[field] = value
+            end
+            back.target = mine
+            spawn["scope/portal"] = back
+            spawn["scope/portal/return"] = { entity = w.portal }
+            spawn["core/net/peer/share"] = { stable_id = w.id, to = { w.target } }
+            spawn["core/net/sync"] = sync
+            spawn["core/script/owner"] = false
+            commands:spawn(spawn)
             print(string.format("[SCOPE/PORTAL] %s: the portal stands in its target too, leading back", w.id))
         end
     end
@@ -223,7 +253,7 @@ end):in_set("scope/portal/server")
         Query[{
             ["or"] = {
                 added = { "scope/portal", "scope/portal/hosted", "core/world/status" },
-                changed = { "scope/portal" },
+                changed = { "scope/portal", "core/net/sync" },
                 removed = { "scope/portal/hosted", "scope/portal/return", "placement" },
             },
         }],
