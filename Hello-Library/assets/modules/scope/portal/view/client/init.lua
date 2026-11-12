@@ -119,7 +119,8 @@ end):in_set("scope/portal/view/client")
     end)
 
 -- Only root's answer counts, a mirror from VM 0: this world's own entities, or another world's
--- mirror, could say anything.
+-- mirror, could say anything. An answer about this world itself (another world's portal looking
+-- here) shows nothing through a portal to it.
 -- A `"none"` carrier without a mesh of its own shows the world on its children's: a glTF node's
 -- primitives are its children.
 app:add_systems(Update, {
@@ -133,8 +134,12 @@ app:add_systems(Update, {
         with = { "Mesh3d" },
         optional = { "core/compositor/stencil" },
     }],
+    Query[{
+        with = { "core/world/status", "WorldShared" },
+        without = { "WorldMirror" },
+    }],
     Commands,
-}, function(portals, answers, meshes, commands)
+}, function(portals, answers, meshes, rows, commands)
     local said = {}
     for _, a in ipairs(answers:iter()) do
         if a:get("WorldMirror").world_id == 0 then
@@ -142,9 +147,11 @@ app:add_systems(Update, {
             said[answer.ref] = answer
         end
     end
+    local me = rows:iter()[1]
+    local scope = me and me:get("core/world/status").scope_key
     for _, p in ipairs(portals:iter()) do
         local target = p:get("scope/portal").target
-        local answer = said[target]
+        local answer = target ~= scope and said[target] or nil
         local surfaces = { p }
         if p:get("scope/portal/view").mode == "none" and not p:has("Mesh3d") then
             surfaces = meshes:iter_many(p:get("Children") or {})
@@ -198,7 +205,8 @@ end):in_set("scope/portal/view/client")
     end)
 
 -- The `"3d"` look, in PostUpdate so it sees this frame's lock: red and glowing while being placed,
--- dim while locked, plain while waiting. Once the stencil is on, the stencil owns the material.
+-- dim while locked, plain while waiting. Once the stencil is on, the stencil owns the material. A
+-- portal to this world itself shows nothing (a portal's return end, standing where the portal does).
 app:add_systems(PostUpdate, {
     Query[{
         ["or"] = {
@@ -206,15 +214,22 @@ app:add_systems(PostUpdate, {
             changed = { "scope/portal/locked" },
             removed = { "placement", "scope/portal/locked" },
         },
-        with = { "scope/portal/view" },
+        with = { "scope/portal", "scope/portal/view" },
         optional = { "placement", "scope/portal/locked", "Mesh3d", "core/compositor/stencil" },
+    }],
+    Query[{
+        with = { "core/world/status", "WorldShared" },
+        without = { "WorldMirror" },
     }],
     ResMut[Assets[Mesh]],
     ResMut[Assets[StandardMaterial]],
     Commands,
-}, function(portals, meshes, materials, commands)
+}, function(portals, rows, meshes, materials, commands)
+    local me = rows:iter()[1]
+    local scope = me and me:get("core/world/status").scope_key
     for _, e in ipairs(portals:iter()) do
-        if e:get("scope/portal/view").mode == "3d" then
+        local target = e:get("scope/portal").target
+        if e:get("scope/portal/view").mode == "3d" and target ~= scope then
             local entity = commands:entity(e:id())
             if not e:has("Mesh3d") then
                 entity:insert({ Mesh3d = meshes:add(Sphere.new(1.2)) })

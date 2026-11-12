@@ -1,6 +1,10 @@
 -- The server half of a portal: it keeps one peer link to each target this process runs, marks a
--- portal whose target's link is up `scope/portal/hosted`, and hands a player who walks into such a
--- portal to the target's server, unless the player is still cooling from its last crossing.
+-- portal whose target's link is up `scope/portal/hosted`, stands such a portal in its target too,
+-- leading back, and hands a player who walks into one to the target's server, unless the player is
+-- still cooling from its last crossing.
+--
+-- scope/portal/return = { entity = <the portal it stands for> }: on a return end
+-- scope/portal/returns: a portal's return end, kept by the engine
 --
 -- The mod's return declares no sync: a portal a scene spawns on each side (a glTF door) is never
 -- replicated. A portal a player opens gets its sync where it is spawned (`git/panel`).
@@ -8,7 +12,10 @@
 -- One peer link to each target a placed portal names that runs as a server in this process: its
 -- row, mirrored from the sibling world's VM, is ready with a peer port. Links are children of a
 -- portal naming their target, so the last portal to a target takes its link along, and the
--- next run gives the target's link to another portal still naming it.
+-- next run gives the target's link to another portal still naming it. A link outlives a reload of
+-- this file: one spawned again leaves `hosted` off until it is welcomed, taking every return end
+-- with it, and the target's link back here goes with the return end's mirror. Core keeps that
+-- link's connection listed here until it times out, and a handover sent over it is lost.
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal" },
@@ -63,6 +70,7 @@ app:add_systems(Update, {
                     server_addr = "127.0.0.1",
                 },
                 ["core/net/sync"] = false,
+                ["core/script/owner"] = false,
                 ChildOf = p:id(),
             })
             print(string.format("[SCOPE/PORTAL] %s runs here: linking to its peer port %s", target,
@@ -82,11 +90,12 @@ end):in_set("scope/portal/server")
         return not touched:is_empty()
     end)
 
--- `scope/portal` was taken off an entity that stays: its links go. A despawned portal takes them.
+-- `scope/portal` was taken off an entity that stays: its links and its return end go. A despawned
+-- portal takes them.
 app:add_systems(Update, {
     Query[{
         removed = { "scope/portal" },
-        optional = { "Children" },
+        optional = { "Children", "scope/portal/returns" },
     }],
     Query[{ with = { "core/net/peer/link" } }],
     Commands,
@@ -94,6 +103,9 @@ app:add_systems(Update, {
     for _, e in ipairs(removed:iter()) do
         for _, l in ipairs(links:iter_many(e:get("Children") or {})) do
             commands:entity(l:id()):despawn()
+        end
+        for _, r in ipairs(e:get("scope/portal/returns") or {}) do
+            commands:entity(r):try_despawn()
         end
     end
 end):in_set("scope/portal/server")
@@ -133,6 +145,84 @@ end):in_set("scope/portal/server")
                 added = { "scope/portal", "core/net/peer/link/state" },
                 changed = { "scope/portal", "core/net/peer/link/state" },
                 removed = { "placement", "core/net/peer/link", "core/net/peer/link/state" },
+            },
+        }],
+    }, function(touched)
+        return not touched:is_empty()
+    end)
+
+-- A hosted portal a player dropped (one this world replicates; a scene's door is each side's own)
+-- stands in its target too: a return end at its place, leading here, which core's peer layer
+-- mirrors there as an ordinary portal back to this world. Here it leads to this world itself,
+-- which every half ignores. Its stable id names the two worlds and the place, as no entity may be
+-- named in data: two portals at one place to one target share one return end, and a portal
+-- retargeted or moved gets a new one. It outlives a reload of this file. A mirror is another
+-- world's portal, and its return end is that world's to make.
+app:add_systems(Update, {
+    Query[{
+        with = { "scope/portal", "Transform", "core/net/sync" },
+        without = { "placement", "scope/portal/return", "core/net/peer/mirror", "WorldMirror" },
+        optional = { "scope/portal/hosted", "scope/portal/returns", "scope/portal/view" },
+    }],
+    Query[{ with = { "scope/portal/return", "core/net/peer/share" } }],
+    Query[{
+        with = { "core/world/status", "WorldShared" },
+        without = { "WorldMirror" },
+    }],
+    Commands,
+}, function(portals, returns, rows, commands)
+    local me = rows:iter()[1]
+    local mine = me and me:get("core/world/status").scope_key
+    local kept, wanting = {}, {}
+    for _, p in ipairs(portals:iter()) do
+        local target = p:get("scope/portal").target
+        local sync = p:get("core/net/sync")
+        local place = p:get("Transform")
+        local id
+        if mine ~= nil and target ~= mine and p:has("scope/portal/hosted") and type(sync) == "table" then
+            local at = place.translation
+            id = string.format("scope/portal/return:%s>%s@%.3f,%.3f,%.3f", mine, target, at.x, at.y, at.z)
+        end
+        local held = false
+        for _, r in ipairs(returns:iter_many(p:get("scope/portal/returns") or {})) do
+            local share = r:get("core/net/peer/share")
+            if id ~= nil and not held and not kept[id] and share.stable_id == id then
+                held, kept[id] = true, true
+            else
+                commands:entity(r:id()):despawn()
+            end
+        end
+        if id ~= nil and not held then
+            wanting[#wanting + 1] = { portal = p:id(), id = id, place = place, view = p:get("scope/portal/view") }
+        end
+    end
+    for _, w in ipairs(wanting) do
+        if not kept[w.id] then
+            kept[w.id] = true
+            commands:spawn({
+                ["scope/portal"] = { target = mine },
+                ["scope/portal/return"] = { entity = w.portal },
+                ["scope/portal/view"] = w.view,
+                Transform = w.place,
+                ["core/net/peer/share"] = { stable_id = w.id },
+                ["core/net/sync"] = {
+                    Transform = { authority = "server" },
+                    ["scope/portal"] = { authority = "server" },
+                    ["scope/portal/view"] = { authority = "server" },
+                    ["scope/portal/hosted"] = { authority = "server" },
+                },
+                ["core/script/owner"] = false,
+            })
+            print(string.format("[SCOPE/PORTAL] %s: the portal stands in its target too, leading back", w.id))
+        end
+    end
+end):in_set("scope/portal/server")
+    :run_if({
+        Query[{
+            ["or"] = {
+                added = { "scope/portal", "scope/portal/hosted", "core/world/status" },
+                changed = { "scope/portal" },
+                removed = { "scope/portal/hosted", "scope/portal/return", "placement" },
             },
         }],
     }, function(touched)
@@ -190,4 +280,9 @@ app:add_systems(Update, {
     end
 end):in_set("scope/portal/server")
 
-return {}
+return {
+    relationships = {
+        -- A return end goes with the portal it stands for.
+        ["scope/portal/return"] = { target = "scope/portal/returns", linked_spawn = true },
+    },
+}

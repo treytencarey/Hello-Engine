@@ -7,6 +7,8 @@
 --   V1  a placed portal to another world gets one observe ask, its child, shared with root
 --   V2  two portals to one world each get their own ask
 --   V3  a portal to this world's own scope gets none
+--   V15 ...and root allowing a look at this world (another world's portal asked) shows nothing
+--       through it
 --   V4  a portal being placed gets none, and one once placed
 --   V14 a portal seen being placed asks to start its world (`join_only = false`); one placed
 --       already when it came (a door, one placed before) asks join-only
@@ -128,6 +130,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
         commands:spawn({ ["core/world/observe/answer"] = { ref = DOOR, state = "allowed" },
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
+        commands:spawn({ ["core/world/observe/answer"] = { ref = HERE, state = "allowed" },
+            WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
         commands:spawn({ ["core/world/observe/answer"] = { ref = SECOND, state = "refused", reason = "zz-forged" },
             WorldMirror = { world_id = 7 }, ["core/net/sync"] = false })
         commands:spawn({ ["core/world/observe/answer"] = { ref = SECOND, state = "refused", reason = "zz-own" },
@@ -149,6 +153,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("V9_a_none_carrier_shows_it_on_its_mesh_children",
             k1 ~= nil and k1.world == DOOR and k2 ~= nil and k2.world == DOOR
                 and not door:has("core/compositor/stencil"), "")
+        local own = portal(world, "self")
+        T("V15_an_allowed_look_at_this_world_shows_nothing_through_a_portal_to_it",
+            not own:has("core/compositor/stencil") and not own:has("scope/portal/locked")
+                and #asks_of(world, own) == 0, "")
         commands:spawn({ ["core/world/observe/answer"] = { ref = SECOND, state = "refused", reason = "not-running" },
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false, ["zz/view/second"] = {} })
         step("refused")
