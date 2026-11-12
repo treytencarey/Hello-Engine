@@ -12,9 +12,10 @@
 --   C6  in a world that only observes, walking in asks none
 --   C7  a local player still cooling from its crossing (the `cooldown` its server synced) asks none
 --   C8  ...and once it has cooled, walking in asks one
---   C9  with real physics: a portal placed where the player stands asks nothing, as the player did
---       not walk in, though it was inside while the portal was being placed
---   C10 ...and walking out and back in asks one
+--   C9  with real physics: a portal being placed where the player stands has no body and no
+--       trigger, and asks nothing
+--   C9b ...once dropped it has them, and the player standing inside is taken as walking in: one ask
+--   C10 ...and walking out and back in asks one more
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -43,6 +44,18 @@ local function named(world, marker, name)
     for _, e in ipairs(world:query({ with = { marker } })) do
         if e:get(marker).name == name then return e end
     end
+end
+
+local function bodied(world, name)
+    for _, e in ipairs(world:query({
+        with = { "zz/pc/p" },
+        optional = { "RigidBody3d", "Collider3d", "collision_trigger" },
+    })) do
+        if e:get("zz/pc/p").name == name then
+            return e:has("RigidBody3d") or e:has("Collider3d") or e:has("collision_trigger")
+        end
+    end
+    return false
 end
 
 local function flips(world, scope)
@@ -163,13 +176,15 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("placing")
 
     elseif phase == "placing" and clock > 1 then
-        T("C9_a_portal_being_placed_asks_nothing_of_the_player_inside", flips(world, SIXTH) == 0, "")
+        T("C9_a_portal_being_placed_has_no_body_or_trigger_and_asks_nothing_of_the_player_inside",
+            not bodied(world, "c6") and flips(world, SIXTH) == 0,
+            string.format("body=%s flips=%d", tostring(bodied(world, "c6")), flips(world, SIXTH)))
         commands:entity(named(world, "zz/pc/p", "c6"):id()):remove("placement")
         step("placed_here")
 
     elseif phase == "placed_here" and clock > 1 then
-        T("C9_placed_where_the_player_stands_it_asks_nothing", flips(world, SIXTH) == 0,
-            "flips=" .. flips(world, SIXTH))
+        T("C9b_dropped_it_has_them_and_the_player_standing_inside_walks_in",
+            bodied(world, "c6") and flips(world, SIXTH) == 1, "flips=" .. flips(world, SIXTH))
         commands:entity(named(world, "zz/pc/h", "me"):id()):insert({ Transform = { translation = { x = 60, y = 0, z = 0 } } })
         step("out")
 
@@ -179,7 +194,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "back_in" and clock > 1 then
         local n, shaped = flips(world, SIXTH)
-        T("C10_walking_out_and_back_in_asks_one", n == 1 and shaped, "flips=" .. n)
+        T("C10_walking_out_and_back_in_asks_one_more", n == 2 and shaped, "flips=" .. n)
         phase = "done"
         suite.finish("ScopePortalClientSuite")
     end

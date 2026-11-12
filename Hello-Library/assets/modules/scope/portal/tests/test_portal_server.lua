@@ -11,8 +11,9 @@
 --   P10 a player walking into a hosted portal is handed over to its target
 --   P11 with no welcomed link to the target, nothing
 --   P12 a peer mirror, or a player with no share, is not handed over
---   P13 a portal has a fixed ball body of radius 1.2 and a trigger, one still being placed too
---   P14 ...and keeps them once placed
+--   P13 a portal still being placed has no body and no trigger; a placed one has a fixed ball body
+--       of radius 1.2 and a trigger
+--   P14 ...and the one being placed gets them once placed
 --   P19 a player walking into a portal still being placed is not handed over
 --   P15 taking `scope/portal` off a portal that stays takes its body, trigger, mark and link
 --   P16 ...and another portal to that target takes the link
@@ -149,6 +150,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 not l4:has("scope/portal/hosted") and not (st4 and st4.welcomed), "")
             T("P9_a_target_with_no_row_gets_no_link",
                 #links(world, THIRD) == 0 and not named(world, "zz/portal/p", "l5"):has("scope/portal/hosted"), "")
+            local placing = named(world, "zz/portal/p", "a1")
+            T("P13a_a_portal_still_being_placed_has_no_body_and_no_trigger",
+                placing:has("placement") and not placing:has("RigidBody3d") and not placing:has("Collider3d")
+                    and not placing:has("collision_trigger"),
+                string.format("body=%s collider=%s trigger=%s", tostring(placing:get("RigidBody3d")),
+                    tostring(placing:has("Collider3d")), tostring(placing:has("collision_trigger"))))
             for _, h in ipairs({ { "h7", 17, true, false }, { "h8", 18, true, false }, { "hm", 19, true, true }, { "hn", 20, false, false } }) do
                 commands:spawn({
                     player = { client_id = h[2], spawn_index = 0 },
@@ -197,10 +204,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local l1 = named(world, "zz/portal/p", "l1")
         local a1 = named(world, "zz/portal/p", "a1")
         local ball = l1:get("Collider3d")
-        T("P13_a_portal_has_a_fixed_ball_and_a_trigger_one_being_placed_too",
+        -- The walk above wrote a trigger on the portal being placed; no body came with it.
+        T("P13b_a_placed_portal_has_a_fixed_ball_and_a_trigger_and_one_being_placed_no_body",
             l1:get("RigidBody3d") == "Fixed" and l1:has("Collider3d") and l1:has("collision_trigger")
-                and a1:has("placement") and a1:get("RigidBody3d") == "Fixed" and a1:has("Collider3d")
-                and a1:has("collision_trigger"),
+                and a1:has("placement") and not a1:has("RigidBody3d") and not a1:has("Collider3d"),
             "collider " .. tostring(ball and (ball.ball and ball.ball.radius)))
         commands:entity(a1:id()):remove("placement")
         local holder = world:get_entity(link_holder)
@@ -209,7 +216,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "taken" and clock > 0.5 then
         local a1 = named(world, "zz/portal/p", "a1")
-        T("P14_placed_it_keeps_them", a1:get("RigidBody3d") == "Fixed" and a1:has("Collider3d") and a1:has("collision_trigger"), "")
+        T("P14_once_placed_it_gets_them", not a1:has("placement") and a1:get("RigidBody3d") == "Fixed"
+            and a1:has("Collider3d") and a1:has("collision_trigger"), "")
         local holder = world:get_entity(link_holder)
         local gone = true
         for _, child in ipairs(holder:get("Children") or {}) do
