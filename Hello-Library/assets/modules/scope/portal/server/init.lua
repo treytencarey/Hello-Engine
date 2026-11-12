@@ -13,9 +13,8 @@
 -- row, mirrored from the sibling world's VM, is ready with a peer port. Links are children of a
 -- portal naming their target, so the last portal to a target takes its link along, and the
 -- next run gives the target's link to another portal still naming it. A link outlives a reload of
--- this file: one spawned again leaves `hosted` off until it is welcomed, taking every return end
--- with it, and the target's link back here goes with the return end's mirror. Core keeps that
--- link's connection listed here until it times out, and a handover sent over it is lost.
+-- this file: one spawned again leaves `hosted` off until it is welcomed, and every return end there
+-- and back would go and come back with it, the target's link back here too.
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal" },
@@ -153,7 +152,8 @@ end):in_set("scope/portal/server")
 
 -- A hosted portal a player dropped (one this world replicates; a scene's door is each side's own)
 -- stands in its target too: a return end at its place, leading here, which core's peer layer
--- mirrors there as an ordinary portal back to this world. Here it leads to this world itself,
+-- mirrors there, and only there (`to`), as an ordinary portal back to this world: every other world
+-- linked with this one would take it for a portal here too. Here it leads to this world itself,
 -- which every half ignores. Its stable id names the two worlds and the place, as no entity may be
 -- named in data: two portals at one place to one target share one return end, and a portal
 -- retargeted or moved gets a new one. It outlives a reload of this file. A mirror is another
@@ -193,7 +193,9 @@ app:add_systems(Update, {
             end
         end
         if id ~= nil and not held then
-            wanting[#wanting + 1] = { portal = p:id(), id = id, place = place, view = p:get("scope/portal/view") }
+            wanting[#wanting + 1] = {
+                portal = p:id(), target = target, id = id, place = place, view = p:get("scope/portal/view"),
+            }
         end
     end
     for _, w in ipairs(wanting) do
@@ -204,7 +206,7 @@ app:add_systems(Update, {
                 ["scope/portal/return"] = { entity = w.portal },
                 ["scope/portal/view"] = w.view,
                 Transform = w.place,
-                ["core/net/peer/share"] = { stable_id = w.id },
+                ["core/net/peer/share"] = { stable_id = w.id, to = { w.target } },
                 ["core/net/sync"] = {
                     Transform = { authority = "server" },
                     ["scope/portal"] = { authority = "server" },

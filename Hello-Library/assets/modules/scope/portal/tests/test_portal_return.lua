@@ -1,10 +1,11 @@
 -- --host
--- A portal's return end, between two worlds, each its own isolated VM, as two worlds of one process
--- are in production: each world's row, shared, is what the other's server links by. A player drops
--- a portal in the source world to the target; once it is hosted it stands in the target too,
--- leading back. The player crosses through it, then walks back through the return end. The target's
--- client is a connection that only watches until the handover lands; its `player/spawner` is real,
--- and so is its physics, which says who walks into the return end there.
+-- A portal's return end, between worlds, each its own isolated VM, as worlds of one process are in
+-- production: each world's row, shared, is what the others' servers link by. A player drops a
+-- portal in the source world to the target; once it is hosted it stands in the target too, leading
+-- back. The player crosses through it, then walks back through the return end. The target's client
+-- is a connection that only watches until the handover lands; its `player/spawner` is real, and so
+-- is its physics, which says who walks into the return end there. A third world is linked with the
+-- source both ways too, through a hosted portal of the source's that leads there.
 --
 --   R1 in the target the return end appears, a portal to the source at the portal's place, shown
 --      as the portal is, replicated to the target's clients with `scope/portal/hosted`
@@ -23,6 +24,9 @@
 --   R12 the portal despawned takes its return end, here and in the target
 --   R13 the portal that was being placed, once placed, gets its own, at its place
 --   R14 `scope/portal` taken off it, the entity staying, takes its return end, here and there
+--   R15 each world linked with the source holds only the return end meant for it: the target the
+--       one at the portal to it, the third world the one at the portal to it, from the start to the
+--       end
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
@@ -31,6 +35,7 @@ local T = suite.assert_test
 
 local HERE = "github:zzportalr/here:main"
 local OTHER = "github:zzportalr/other:main"
+local THIRD = "github:zzportalr/third:main"
 local SERVER = "assets/modules/scope/portal/server/init.lua"
 -- What each world accepts from a peer, as a world's boot declares it.
 local ACCEPT = { "Transform", "cooldown", "scope/portal", "scope/portal/view", "scope/portal/hosted" }
@@ -42,6 +47,7 @@ local DEFAULTS = {
     y_mirrors = 0, y_end_ok = false, y_end = "", y_at_x = 0, y_hosted = false, y_returns = 0, y_same = false,
     y_arrived = false, y_owned = false, y_handed = false, y_cooling = false, y_inside = false,
     y_mark = false, y_go = "", y_status = "ready",
+    x_far_hosted = false, x_far_ends = 0, z_mirrors = 0, z_at = "",
 }
 local ts = helpers.shared_state("ScopePortalReturnState", DEFAULTS)
 
@@ -90,6 +96,20 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["core/script/owner"] = false,
         ["zz/pr/p"] = { name = "drop" },
     })
+    commands:spawn({
+        ["scope/portal"] = { target = boot.THIRD },
+        ["scope/portal/view"] = { mode = "3d" },
+        Transform = { translation = { x = -3, y = 0, z = 4 } },
+        ["core/net/owner"] = { client_id = 41 },
+        ["core/net/sync"] = {
+            Transform = { authority = "server" },
+            ["scope/portal"] = { authority = "server" },
+            ["scope/portal/view"] = { authority = "server" },
+            ["scope/portal/hosted"] = { authority = "server" },
+        },
+        ["core/script/owner"] = false,
+        ["zz/pr/p"] = { name = "far" },
+    })
     -- A scene's door, as `gltf/mod_registry` makes one: never replicated.
     commands:spawn({
         ["scope/portal"] = { target = boot.OTHER },
@@ -134,12 +154,23 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     })) do
         portals[e:get("zz/pr/p").name] = e
     end
-    local drop, door, placing = portals.drop, portals.door, portals.placing
-    local ends = world:query({
+    local drop, door, placing, far = portals.drop, portals.door, portals.placing, portals.far
+    -- The far portal's return end is counted apart: the cases below are about the target's.
+    local ends, far_ends = {}, 0
+    for _, e in ipairs(world:query({
         with = { "scope/portal", "core/net/peer/share" },
         without = { "core/net/peer/mirror" },
         optional = { "scope/portal/return", "scope/portal/hosted", "Transform" },
-    })
+    })) do
+        local link = e:get("scope/portal/return")
+        if far ~= nil and link ~= nil and link.entity == far:id() then
+            far_ends = far_ends + 1
+        else
+            ends[#ends + 1] = e
+        end
+    end
+    ts.x_far_hosted = far ~= nil and far:has("scope/portal/hosted")
+    ts.x_far_ends = far_ends
     local r = ends[1]
     local player = world:query({
         with = { "zz/pr/player" },
@@ -310,10 +341,57 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 end):in_set("zz/pr_y")
 ]=])
 
+helpers.make_fixture("modules/test_fixtures/gen_portal_return_z.lua", [=[
+require("modules/core/net/server/init.lua")
+require("modules/core/net/peer/init.lua")
+require("modules/core/mod_registry/init.lua")
+local Instances = require("modules/core/instances.lua")
+local helpers = require("modules/core/test_helpers.lua")
+
+local boot = Instances.boot_data()
+local ts = helpers.shared_state("ScopePortalReturnState", boot.DEFAULTS)
+
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({
+        ["core/world/net"] = { mode = "server", name = "zzpr_z", port = 15513 },
+        ["core/net"] = { mode = "server", name = "zzpr_z", port = 15513 },
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({
+        ["core/net/peer/listen"] = { name = "zzpr_z_peer", port = 15514, scope_key = boot.THIRD, world_port = 15513 },
+        ["core/net/peer"] = {},
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
+    commands:spawn({
+        ["core/world/status"] = { scope_key = boot.THIRD, mode = "server", status = "ready",
+            ports = { world = 15513, peer = 15514 } },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
+end)
+
+app:add_systems(Update, { World }, function(world)
+    local at = {}
+    for _, m in ipairs(world:query({
+        with = { "scope/portal", "core/net/peer/mirror" },
+        optional = { "Transform" },
+    })) do
+        local place = m:get("Transform")
+        at[#at + 1] = tostring(place and place.translation.x)
+    end
+    table.sort(at)
+    ts.z_mirrors = #at
+    ts.z_at = table.concat(at, ",")
+end):in_set("zz/pr_z")
+]=])
+
 helpers.spawn_vm("modules/test_fixtures/gen_portal_return_y.lua",
     { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
+helpers.spawn_vm("modules/test_fixtures/gen_portal_return_z.lua",
+    { DEFAULTS = DEFAULTS, THIRD = THIRD, ACCEPT = ACCEPT }, { headless = true })
 helpers.spawn_vm("modules/test_fixtures/gen_portal_return_x.lua",
-    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
+    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, THIRD = THIRD, ACCEPT = ACCEPT }, { headless = true })
 
 local steps, at, t, mark = {}, 1, 0, 0
 local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act } end
@@ -321,8 +399,16 @@ local function within(seconds, cond) return function() return cond() or t - mark
 local function after(seconds) return function() return t - mark > seconds end end
 local function ends() return string.format("x: hosted=%s ends=%d %s | y: mirrors=%d hosted=%s %s",
     tostring(ts.x_hosted), ts.x_ends, ts.x_end, ts.y_mirrors, tostring(ts.y_hosted), ts.y_end) end
+local function routed(name, y_holds)
+    T(name, ts.x_far_hosted and ts.x_far_ends == 1 and ts.z_mirrors == 1 and ts.z_at == "-3.0"
+        and ts.y_mirrors == y_holds and (y_holds == 0 or ts.y_at_x == 2),
+        string.format("far hosted=%s ends=%d | z: mirrors=%d at x=%s | y: mirrors=%d at x=%s",
+            tostring(ts.x_far_hosted), ts.x_far_ends, ts.z_mirrors, ts.z_at, ts.y_mirrors, tostring(ts.y_at_x)))
+end
 
-step(within(20, function() return ts.x_end_ok and ts.y_end_ok and ts.y_hosted end), function()
+step(within(20, function()
+    return ts.x_end_ok and ts.y_end_ok and ts.y_hosted and ts.x_far_hosted and ts.z_mirrors > 0
+end), function()
     T("R1_in_the_target_the_return_end_is_a_portal_back_at_the_portal_s_place", ts.y_mirrors == 1 and ts.y_end_ok,
         ends())
     T("R2_in_the_source_it_is_the_portal_s_leads_here_and_has_no_link_or_mark", ts.x_ends == 1 and ts.x_end_ok,
@@ -335,6 +421,7 @@ end)
 step(after(1), function()
     T("R3_the_target_makes_none_for_the_mirror_and_the_source_holds_no_mirror_of_a_portal",
         ts.y_returns == 0 and ts.x_mirrors == 0, string.format("y_returns=%d x_mirrors=%d", ts.y_returns, ts.x_mirrors))
+    routed("R15_each_linked_world_holds_only_the_return_end_meant_for_it", 1)
     T("R5_walking_into_it_in_the_source_hands_nobody_over", ts.x_owned and not ts.y_arrived,
         string.format("owned=%s arrived=%s", tostring(ts.x_owned), tostring(ts.y_arrived)))
     ts.x_mark, ts.y_mark = true, true
@@ -394,6 +481,9 @@ end)
 step(within(10, function() return ts.x_ends == 0 and ts.y_mirrors == 0 end), function()
     T("R14_scope_portal_taken_off_a_portal_that_stays_takes_it_here_and_there",
         ts.x_ends == 0 and ts.y_mirrors == 0, ends())
+end)
+step(after(1), function()
+    routed("R15_and_still_at_the_end", 0)
 end)
 
 local done = false
