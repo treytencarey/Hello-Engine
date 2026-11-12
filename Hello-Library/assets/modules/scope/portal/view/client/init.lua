@@ -16,8 +16,9 @@ local Sphere = require("bevy::math::primitives::Sphere")
 -- One ask per placed portal, its child: it goes with the portal, and root loads each target once
 -- however many ask. `hosted` makes root ask once more after a `not-running` refusal. A portal
 -- seen being placed asks with `join_only = false`: root starts its world if nobody runs it and
--- this player may (the Gateway's start gate), and otherwise looks in join-only. A portal that was
--- placed already when it arrived (a scene's door, an invite's portal, one placed before this
+-- this player may (the Gateway's start gate), and otherwise looks in join-only. So does a door, a
+-- portal that arrives with its scene (a `SceneRoot` above it): it is dropped as its map loads. A
+-- portal that was placed already when it arrived (an invite's portal, one placed before this
 -- client came) asks join-only. The ask is not this file's to reap: a reload that took it would
 -- make root drop the observed world and load it again.
 app:add_systems(Update, {
@@ -26,6 +27,7 @@ app:add_systems(Update, {
         without = { "placement" },
         optional = { "scope/portal/hosted", "Children" },
     }],
+    Query[{ with = { "SceneRoot" } }],
     Query[{
         with = { "core/world/observe" },
         without = { "WorldMirror" },
@@ -44,7 +46,7 @@ app:add_systems(Update, {
         with = { "scope/portal" },
     }],
     Commands,
-}, function(portals, asks, records, rows, just_placed, commands)
+}, function(portals, scenes, asks, records, rows, just_placed, commands)
     local placed = {}
     for _, p in ipairs(just_placed:iter()) do
         placed[#placed + 1] = p:id()
@@ -66,6 +68,7 @@ app:add_systems(Update, {
         for _, id in ipairs(placed) do
             if id == p:id() then start = false end
         end
+        if scenes:iter_many(scenes:iter_ancestors(p:id()))[1] ~= nil then start = false end
         local kept
         for _, ask in ipairs(asks:iter_many(p:get("Children") or {})) do
             if kept == nil and target ~= scope and ask:get("core/world/observe").ref == target then

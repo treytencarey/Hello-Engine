@@ -11,7 +11,9 @@
 --       through it
 --   V4  a portal being placed gets none, and one once placed
 --   V14 a portal seen being placed asks to start its world (`join_only = false`); one placed
---       already when it came (a door, one placed before) asks join-only
+--       already when it came (one placed before) asks join-only
+--   V16 a door, a portal that arrives with its scene (a `SceneRoot` above it, here a real glTF
+--       scene), asks to start its world as it loads
 --   V5  `scope/portal/hosted` puts `hosted` on its ask, and taking it off takes `hosted` out
 --   V6  root's `allowed` puts the stencil on a 3d portal
 --   V7  a lookalike answer, another world's mirror or this world's own entity, changes nothing
@@ -24,6 +26,7 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
+local AssetServer = require("bevy::asset::AssetServer")
 
 local suite = helpers.create_suite("ScopePortalViewSuite")
 local T = suite.assert_test
@@ -79,7 +82,7 @@ local phase, clock = "spawn", 0
 local door_kids = {}
 local kept_ask
 
-app:add_systems(Update, { World, Commands }, function(world, commands)
+app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, commands, assets)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
@@ -92,8 +95,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["core/net/sync"] = false, ["zz/view/p"] = { name = "self" } })
         commands:spawn({ ["scope/portal"] = { target = SECOND }, ["scope/portal/view"] = { mode = "3d" },
             placement = {}, ["core/net/sync"] = false, ["zz/view/p"] = { name = "placing" } })
+        -- A map's door: a node under the map's scene.
+        local map = commands:spawn({
+            SceneRoot = assets:load("modules/gltf/mod_registry/tests/fixtures/markers.glb#Scene0"),
+            ["core/net/sync"] = false,
+        }):id()
         local door = commands:spawn({ ["scope/portal"] = { target = DOOR }, ["scope/portal/view"] = { mode = "none" },
-            ["core/net/sync"] = false, ["zz/view/p"] = { name = "door" } }):id()
+            ["core/net/sync"] = false, ["zz/view/p"] = { name = "door" }, ChildOf = map }):id()
         door_kids[1] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = door }):id()
         door_kids[2] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = door }):id()
         step("asked")
@@ -119,8 +127,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("V14_a_portal_seen_being_placed_asks_to_start_its_world", #placing == 1 and placing[1].ask.join_only == false,
             tostring(placing[1] and placing[1].ask.join_only))
         local before = asks_of(world, portal(world, "a"))
-        T("V14_one_placed_when_it_came_asks_join_only", #before == 1 and before[1].ask.join_only == nil and #door == 1
-            and door[1].ask.join_only == nil, "")
+        T("V14_one_placed_when_it_came_asks_join_only", #before == 1 and before[1].ask.join_only == nil, "")
+        T("V16_a_door_that_arrives_with_its_scene_asks_to_start_its_world", #door == 1
+            and door[1].ask.join_only == false, tostring(door[1] and door[1].ask.join_only))
         local a = asks_of(world, portal(world, "a"))
         T("V5a_hosted_rides_the_ask", #a == 1 and a[1].ask.hosted == true, "")
         commands:entity(portal(world, "a"):id()):remove("scope/portal/hosted")
