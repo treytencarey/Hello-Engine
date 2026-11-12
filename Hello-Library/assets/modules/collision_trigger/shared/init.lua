@@ -44,11 +44,14 @@ app:add_systems(First, {
     end
 end):in_set("collision_trigger/removed")
 
--- The lists are replaced whole: a patch would merge the new lists into the old ones.
+-- The lists are replaced whole: a patch would merge the new lists into the old ones. Read only once
+-- Rapier holds the collider (`RapierColliderHandle3d`), after `collision_trigger/init`: until then
+-- `CollidingEntities3d` is only the empty set inserted above, and reading it would empty an `inside`
+-- the trigger was given to start from, which then reads as walking in.
 app:add_systems(First, {
     Query[{
         changed = { "CollidingEntities3d" },
-        with = { "collision_trigger" },
+        with = { "collision_trigger", "RapierColliderHandle3d" },
     }],
     Commands,
 }, function(triggers, commands)
@@ -86,7 +89,7 @@ app:add_systems(First, {
             })
         end
     end
-end):in_set("collision_trigger")
+end):in_set("collision_trigger"):after("collision_trigger/init")
 
 return {
     defaults = {

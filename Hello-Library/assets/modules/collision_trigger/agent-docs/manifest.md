@@ -10,7 +10,7 @@ Makes an entity a trigger: when what overlaps it changes, `collision_trigger` sa
 
 ## Components
 
-- `collision_trigger = { entered = { <entity>, ... }, exited = { <entity>, ... }, inside = { <entity>, ... } }`: written on each physics change of what overlaps the entity. `entered` and `exited` hold what changed since the last write; `inside` holds everything overlapping now.
+- `collision_trigger = { entered = { <entity>, ... }, exited = { <entity>, ... }, inside = { <entity>, ... } }`: written on each physics change of what overlaps the entity. `entered` and `exited` hold what changed since the last write; `inside` holds everything overlapping now. An `inside` given when the trigger is added is where it starts from: a body listed there and overlapping at the first reading has not entered (`scope/portal` gives the bodies already standing in a portal it drops).
 
 When `collision_trigger` is added, the mod gives it this full shape and adds whichever of `Sensor3d`, `CollidingEntities3d`, `ActiveEvents3d` (`"COLLISION_EVENTS"`) and `ActiveCollisionTypes3d` the entity lacks. One it already has stays as it is, so a hot reload does not read as everything having exited. It removes those four when `collision_trigger` is removed.
 
@@ -22,7 +22,7 @@ When `collision_trigger` is added, the mod gives it this full shape and adds whi
 |----------|-------|---------|
 | First | `collision_trigger/init` | On an added `collision_trigger`, add whichever of the sensor components it lacks |
 | First | `collision_trigger/removed` | On a removed `collision_trigger`, remove the sensor components |
-| First | `collision_trigger` | On a changed `CollidingEntities3d`, write `entered`, `exited` and `inside` when anything changed |
+| First | `collision_trigger` | After `collision_trigger/init`. On a changed `CollidingEntities3d` of an entity whose collider Rapier holds (`RapierColliderHandle3d`), write `entered`, `exited` and `inside` when anything changed. Before Rapier holds it, `CollidingEntities3d` is only the empty set `init` inserted, so it is not read: reading it would empty a starting `inside` and the next reading would count its bodies as entering |
 
 ## Use
 
@@ -51,4 +51,4 @@ end)
 - `collision_trigger` holds only the latest change. A consumer that misses a run still sees `inside`, but not every entry and exit in between.
 - `entered`, `exited` and `inside` hold entity values: compare one with `==` to an `id()`.
 - A fixed trigger sees every kinematic body too: on a client, other players walk in as well as this client's own, so a consumer that cares only for its own player filters for it (`core/net/local`).
-- Suite: `tests/test_collision_trigger.lua`, headless, with real Rapier bodies: T1-T3 entries and exits of dynamic bodies, never a mirror; T4-T5 removal and despawn; T6-T8 a trigger with its own list, through a reload; T9 a kinematic body moved by its Transform into a fixed trigger enters it.
+- Suite: `tests/test_collision_trigger.lua`, headless, with real Rapier bodies: T1-T3 entries and exits of dynamic bodies, never a mirror; T4-T5 removal and despawn; T6-T8 a trigger with its own list, through a reload; T9 a kinematic body moved by its Transform into a fixed trigger enters it. A starting `inside` is covered by `scope/portal`'s suites (a portal dropped on a player, a door spawned around one).
