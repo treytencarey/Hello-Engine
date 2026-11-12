@@ -8,7 +8,9 @@
 --   H2  a client with no handed state waits while this world has no point, then gets a player on
 --       the point, and every player its share's stable id
 --   H3  once it stops watching, a handed player arrives where it stood although this world has no
---       point, and claims none
+--       point, and claims none; when a point is ready it claims it, and is not moved
+--   H10 a handed player arriving while points are ready claims the least held one, and stands
+--       where it was handed
 --   H4  ...with its whole camera, and nothing else of the handed state
 --   H5  a peer mirror of a player is not set up as this world's player, but gets its abilities, to cast here
 --   H6  a peer mirror is not eased toward a shadow nobody writes any more
@@ -138,9 +140,36 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("claim=%s at %.2f %.2f %.2f", tostring(eight:get("player").spawn_point), pos.x, pos.y, pos.z))
         T("H8_a_player_not_handed_has_no_timer", not eight:has("cooldown") and not eight:has("scope/portal/cooling")
             and (eight:get("core/net/sync") or {}).cooldown == nil, "")
+        local seven = player_of(world, 7)
+        local was = at(world, seven)
+        T("H3_once_a_point_is_ready_the_handed_player_claims_it_and_is_not_moved",
+            seven:get("player").spawn_point == "zz_start" and near(was.x, 10) and near(was.y, 2) and near(was.z, -4),
+            string.format("claim=%s at %.2f %.2f %.2f", tostring(seven:get("player").spawn_point), was.x, was.y, was.z))
         commands:entity(eight:id()):insert({
             camera = { yaw = 0.5, pitch = -0.1, distance = 6, height = 2 },
         })
+        commands:spawn({
+            Name = "zz_second",
+            Transform = { translation = { x = 6, y = 0, z = 6 } },
+            ["player/spawner/point"] = {},
+            ["core/net/sync"] = false,
+        })
+        commands:spawn({
+            ["core/net/connection"] = {
+                client_id = 10,
+                observer = false,
+                synced_state = { Transform = { translation = { x = -7, y = 3, z = 1 }, rotation = { x = 0, y = 0, z = 0, w = 1 } } },
+            },
+            ["core/net/sync"] = false,
+        })
+        step("handed while ready")
+
+    elseif phase == "handed while ready" and player_of(world, 10) ~= nil and clock > 0.3 then
+        local ten = player_of(world, 10)
+        local pos = at(world, ten)
+        T("H10_a_handed_player_claims_the_least_held_ready_point_and_stands_where_it_was_handed",
+            ten:get("player").spawn_point == "zz_second" and near(pos.x, -7) and near(pos.y, 3) and near(pos.z, 1),
+            string.format("claim=%s at %.2f %.2f %.2f", tostring(ten:get("player").spawn_point), pos.x, pos.y, pos.z))
         step("looking")
 
     elseif phase == "looking" and clock > 0.2 then

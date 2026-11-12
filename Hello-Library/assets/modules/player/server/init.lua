@@ -6,7 +6,7 @@
 --
 -- player = {
 --     client_id = <the owning client>,
---     spawn_point = <the Name of the player/spawner/point it spawned on; absent for a player handed over>,
+--     spawn_point = <the Name of the player/spawner/point it claims; absent while no point is ready>,
 --     user_id = <who the player is, from its join ticket; "" until known>,
 --     smoothing = <how fast the server's Transform follows the owner's, per second>,
 -- }

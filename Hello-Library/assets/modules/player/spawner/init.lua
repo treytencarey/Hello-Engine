@@ -19,15 +19,30 @@
 local Quat = require("bevy::math::Quat")
 local TransformSystems = require("bevy::transform::TransformSystems")
 
+-- The first ready point by name that nobody holds, else the least held.
+local function least_held(ready, held)
+    local claim
+    for _, r in ipairs(ready) do
+        if claim == nil or (held[r.name] or 0) < (held[claim.name] or 0) then
+            claim = r
+        end
+    end
+    return claim
+end
+
 -- After Bevy's transform propagation: a point spawned this frame has its world place only then. A
 -- player's place and camera ride its spawn, as the owning client keeps its own after that; so do
 -- the camera's sync and that of the timers a handed player carries (a portal's crossing timer),
 -- which its client must have from the first frame. A spawner added later serves the clients
 -- already connected: a condition's first run sees every connection as changed. Claims go by Name,
--- which a re-export keeps.
+-- which a re-export keeps. A player whose claim names no point, as after a re-export that renamed
+-- or deleted it, or that arrived when none was ready, claims the least held ready point.
 app:add_systems(PostUpdate, {
     Query[{ with = { "core/net/connection" } }],
-    Query[{ with = { "player", "core/net/owner" } }],
+    Query[{
+        with = { Mut["player"], "core/net/owner" },
+        optional = { "core/net/peer/mirror" },
+    }],
     Query[{ with = { "player/spawner/point", "Name", "GlobalTransform" } }],
     Query[{
         with = { "SceneRoot" },
@@ -36,7 +51,7 @@ app:add_systems(PostUpdate, {
     Query[{ with = { "player/spawner" } }],
     Commands,
 }, function(connections, players, points, roots, spawners, commands)
-    local held, owned = {}, {}
+    local held, owned, named = {}, {}, {}
     for _, p in ipairs(players:iter()) do
         local player = p:get("player")
         local owner = p:get("core/net/owner")
@@ -47,14 +62,26 @@ app:add_systems(PostUpdate, {
     end
     local ready = {}
     for _, point in ipairs(points:iter()) do
+        local name = point:get("Name")
+        named[name.name] = true
         local root = roots:iter_many(roots:iter_ancestors(point:id()))[1]
         local status = root and root:get("collider/status")
         if root == nil or (status ~= nil and status.state == "done") then
-            local name = point:get("Name")
             ready[#ready + 1] = { point = point, name = name.name }
         end
     end
     table.sort(ready, function(a, b) return a.name < b.name end)
+
+    for _, p in ipairs(players:iter_mut()) do
+        local was = p:get("player").spawn_point
+        if not p:has("core/net/peer/mirror") and (was == nil or not named[was]) then
+            local claim = least_held(ready, held)
+            if claim ~= nil then
+                p:get_mut("player").spawn_point = claim.name
+                held[claim.name] = (held[claim.name] or 0) + 1
+            end
+        end
+    end
 
     local spawner = spawners:iter()[1]
     local waiting = 0
@@ -64,24 +91,21 @@ app:add_systems(PostUpdate, {
             local s = spawner:get("player/spawner")
             local handed = connection.synced_state or {}
             local stood = handed.Transform
-            local at, facing, camera, claim
+            local at, facing, camera
+            local claim = least_held(ready, held)
+            -- A handed player claims a point like any other, and arrives where it stood.
             if stood and stood.translation then
                 at = stood.translation
                 facing = stood.rotation or { x = 0, y = 0, z = 0, w = 1 }
                 camera = handed.camera
-            else
-                for _, r in ipairs(ready) do
-                    if claim == nil or (held[r.name] or 0) < (held[claim.name] or 0) then
-                        claim = r
-                    end
-                end
-                if claim ~= nil then
-                    at = claim.point.GlobalTransform:transform_point({ x = 0, y = s.lift, z = 0 })
-                    facing = { x = 0, y = 0, z = 0, w = 1 }
-                    -- The body's rotation is locked: the camera's yaw is what turns a player.
-                    camera = { yaw = Quat.to_euler(claim.point.GlobalTransform:compute_transform().rotation, "YXZ")[1] }
-                    held[claim.name] = (held[claim.name] or 0) + 1
-                end
+            elseif claim ~= nil then
+                at = claim.point.GlobalTransform:transform_point({ x = 0, y = s.lift, z = 0 })
+                facing = { x = 0, y = 0, z = 0, w = 1 }
+                -- The body's rotation is locked: the camera's yaw is what turns a player.
+                camera = { yaw = Quat.to_euler(claim.point.GlobalTransform:compute_transform().rotation, "YXZ")[1] }
+            end
+            if claim ~= nil and at ~= nil then
+                held[claim.name] = (held[claim.name] or 0) + 1
             end
             if at == nil then
                 waiting = waiting + 1

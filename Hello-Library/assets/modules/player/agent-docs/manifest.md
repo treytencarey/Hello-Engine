@@ -17,7 +17,7 @@ The owning client drives its player's Transform, as there is no client predictio
   | Field | Meaning | Default |
   |-------|---------|---------|
   | `client_id` | the owning client | set by the spawner |
-  | `spawn_point` | the `Name` of the `player/spawner/point` it spawned on; absent for a player handed over from another world | set by the spawner |
+  | `spawn_point` | the `Name` of the `player/spawner/point` it claims, a player handed over from another world included; absent while no point is ready | set by the spawner |
   | `user_id` | who the player is, from its join ticket: the `user` of `core/player/attest` on the server's `core/net/connection` with this `client_id`, while it is `attested`; `""` otherwise | `""` |
   | `smoothing` | how fast the server's Transform follows the owner's, per second | 15 |
 
