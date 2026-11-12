@@ -26,10 +26,6 @@ local T = suite.assert_test
 local MOD_FILE = "assets/modules/checkout/github/init.lua"
 local KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5-zz"
 
-app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
-end)
-
 local reloads = 0
 app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, function(changed)
     for _, event in ipairs(changed:read()) do

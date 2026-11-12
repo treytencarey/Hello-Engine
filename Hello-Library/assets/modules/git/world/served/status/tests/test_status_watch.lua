@@ -31,7 +31,6 @@ local H2 = "2222222222222222222222222222222222222222"
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     -- Root's identity, signed in: this suite is root.
     commands:spawn({
         ["core/player/identity"] = { site_user_id = "zz-user" },

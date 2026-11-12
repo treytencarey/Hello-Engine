@@ -41,10 +41,6 @@ local MOD_FILE = "assets/modules/git/collaborators/init.lua"
 local HERE = "github:zz/here:main"
 local SECRET = "zz-github-token-secret"
 
-app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
-end)
-
 local original
 local function reload_with_debug()
     original = original or read_file_bytes(MOD_FILE)

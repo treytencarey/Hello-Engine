@@ -30,7 +30,6 @@ local SHEET = {
 app:add_systems(Startup, { Commands }, function(commands)
     write_file_bytes("assets/test_fixtures/zz_sprite_sheet.png", PNG)
     write_file_bytes("assets/test_fixtures/zz_sprite_sheet_other.png", PNG)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
     commands:spawn({ ["zz/char"] = { name = "one" }, ["animation/sprite"] = SHEET, Transform = {} })

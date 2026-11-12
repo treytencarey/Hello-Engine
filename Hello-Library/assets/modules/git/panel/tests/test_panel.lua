@@ -50,10 +50,6 @@ world_id = 7
 local MOD_FILE = "assets/modules/git/panel/client/init.lua"
 local HEAD_SHA = "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
-end)
-
 local original
 local function reload()
     original = original or read_file_bytes(MOD_FILE)

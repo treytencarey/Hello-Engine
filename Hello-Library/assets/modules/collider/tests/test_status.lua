@@ -38,7 +38,6 @@ local phase, clock, frames, frame = "k1", 0, 0, 0
 local hand, scene, late
 
 app:add_systems(Startup, { Commands, Res[AssetServer], ResMut[Assets[Mesh]] }, function(commands, asset_server, meshes)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
     hand = commands:spawn({
         SceneRoot = asset_server:load("modules/gltf/mod_registry/tests/fixtures/markers.glb#Scene0"),

@@ -30,7 +30,6 @@ local COPY = "modules/gltf/mod_registry/tests/fixtures/zz_markers_copy.glb"
 write_file_bytes("assets/" .. COPY, SOURCE)
 
 app:add_systems(Startup, { Commands, Res[AssetServer] }, function(commands, asset_server)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
     commands:spawn({
         ["zz/root"] = { name = "late" },

@@ -50,7 +50,6 @@ local seen = "no cast yet"
 local wall_at = nil
 
 app:add_systems(Startup, { ResMut[Assets[Mesh]], ResMut[Assets[StandardMaterial]], Commands }, function(meshes, materials, commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     commands:spawn({ ["ui/theme/dark"] = {} })
     commands:spawn({

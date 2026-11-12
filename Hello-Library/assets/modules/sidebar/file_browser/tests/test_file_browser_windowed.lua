@@ -19,7 +19,6 @@ local original = read_file_bytes(MOD_FILE)
 local camera, player
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     commands:spawn({ ["ui/theme/dark"] = {} })
     camera = commands:spawn({ Camera2d = {}, Camera = { order = 0 } }):id()

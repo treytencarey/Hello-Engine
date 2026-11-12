@@ -21,7 +21,6 @@ local helpers = require("modules/core/test_helpers.lua")
 local suite = helpers.create_suite("Movement2dSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     -- As `player/2d/spawner` sends a body: kinematic, with its collider.
     commands:spawn({

@@ -57,7 +57,6 @@ local helpers = require("modules/core/test_helpers.lua")
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("PlayerVrNetState", boot.DEFAULTS)
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({
         ["core/world/net"] = { mode = "server", name = "zzvr", port = boot.PORT },
         ["core/net"] = { mode = "server", name = "zzvr", port = boot.PORT },
@@ -159,7 +158,6 @@ local boot = Instances.boot_data()
 local ts = helpers.shared_state("PlayerVrNetState", boot.DEFAULTS)
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn(boot.GROUND)
 end)
 

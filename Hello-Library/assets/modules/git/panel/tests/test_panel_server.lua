@@ -49,7 +49,6 @@ app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, funct
 end):in_set("zz/panel_server_reload_watch")
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
     commands:spawn({
         ["core/world/status"] = { scope_key = HERE, mode = "server", status = "ready" },

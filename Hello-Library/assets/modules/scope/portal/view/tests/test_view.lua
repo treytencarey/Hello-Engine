@@ -38,7 +38,6 @@ local VIEW_SOURCE = "assets/modules/scope/portal/view/client/init.lua"
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({
         ["core/world/status"] = { scope_key = HERE, mode = "client", status = "ready", observer = false },
         WorldShared = {},

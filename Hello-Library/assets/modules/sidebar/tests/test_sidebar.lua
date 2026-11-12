@@ -22,9 +22,6 @@ Instances.mark_mod_script(PANEL)
 
 -- The reload (R14) rewrites the sidebar's own file with the same bytes: an immediate watcher.
 local SOURCE = "assets/modules/sidebar/init.lua"
-app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
-end)
 
 -- The panel stand-in: when a bar appears, a local player with `zz/panel` gets its two
 -- buttons in it.

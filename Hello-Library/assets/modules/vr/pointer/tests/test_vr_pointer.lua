@@ -20,7 +20,6 @@ local suite = helpers.create_suite("VrPointerSuite")
 local T = suite.assert_test
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     for _, name in ipairs({ "me", "together" }) do
         commands:spawn({

@@ -26,7 +26,6 @@ local hand = { x = 0, y = 1.2, z = -0.3 }
 local head = { x = 0, y = 1.5, z = 0 }
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     commands:spawn({
         ["zz/me"] = {},

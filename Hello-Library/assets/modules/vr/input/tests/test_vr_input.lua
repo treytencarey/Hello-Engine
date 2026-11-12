@@ -25,7 +25,6 @@ local VrPoseInput = require("hello::vr_messages::VrPoseInput")
 local suite = helpers.create_suite("VrInputSuite")
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     commands:spawn({
         ["zz/player"] = {},

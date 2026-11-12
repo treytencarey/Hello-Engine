@@ -76,7 +76,6 @@ Listing.read = function(root, path)
 end
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({
         ["core/world/net"] = { mode = "server", name = "zzfb", port = boot.PORT, max_clients = 4 },
         ["core/net"] = { mode = "server", name = "zzfb", port = boot.PORT, max_clients = 4 },
@@ -191,7 +190,6 @@ end):in_set("zz/fb_client2_replica")
 -- A real reload rewrites a file under an immediate watcher. The watcher skips a file whose bytes it
 -- has seen, so each rewrite differs, by a comment at the end, and the end of the suite puts them back.
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({ ["ui/theme/dark"] = {} })
 end)
 

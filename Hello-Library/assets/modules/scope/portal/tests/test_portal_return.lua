@@ -68,7 +68,6 @@ local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalReturnState", boot.DEFAULTS)
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:insert_resource("core/hot_reload/settings", { poll_interval = 0, debounce = 0 })
     commands:spawn({
         ["core/world/net"] = { mode = "server", name = "zzpr_x", port = 15515 },
         ["core/net"] = { mode = "server", name = "zzpr_x", port = 15515 },
