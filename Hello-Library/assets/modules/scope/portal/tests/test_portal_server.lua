@@ -21,6 +21,12 @@
 --   P17 a player still cooling from its crossing (`cooldown`'s `scope/portal/cooling`) is not handed
 --       over
 --   P18 ...and once it has cooled, walking in again hands it over
+--   P20 with real physics: a hosted portal dropped where a player stands reads it inside and hands
+--       it nobody over, as only walking in counts
+--   P21 ...nor a player spawned inside it, as one spawns inside a door
+--   P22 ...and the first walking out and back in is handed over
+--   P23 a scene's door spawned around a standing player reads it inside and hands it nobody over
+--   P24 no portal reaches Rapier as a solid ball: in every frame, one with a collider is a sensor
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -83,6 +89,16 @@ app:add_systems(Update, {
 end):in_set("zz/portal_switch_seen"):after("scope/portal/server")
 
 local phase, clock = "listen", 0
+
+-- Lua's PostUpdate systems run before Rapier's, which build what they find. Counted once the first
+-- triggers have their parts: the first trigger in a world loads `collision_trigger`, which adds them
+-- a frame later.
+local solid = 0
+app:add_systems(PostUpdate, { World }, function(world)
+    if phase ~= "listen" and phase ~= "binding" and phase ~= "linking" then
+        solid = solid + #world:query({ with = { "scope/portal", "Collider3d" }, without = { "Sensor3d" } })
+    end
+end):in_set("zz/portal_solid")
 local bound_port
 local link_holder
 
@@ -245,6 +261,106 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "walked_again" and clock > 0.3 then
         T("P18_once_it_has_cooled_walking_in_hands_it_over", switched.hc == OTHER, tostring(switched.hc))
+        -- Real physics from here: a player is a kinematic body moved by its Transform, as on a server.
+        commands:spawn({
+            ["scope/portal"] = { target = OTHER },
+            placement = {},
+            Transform = { translation = { x = 30, y = 0, z = 0 } },
+            ["core/net/sync"] = false,
+            ["zz/portal/p"] = { name = "d1" },
+        })
+        commands:spawn({
+            player = { client_id = 22, spawn_index = 0 },
+            ["core/net/owner"] = { client_id = 22 },
+            ["core/net/peer/share"] = { stable_id = "player_22" },
+            Transform = { translation = { x = 30, y = 0, z = 0 } },
+            RigidBody3d = "KinematicPositionBased",
+            Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
+            ["core/net/sync"] = false,
+            ["zz/portal/h"] = { name = "hd" },
+        })
+        step("dropping")
+
+    elseif phase == "dropping" and clock > 1 then
+        commands:entity(named(world, "zz/portal/p", "d1"):id()):remove("placement")
+        step("dropped")
+
+    elseif phase == "dropped" and clock > 1 then
+        local d1 = named(world, "zz/portal/p", "d1")
+        local hd = named(world, "zz/portal/h", "hd"):id()
+        local trigger = d1:get("collision_trigger")
+        local read = false
+        for _, id in ipairs(trigger and trigger.inside or {}) do
+            if id == hd then read = true end
+        end
+        T("P20_dropped_where_a_player_stands_it_reads_it_inside_and_hands_nobody_over",
+            d1:has("scope/portal/hosted") and read and switched.hd == nil,
+            string.format("hosted=%s inside=%s switched=%s", tostring(d1:has("scope/portal/hosted")), tostring(read),
+                tostring(switched.hd)))
+        commands:spawn({
+            player = { client_id = 23, spawn_index = 0 },
+            ["core/net/owner"] = { client_id = 23 },
+            ["core/net/peer/share"] = { stable_id = "player_23" },
+            Transform = { translation = { x = 30, y = 0, z = 0 } },
+            RigidBody3d = "KinematicPositionBased",
+            Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
+            ["core/net/sync"] = false,
+            ["zz/portal/h"] = { name = "hs" },
+        })
+        step("spawned_inside")
+
+    elseif phase == "spawned_inside" and clock > 1 then
+        local d1 = named(world, "zz/portal/p", "d1")
+        local hs = named(world, "zz/portal/h", "hs"):id()
+        local trigger = d1:get("collision_trigger")
+        local read = false
+        for _, id in ipairs(trigger and trigger.inside or {}) do
+            if id == hs then read = true end
+        end
+        T("P21_a_player_spawned_inside_it_is_not_handed_over", read and switched.hs == nil,
+            string.format("inside=%s switched=%s", tostring(read), tostring(switched.hs)))
+        commands:entity(named(world, "zz/portal/h", "hd"):id()):insert({ Transform = { translation = { x = 40, y = 0, z = 0 } } })
+        step("walked_out")
+
+    elseif phase == "walked_out" and clock > 0.5 then
+        commands:entity(named(world, "zz/portal/h", "hd"):id()):insert({ Transform = { translation = { x = 30, y = 0, z = 0 } } })
+        step("walked_back")
+
+    elseif phase == "walked_back" and clock > 0.5 then
+        T("P22_walking_out_and_back_in_hands_it_over", switched.hd == OTHER, tostring(switched.hd))
+        commands:spawn({
+            player = { client_id = 24, spawn_index = 0 },
+            ["core/net/owner"] = { client_id = 24 },
+            ["core/net/peer/share"] = { stable_id = "player_24" },
+            Transform = { translation = { x = 50, y = 0, z = 0 } },
+            RigidBody3d = "KinematicPositionBased",
+            Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
+            ["core/net/sync"] = false,
+            ["zz/portal/h"] = { name = "hw" },
+        })
+        step("standing")
+
+    -- A scene's door: never placed, so its body comes with it.
+    elseif phase == "standing" and clock > 1 then
+        commands:spawn({
+            ["scope/portal"] = { target = OTHER },
+            Transform = { translation = { x = 50, y = 0, z = 0 } },
+            ["core/net/sync"] = false,
+            ["zz/portal/p"] = { name = "door" },
+        })
+        step("door_spawned")
+
+    elseif phase == "door_spawned" and clock > 1 then
+        local door = named(world, "zz/portal/p", "door")
+        local hw = named(world, "zz/portal/h", "hw"):id()
+        local trigger = door:get("collision_trigger")
+        local read = false
+        for _, id in ipairs(trigger and trigger.inside or {}) do
+            if id == hw then read = true end
+        end
+        T("P23_a_door_spawned_around_a_player_reads_it_inside_and_hands_nobody_over",
+            read and switched.hw == nil, string.format("inside=%s switched=%s", tostring(read), tostring(switched.hw)))
+        T("P24_no_portal_reaches_rapier_as_a_solid_ball", solid == 0, "frames with a solid portal: " .. solid)
         phase = "done"
         suite.finish("ScopePortalServerSuite")
     end
