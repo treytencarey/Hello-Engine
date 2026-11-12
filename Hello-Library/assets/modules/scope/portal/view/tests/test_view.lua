@@ -19,6 +19,10 @@
 --   V7  a lookalike answer, another world's mirror or this world's own entity, changes nothing
 --   V8  root's `refused` locks the portal with the reason; a later `allowed` unlocks it
 --   V9  on a "none" carrier with no mesh, `allowed` puts the stencil on its mesh children
+--   V17 a door's (`at`, on a named node) stencils carry its `at`, its world transform as `frame`
+--       and its `Name` as `view`
+--   V18 a portal without `at` writes none of them
+--   V19 the door moved, its stencils' `frame` follows
 --   V10 a changed target replaces the ask
 --   V11 in a world that only observes, no portal asks; promoted, it catches up
 --   V12 taking the view off a portal that stays takes its ask and its stencil
@@ -27,6 +31,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local AssetServer = require("bevy::asset::AssetServer")
+local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("ScopePortalViewSuite")
 local T = suite.assert_test
@@ -37,6 +42,7 @@ local SECOND = "github:zzview/second:main"
 local DOOR = "github:zzview/door:main"
 local LATER = "github:zzview/later:main"
 local MOVED = "github:zzview/moved:main"
+local MAPPED = "github:zzview/mapped:main"
 local VIEW_SOURCE = "assets/modules/scope/portal/view/client/init.lua"
 
 app:add_systems(Startup, { Commands }, function(commands)
@@ -78,8 +84,28 @@ local function stencil_on(world, id)
     return e and e:get("core/compositor/stencil")
 end
 
+local function near(a, b) return type(a) == "number" and math.abs(a - b) < 1e-3 end
+
+-- Whether both of the mapped door's primitives show MAPPED from the door standing at (x, y, z),
+-- turned a quarter about Y, and what the first says.
+local function mapped_at(world, kids, x, y, z)
+    local said, ok = "none", #kids == 2
+    for _, id in ipairs(kids) do
+        local s = stencil_on(world, id)
+        local frame = s and s.frame or {}
+        local at = frame.translation or {}
+        local yaw = frame.rotation and Quat.to_euler(frame.rotation, "YXZ")[1]
+        ok = ok and s ~= nil and s.world == MAPPED and s.at == "zz_arrival" and s.view == "zz_door"
+            and near(at.x, x) and near(at.y, y) and near(at.z, z) and near(yaw, math.pi / 2)
+            and frame.scale ~= nil and near(frame.scale.x, 1)
+        said = string.format("world=%s at=%s view=%s frame=%s,%s,%s yaw=%s", tostring(s and s.world),
+            tostring(s and s.at), tostring(s and s.view), tostring(at.x), tostring(at.y), tostring(at.z), tostring(yaw))
+    end
+    return ok, said
+end
+
 local phase, clock = "spawn", 0
-local door_kids = {}
+local door_kids, mapped_kids = {}, {}
 local kept_ask
 
 app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, commands, assets)
@@ -104,6 +130,13 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
             ["core/net/sync"] = false, ["zz/view/p"] = { name = "door" }, ChildOf = map }):id()
         door_kids[1] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = door }):id()
         door_kids[2] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = door }):id()
+        -- A door mapped to a place in its target: `at`, on a named node, turned a quarter.
+        local mapped = commands:spawn({ ["scope/portal"] = { target = MAPPED, at = "zz_arrival" },
+            ["scope/portal/view"] = { mode = "none" }, Name = "zz_door",
+            Transform = { translation = { x = 4, y = 1, z = -2 }, rotation = Quat.from_rotation_y(math.pi / 2) },
+            ["core/net/sync"] = false, ["zz/view/p"] = { name = "mapped" } }):id()
+        mapped_kids[1] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = mapped }):id()
+        mapped_kids[2] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = mapped }):id()
         step("asked")
 
     elseif phase == "asked" and #asks_of(world, portal(world, "a")) > 0 and clock > 0.3 then
@@ -138,6 +171,8 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
         commands:spawn({ ["core/world/observe/answer"] = { ref = DOOR, state = "allowed" },
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
+        commands:spawn({ ["core/world/observe/answer"] = { ref = MAPPED, state = "allowed" },
+            WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
         commands:spawn({ ["core/world/observe/answer"] = { ref = HERE, state = "allowed" },
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
         commands:spawn({ ["core/world/observe/answer"] = { ref = SECOND, state = "refused", reason = "zz-forged" },
@@ -165,6 +200,20 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
         T("V15_an_allowed_look_at_this_world_shows_nothing_through_a_portal_to_it",
             not own:has("core/compositor/stencil") and not own:has("scope/portal/locked")
                 and #asks_of(world, own) == 0, "")
+        local ok, said = mapped_at(world, mapped_kids, 4, 1, -2)
+        T("V17_a_door_s_stencils_carry_at_its_frame_and_its_view", ok, said)
+        T("V18_a_portal_without_at_writes_none_of_them",
+            s ~= nil and s.at == nil and s.frame == nil and s.view == nil and k1 ~= nil and k1.at == nil
+                and k1.frame == nil and k1.view == nil, "")
+        -- Moved alone, so nothing else here runs the view's systems.
+        commands:entity(portal(world, "mapped"):id()):insert({
+            Transform = { translation = { x = 9, y = 1, z = 6 }, rotation = Quat.from_rotation_y(math.pi / 2) },
+        })
+        step("moved")
+
+    elseif phase == "moved" and clock > 0.3 then
+        local ok, said = mapped_at(world, mapped_kids, 9, 1, 6)
+        T("V19_the_door_moved_its_stencils_frame_follows", ok, said)
         commands:spawn({ ["core/world/observe/answer"] = { ref = SECOND, state = "refused", reason = "not-running" },
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false, ["zz/view/second"] = {} })
         step("refused")

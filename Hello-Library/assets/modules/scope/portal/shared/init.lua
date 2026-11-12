@@ -5,10 +5,11 @@
 --
 -- scope/portal = {
 --     target = <the scope key of the world it leads to>,
+--     at = <on a door: the Name of the node in the target's map this door stands for there>,
 -- }
 --
--- scope/portal/hosted = {}: on a placed portal whose target runs in this process with its peer
--- link up, written by the server.
+-- scope/portal/hosted = {}: on a placed portal whose target runs in this process with its join's
+-- peer link up, written by the server.
 --
 -- scope/portal/locked = {
 --     reason = <why the target cannot be shown>,

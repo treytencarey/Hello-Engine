@@ -11,15 +11,22 @@
 --       point, and claims none; when a point is ready it claims it, and is not moved
 --   H10 a handed player arriving while points are ready claims the least held one, and stands
 --       where it was handed
---   H4  ...with its whole camera, and nothing else of the handed state
+--   H4  ...with its whole camera, its yaw the handed look's (relative to the body) turned by the
+--       facing it arrived with, and nothing else of the handed state
 --   H5  a peer mirror of a player is not set up as this world's player, but gets its abilities, to cast here
 --   H6  a peer mirror is not eased toward a shadow nobody writes any more
---   H7  a player being handed over carries its whole camera in the switch
+--   H7  a player being handed over carries its whole camera, its body's place and its look, its
+--       yaw relative to the body, in the switch
 --   H8  a handed player keeps the timers that crossed with it (a portal's `scope/portal/cooling`), synced
 --       to its owner in the spawn; a player that was not handed has no timer
---   H9  leaving, the camera's entry joins what the portal put in `transfer_data`, and replaces none of it
+--   H12 every player lists the portal's switch in its sync from its spawn, to its owner
+--   H9  leaving, the look's and the body's entries join what the portal put in `transfer_data`, and
+--       replace none of it
+--   H11 back in place (core sets what was handed on the player whole), the camera stays whole, its
+--       yaw the look turned by the facing the body arrived with, and the look goes
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
+local Quat = require("bevy::math::Quat")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerHandoverSuite")
 local T = suite.assert_test
 
@@ -28,6 +35,7 @@ local HANDED = {
         translation = { x = 10, y = 2, z = -4 },
         rotation = { x = 0, y = 0.70710677, z = 0, w = 0.70710677 },
     },
+    ["player/spawner/look"] = { yaw = 0.3, pitch = -0.2 },
     camera = { yaw = 1.1, pitch = -0.2, distance = 5, height = 9 },
     cooldown = { ["scope/portal/cooling"] = { remaining = 3 } },
     movement = { speed = 99 },
@@ -58,6 +66,22 @@ end
 local function near(a, b) return math.abs(a - b) < 1e-2 end
 
 local phase, clock = "spawn", 0
+
+-- Core re-promotes a mirror in place in `First`, before `player` eases the body in `Update`.
+local repromote = false
+app:add_systems(First, { World, Commands }, function(world, commands)
+    if repromote then
+        repromote = false
+        -- What was handed set whole: its body placed turned 1.0 at a door's place here, the shadow
+        -- seeded there, and its camera with the yaw it had in the world it left.
+        commands:entity(player_of(world, 7):id()):insert({
+            Transform = { translation = { x = 4, y = 0, z = 4 }, rotation = Quat.from_rotation_y(1.0) },
+            ["core/net/sync/Transform"] = { translation = { x = 4, y = 0, z = 4 }, rotation = Quat.from_rotation_y(1.0) },
+            camera = { yaw = 2.9, pitch = 0.1, distance = 7, height = 3 },
+            ["player/spawner/look"] = { yaw = 0.25, pitch = 0.1 },
+        })
+    end
+end):in_set("zz/player_handover_repromote")
 
 app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
@@ -117,11 +141,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("timer=%s mark=%s", tostring(timer and timer.remaining), tostring(seven:has("scope/portal/cooling"))))
         local cam = seven:get("camera") or {}
         local sync = (seven:get("core/net/sync") or {}).camera
-        T("H4_it_keeps_its_whole_camera_and_nothing_else",
-            near(cam.yaw or 0, 1.1) and near(cam.pitch or 0, -0.2) and cam.distance == 5 and cam.height == 9
-                and sync ~= nil and sync.authority == "client" and sync.target == "owner"
+        -- Its body arrived turned a quarter, so its look of 0.3 to the body's left is 0.3 + pi/2.
+        T("H4_it_keeps_its_whole_camera_its_yaw_turned_by_the_facing_it_arrived_with_and_nothing_else",
+            near(cam.yaw or 0, 0.3 + math.pi / 2) and near(cam.pitch or 0, -0.2) and cam.distance == 5
+                and cam.height == 9 and sync ~= nil and sync.authority == "client" and sync.target == "owner"
                 and (seven:get("movement") or {}).speed ~= 99 and seven:get("player").user_id ~= "zz-elsewhere",
-            string.format("yaw=%s distance=%s height=%s", tostring(cam.yaw), tostring(cam.distance), tostring(cam.height)))
+            string.format("yaw=%s pitch=%s distance=%s height=%s", tostring(cam.yaw), tostring(cam.pitch),
+                tostring(cam.distance), tostring(cam.height)))
+        local switch_sync = (seven:get("core/net/sync") or {})["core/net/peer/switch"]
+        T("H12_a_handed_player_lists_the_switch_in_its_sync_to_its_owner",
+            switch_sync ~= nil and switch_sync.authority == "server" and switch_sync.target == "owner", "")
         commands:spawn({
             Name = "zz_start",
             Transform = { translation = { x = 2, y = 0, z = -3 } },
@@ -140,13 +169,19 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("claim=%s at %.2f %.2f %.2f", tostring(eight:get("player").spawn_point), pos.x, pos.y, pos.z))
         T("H8_a_player_not_handed_has_no_timer", not eight:has("cooldown") and not eight:has("scope/portal/cooling")
             and (eight:get("core/net/sync") or {}).cooldown == nil, "")
+        local switch_sync = (eight:get("core/net/sync") or {})["core/net/peer/switch"]
+        T("H12_a_fresh_player_lists_the_switch_in_its_sync_to_its_owner",
+            switch_sync ~= nil and switch_sync.authority == "server" and switch_sync.target == "owner", "")
         local seven = player_of(world, 7)
         local was = at(world, seven)
         T("H3_once_a_point_is_ready_the_handed_player_claims_it_and_is_not_moved",
             seven:get("player").spawn_point == "zz_start" and near(was.x, 10) and near(was.y, 2) and near(was.z, -4),
             string.format("claim=%s at %.2f %.2f %.2f", tostring(seven:get("player").spawn_point), was.x, was.y, was.z))
+        -- Its body turned 0.2, as its client moved it, and its look 0.3 to the body's left.
         commands:entity(eight:id()):insert({
             camera = { yaw = 0.5, pitch = -0.1, distance = 6, height = 2 },
+            Transform = { translation = { x = 2, y = 1, z = -3 }, rotation = Quat.from_rotation_y(0.2) },
+            ["core/net/sync/Transform"] = { translation = { x = 2, y = 1, z = -3 }, rotation = Quat.from_rotation_y(0.2) },
         })
         commands:spawn({
             Name = "zz_second",
@@ -184,15 +219,41 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "leaving" and clock > 0.2 then
         local share = player_of(world, 8):get("core/net/peer/share")
-        local carried = share.transfer_data and share.transfer_data.camera or {}
-        T("H7_leaving_it_takes_its_whole_camera_in_the_switch",
-            carried.yaw == 0.5 and carried.pitch == -0.1 and carried.distance == 6 and carried.height == 2
-                and share.stable_id == "player_8",
-            string.format("yaw=%s distance=%s height=%s", tostring(carried.yaw), tostring(carried.distance),
-                tostring(carried.height)))
-        local timers = share.transfer_data and share.transfer_data.cooldown or {}
-        T("H9_the_camera_joins_what_the_portal_put_in_the_switch", timers["scope/portal/cooling"] ~= nil
+        local carried = share.transfer_data or {}
+        local look = carried["player/spawner/look"] or {}
+        local body = carried.Transform or {}
+        local stood = body.translation or {}
+        local turned = body.rotation and Quat.to_euler(body.rotation, "YXZ")[1]
+        local cam = carried.camera or {}
+        T("H7_leaving_it_takes_its_whole_camera_its_body_and_its_look_relative_to_the_body",
+            cam.yaw == 0.5 and cam.pitch == -0.1 and cam.distance == 6 and cam.height == 2
+                and near(look.yaw or 0, 0.3) and near(look.pitch or 0, -0.1) and near(stood.x or 0, 2)
+                and near(stood.z or 0, -3) and turned ~= nil and near(turned, 0.2) and share.stable_id == "player_8",
+            string.format("camera=%s,%s,%s,%s look=%s,%s at=%s,%s turned=%s", tostring(cam.yaw), tostring(cam.pitch),
+                tostring(cam.distance), tostring(cam.height), tostring(look.yaw), tostring(look.pitch),
+                tostring(stood.x), tostring(stood.z), tostring(turned)))
+        local timers = carried.cooldown or {}
+        T("H9_the_look_and_body_join_what_the_portal_put_in_the_switch", timers["scope/portal/cooling"] ~= nil
             and timers["scope/portal/cooling"].remaining == 3, "")
+        -- Back in place, as core re-promotes a mirror that was this world's player.
+        repromote = true
+        step("back in place")
+
+    elseif phase == "back in place" and clock > 0.3 then
+        local seven = world:query({
+            with = { "player", "core/net/owner" },
+            optional = { "camera", "player/spawner/look" },
+        })
+        local p
+        for _, e in ipairs(seven) do
+            if e:get("core/net/owner").client_id == 7 then p = e end
+        end
+        local cam = p and p:get("camera") or {}
+        T("H11_back_in_place_the_camera_stays_whole_its_yaw_the_look_turned_by_the_facing_and_the_look_goes",
+            near(cam.yaw or 0, 1.25) and near(cam.pitch or 0, 0.1) and cam.distance == 7 and cam.height == 3
+                and not p:has("player/spawner/look"),
+            string.format("yaw=%s pitch=%s distance=%s look=%s", tostring(cam.yaw), tostring(cam.pitch),
+                tostring(cam.distance), tostring(p:has("player/spawner/look"))))
         phase = "done"
         suite.finish("PlayerHandoverSuite")
     end

@@ -12,6 +12,8 @@ local Assets = require("bevy::asset::Assets")
 local Mesh = require("bevy::mesh::Mesh")
 local StandardMaterial = require("bevy::pbr::StandardMaterial")
 local Sphere = require("bevy::math::primitives::Sphere")
+local Quat = require("bevy::math::Quat")
+local Vec3 = require("bevy::math::Vec3")
 
 -- One ask per placed portal, its child: it goes with the portal, and root loads each target once
 -- however many ask. `hosted` makes root ask once more after a `not-running` refusal. A portal
@@ -126,11 +128,16 @@ end):in_set("scope/portal/view/client")
 -- here) shows nothing through a portal to it.
 -- A `"none"` carrier without a mesh of its own shows the world on its children's: a glTF node's
 -- primitives are its children.
+-- A door (`at`, on a named node) shows the target from its place there: its stencils name the
+-- place, the door's world transform and its view. The insert replaces the stencil whole, which
+-- drops the `ref` and `vm` core wrote, so it is written only when one of these differs. A
+-- transform read before the door's first propagation is the identity, so the frame follows the
+-- door's `GlobalTransform` changes.
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal", "scope/portal/view" },
         without = { "placement" },
-        optional = { "core/compositor/stencil", "scope/portal/locked", "Mesh3d", "Children" },
+        optional = { "core/compositor/stencil", "scope/portal/locked", "Mesh3d", "Children", "Name", "GlobalTransform" },
     }],
     Query[{ with = { "core/world/observe/answer", "WorldMirror" } }],
     Query[{
@@ -153,17 +160,35 @@ app:add_systems(Update, {
     local me = rows:iter()[1]
     local scope = me and me:get("core/world/status").scope_key
     for _, p in ipairs(portals:iter()) do
-        local target = p:get("scope/portal").target
+        local portal = p:get("scope/portal")
+        local target = portal.target
         local answer = target ~= scope and said[target] or nil
         local surfaces = { p }
         if p:get("scope/portal/view").mode == "none" and not p:has("Mesh3d") then
             surfaces = meshes:iter_many(p:get("Children") or {})
         end
+        local shown = { world = target }
+        if portal.at ~= nil and p:has("Name") and p:has("GlobalTransform") then
+            local t = p.GlobalTransform:compute_transform()
+            shown.at = portal.at
+            shown.view = p:get("Name").name
+            shown.frame = {
+                translation = { x = t.translation.x, y = t.translation.y, z = t.translation.z },
+                rotation = { x = t.rotation.x, y = t.rotation.y, z = t.rotation.z, w = t.rotation.w },
+                scale = { x = t.scale.x, y = t.scale.y, z = t.scale.z },
+            }
+        end
         if answer ~= nil and answer.state == "allowed" then
             for _, s in ipairs(surfaces) do
                 local stencil = s:get("core/compositor/stencil")
-                if not (stencil and stencil.world == target) then
-                    commands:entity(s:id()):insert({ ["core/compositor/stencil"] = { world = target } })
+                local frame = stencil and stencil.frame
+                local framed = frame == shown.frame or (frame ~= nil and shown.frame ~= nil
+                    and Vec3.abs_diff_eq(frame.translation, shown.frame.translation, 1e-4)
+                    and Quat.abs_diff_eq(frame.rotation, shown.frame.rotation, 1e-4)
+                    and Vec3.abs_diff_eq(frame.scale, shown.frame.scale, 1e-4))
+                if not (stencil and stencil.world == target and stencil.at == shown.at and stencil.view == shown.view
+                        and framed) then
+                    commands:entity(s:id()):insert({ ["core/compositor/stencil"] = shown })
                 end
             end
             if p:has("scope/portal/locked") then
@@ -201,10 +226,15 @@ end):in_set("scope/portal/view/client")
             with = { "core/world/status", "WorldShared" },
             without = { "WorldMirror" },
         }],
-    }, function(touched, moved, rows)
+        Query[{
+            ["or"] = { changed = { "scope/portal", "GlobalTransform" } },
+            with = { "scope/portal", "scope/portal/view" },
+            without = { "placement" },
+        }],
+    }, function(touched, moved, rows, doors)
         local me = rows:iter()[1]
         local watching = me ~= nil and me:get("core/world/status").observer == true
-        return not watching and not (touched:is_empty() and moved:is_empty())
+        return not watching and not (touched:is_empty() and moved:is_empty() and doors:is_empty())
     end)
 
 -- The `"3d"` look, in PostUpdate so it sees this frame's lock: red and glowing while being placed,

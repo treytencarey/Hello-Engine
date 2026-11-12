@@ -4,13 +4,20 @@
 -- welcomed. Walking in is `collision_trigger` as the trigger mod writes it. A portal being placed
 -- is spawned as `git/panel`'s server half spawns one.
 --
---   P6  one link to each target running here, however many portals name it
---   P7  a welcomed link marks the portals to its target hosted
+--   P6  one identity link to each target running here, however many portals name it
+--   P25 a door (`at`, on a named node) to the same target gets a link of its own, its child, named
+--       for the door, carrying `at` and the door's world transform; a door to a target whose
+--       link is not welcomed gets its own too
+--   P7  a welcomed link marks the portals to its target hosted, and a door's own welcomed link
+--       (its place found there) marks the door
 --   P8  a link that is not welcomed marks nothing
 --   P9  a target with no row here gets no link and no mark
---   P10 a player walking into a hosted portal is handed over to its target
---   P11 with no welcomed link to the target, nothing
+--   P10 a player walking into a hosted portal is handed over to its target, on its identity link
+--   P26 a player walking into a door is handed over on the door's link
+--   P11 with no welcomed link to the target, the player is handed over all the same (core releases
+--       it), on its join's link, a portal's and a door's alike
 --   P12 a peer mirror, or a player with no share, is not handed over
+--   P27 a portal's return end does not copy its `at`
 --   P13 a portal still being placed has no body and no trigger; a placed one has a fixed ball body
 --       of radius 1.2 and a trigger
 --   P14 ...and the one being placed gets them once placed
@@ -30,6 +37,7 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
+local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("ScopePortalServerSuite")
 local T = suite.assert_test
@@ -61,17 +69,21 @@ local function named(world, marker, name)
     end
 end
 
-local function links(world, scope)
+-- The identity links to `scope`, or with `door` its doors' links.
+local function links(world, scope, door)
     local out = {}
     for _, e in ipairs(world:query({ with = { "core/net/peer/link" }, optional = { "core/net/peer/link/state", "ChildOf" } })) do
-        if e:get("core/net/peer/link").scope_key == scope then out[#out + 1] = e end
+        local cfg = e:get("core/net/peer/link")
+        if cfg.scope_key == scope and (cfg.at ~= nil) == (door == true) then out[#out + 1] = e end
     end
     return out
 end
 
+local function near(a, b) return type(a) == "number" and math.abs(a - b) < 1e-3 end
+
 -- Core's switch takes `core/net/peer/switch` off in the same frame when it finds no peer for the
 -- target, so what the portal asked for is read on its edge, right after the portal's systems.
-local switched, carried = {}, {}
+local switched, carried, via = {}, {}, {}
 app:add_systems(Update, {
     Query[{
         added = { "core/net/peer/switch" },
@@ -82,6 +94,7 @@ app:add_systems(Update, {
     for _, r in ipairs(rows:iter()) do
         local name = r:get("zz/portal/h").name
         switched[name] = r:get("core/net/peer/switch").target_scope
+        via[name] = r:get("core/net/peer/switch").link
         local share = r:get("core/net/peer/share") or {}
         local timers = share.transfer_data and share.transfer_data.cooldown or {}
         carried[name] = timers["scope/portal/cooling"] and timers["scope/portal/cooling"].remaining
@@ -143,27 +156,58 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             for _, p in ipairs({ { "l1", OTHER }, { "l2", OTHER }, { "l4", FOURTH }, { "l5", THIRD } }) do
                 commands:spawn({ ["scope/portal"] = { target = p[2] }, ["core/net/sync"] = false, ["zz/portal/p"] = { name = p[1] } })
             end
+            -- Map doors, as a scene's nodes are: named, never placed. The listener answers as OTHER
+            -- in this VM, so the place its doors name stands here.
+            commands:spawn({ Name = "zz_arrival", Transform = { translation = { x = 0, y = 1, z = -9 } },
+                ["core/net/sync"] = false })
+            commands:spawn({ ["scope/portal"] = { target = OTHER, at = "zz_arrival" }, Name = "zz_door",
+                Transform = { translation = { x = 8, y = 0, z = 3 }, rotation = Quat.from_rotation_y(math.pi / 2) },
+                ["core/net/sync"] = false, ["zz/portal/p"] = { name = "door_o" } })
+            commands:spawn({ ["scope/portal"] = { target = FOURTH, at = "zz_arrival" }, Name = "zz_door4",
+                Transform = { translation = { x = -8, y = 0, z = 3 } },
+                ["core/net/sync"] = false, ["zz/portal/p"] = { name = "door_4" } })
             step("linking")
         end
 
     elseif phase == "linking" then
         local up = links(world, OTHER)[1]
         local st = up and up:get("core/net/peer/link/state")
-        if (st and st.welcomed and named(world, "zz/portal/p", "l1"):has("scope/portal/hosted")) or clock > 8 then
+        if (st and st.welcomed and named(world, "zz/portal/p", "l1"):has("scope/portal/hosted")
+                and named(world, "zz/portal/p", "door_o"):has("scope/portal/hosted")) or clock > 8 then
             local others, fourths = links(world, OTHER), links(world, FOURTH)
             local cfg = others[1] and others[1]:get("core/net/peer/link")
             local l1, l2 = named(world, "zz/portal/p", "l1"), named(world, "zz/portal/p", "l2")
             link_holder = others[1] and others[1]:get("ChildOf")
-            T("P6_one_link_to_each_running_target",
+            T("P6_one_identity_link_to_each_running_target",
                 #others == 1 and #fourths == 1 and cfg.name == "peer_to_127.0.0.1_47730" and cfg.port == bound_port
                     and cfg.server_addr == "127.0.0.1" and (link_holder == l1:id() or link_holder == l2:id()),
                 string.format("links to OTHER=%d FOURTH=%d", #others, #fourths))
+            local door_o, door_4 = named(world, "zz/portal/p", "door_o"), named(world, "zz/portal/p", "door_4")
+            local doors, doors4 = links(world, OTHER, true), links(world, FOURTH, true)
+            local dcfg = doors[1] and doors[1]:get("core/net/peer/link")
+            local frame = dcfg and dcfg.frame or {}
+            local at = frame.translation or {}
+            local yaw = frame.rotation and Quat.to_euler(frame.rotation, "YXZ")[1]
+            local d4 = doors4[1] and doors4[1]:get("core/net/peer/link")
+            T("P25_a_door_gets_a_link_of_its_own_named_for_it_with_at_and_its_frame",
+                #doors == 1 and dcfg.name == "peer_to_" .. OTHER .. "@zz_door" and dcfg.at == "zz_arrival"
+                    and dcfg.port == bound_port and doors[1]:get("ChildOf") == door_o:id()
+                    and near(at.x, 8) and near(at.y, 0) and near(at.z, 3) and near(yaw, math.pi / 2)
+                    and #doors4 == 1 and d4.name == "peer_to_" .. FOURTH .. "@zz_door4"
+                    and doors4[1]:get("ChildOf") == door_4:id(),
+                string.format("door links to OTHER=%d FOURTH=%d name=%s at=%s frame=%s,%s,%s yaw=%s", #doors, #doors4,
+                    tostring(dcfg and dcfg.name), tostring(dcfg and dcfg.at), tostring(at.x), tostring(at.y),
+                    tostring(at.z), tostring(yaw)))
             T("P7_a_welcomed_link_marks_its_portals_hosted",
                 l1:has("scope/portal/hosted") and l2:has("scope/portal/hosted"), "")
+            local dst = doors[1] and doors[1]:get("core/net/peer/link/state")
+            T("P7_a_door_s_own_welcomed_link_marks_the_door",
+                door_o:has("scope/portal/hosted") and dst ~= nil and dst.welcomed, "")
             local l4 = named(world, "zz/portal/p", "l4")
             local st4 = fourths[1] and fourths[1]:get("core/net/peer/link/state")
             T("P8_a_link_not_welcomed_marks_nothing",
-                not l4:has("scope/portal/hosted") and not (st4 and st4.welcomed), "")
+                not l4:has("scope/portal/hosted") and not door_4:has("scope/portal/hosted")
+                    and not (st4 and st4.welcomed), "")
             T("P9_a_target_with_no_row_gets_no_link",
                 #links(world, THIRD) == 0 and not named(world, "zz/portal/p", "l5"):has("scope/portal/hosted"), "")
             local placing = named(world, "zz/portal/p", "a1")
@@ -172,7 +216,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                     and not placing:has("collision_trigger"),
                 string.format("body=%s collider=%s trigger=%s", tostring(placing:get("RigidBody3d")),
                     tostring(placing:has("Collider3d")), tostring(placing:has("collision_trigger"))))
-            for _, h in ipairs({ { "h7", 17, true, false }, { "h8", 18, true, false }, { "hm", 19, true, true }, { "hn", 20, false, false } }) do
+            -- A portal a player dropped, hosted, that came to carry an `at`.
+            commands:spawn({
+                ["scope/portal"] = { target = OTHER, at = "zz_arrival" },
+                Transform = { translation = { x = 12, y = 0, z = -4 } },
+                ["core/net/sync"] = {
+                    Transform = { authority = "server" },
+                    ["scope/portal"] = { authority = "server" },
+                },
+                ["zz/portal/p"] = { name = "dropped_at" },
+            })
+            for _, h in ipairs({
+                { "h7", 17, true, false }, { "h8", 18, true, false }, { "hm", 19, true, true }, { "hn", 20, false, false },
+                { "hp", 25, true, false }, { "hdo", 26, true, false }, { "hd4", 27, true, false },
+            }) do
                 commands:spawn({
                     player = { client_id = h[2], spawn_index = 0 },
                     ["core/net/owner"] = { client_id = h[2] },
@@ -197,22 +254,42 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "players" and clock > 0.3 and named(world, "zz/portal/h", "hc"):has("scope/portal/cooling") then
         local function id(name) return named(world, "zz/portal/h", name):id() end
         local walked = { id("h7"), id("hm"), id("hn"), id("hc") }
-        commands:entity(named(world, "zz/portal/p", "a1"):id()):insert({
-            collision_trigger = { entered = { id("h8") }, exited = {}, inside = { id("h8") } },
-        })
+        local function walk(portal, who)
+            commands:entity(named(world, "zz/portal/p", portal):id()):insert({
+                collision_trigger = { entered = { id(who) }, exited = {}, inside = { id(who) } },
+            })
+        end
+        walk("a1", "hp")
         commands:entity(named(world, "zz/portal/p", "l1"):id()):insert({
             collision_trigger = { entered = walked, exited = {}, inside = walked },
         })
-        commands:entity(named(world, "zz/portal/p", "l4"):id()):insert({
-            collision_trigger = { entered = { id("h8") }, exited = {}, inside = { id("h8") } },
-        })
+        walk("l4", "h8")
+        walk("door_o", "hdo")
+        walk("door_4", "hd4")
         step("walked")
 
     elseif phase == "walked" and clock > 0.3 then
-        T("P10_walking_into_a_hosted_portal_hands_the_player_over", switched.h7 == OTHER, tostring(switched.h7))
+        T("P10_walking_into_a_hosted_portal_hands_the_player_over_on_its_identity_link",
+            switched.h7 == OTHER and via.h7 == "peer_to_127.0.0.1_47730", tostring(switched.h7) .. " " .. tostring(via.h7))
         T("P10b_taking_a_3_s_crossing_timer_in_transfer_data", carried.h7 == 3, tostring(carried.h7))
-        T("P11_with_no_welcomed_link_nothing", switched.h8 == nil, tostring(switched.h8))
-        T("P19_a_portal_still_being_placed_hands_nobody_over", switched.h8 == nil, tostring(switched.h8))
+        T("P26_walking_into_a_door_hands_the_player_over_on_the_door_s_link",
+            switched.hdo == OTHER and via.hdo == "peer_to_" .. OTHER .. "@zz_door" and carried.hdo == 3,
+            tostring(switched.hdo) .. " " .. tostring(via.hdo))
+        T("P11_with_no_welcomed_link_it_is_handed_over_all_the_same_on_its_join_s_link",
+            switched.h8 == FOURTH and via.h8 == "peer_to_127.0.0.1_47732"
+                and switched.hd4 == FOURTH and via.hd4 == "peer_to_" .. FOURTH .. "@zz_door4",
+            string.format("portal: %s %s door: %s %s", tostring(switched.h8), tostring(via.h8), tostring(switched.hd4),
+                tostring(via.hd4)))
+        T("P19_a_portal_still_being_placed_hands_nobody_over", switched.hp == nil, tostring(switched.hp))
+        local ends, kept = 0, false
+        for _, e in ipairs(world:query({ with = { "scope/portal/return", "scope/portal" } })) do
+            local back = e:get("scope/portal")
+            ends = ends + 1
+            kept = kept or back.at ~= nil
+        end
+        T("P27_a_return_end_does_not_copy_the_portal_s_at",
+            ends == 1 and not kept and named(world, "zz/portal/p", "dropped_at"):has("scope/portal/hosted"),
+            string.format("return ends=%d with at=%s", ends, tostring(kept)))
         T("P12_a_peer_mirror_or_a_player_without_a_share_is_not_handed_over",
             switched.hm == nil and switched.hn == nil, "")
         T("P17_a_player_still_cooling_is_not_handed_over", switched.hc == nil
