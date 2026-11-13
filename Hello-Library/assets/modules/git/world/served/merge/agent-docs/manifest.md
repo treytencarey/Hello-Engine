@@ -6,7 +6,7 @@ exposes: [git/world/served/merge, git/world/served/merge/result]
 
 # git/world/served/merge
 
-Git's three-way text merge, as core's resolver for a file both the player and the world changed. When the tree's provider of edit facts says it merges (`core/library/edit/provider { merges = true }`, which `git/world/served/status` sets), core asks for each such file with `core/library/merge { path, mine, theirs }`, `theirs` being the world's version, kept in the held store. This mod asks root to merge it into the player's checkout, and root writes only a merge with no conflict. Core keeps the newer copy whenever this mod says no. No conflict markers are ever written. World mods never touch files: core's watcher sees the file change. A sub-mod of `git/world/served`, which adds and removes it.
+Git's three-way text merge, as core's resolver for a file both the player and the world changed. When the tree's provider of edit facts says it merges (`core/library/edit/provider { merges = true }`, which `git/world/served/status` sets), core asks for each such file with `core/library/merge { path, mine, theirs }`, `theirs` being the world's version, kept in the held store. This mod asks root to merge it into the player's checkout, and root writes only a merge with no conflict. Core keeps the newer copy whenever this mod says no. No conflict markers are ever written: a file holding them would count as the player's newer copy and go up into the world. World mods never touch files: core's watcher sees the file change. A sub-mod of `git/world/served`, which adds and removes it.
 
 ## Components
 
