@@ -1,9 +1,11 @@
 -- edit/notice: an upload in flight, said on screen.
 --
--- E1  an upload of more than one chunk gets one card, which says it waits for the world
+-- E0  an upload still waiting for the world shows nothing for its first 10 s
+-- E1  ...and then one card, which says it waits for the world
 -- E2  sending, its line says how much the world holds and its bar fills to match
 -- E3  an upload of one chunk gets no card
 -- E4  the upload answered, its card fades out
+-- E5  an upload that streams within its first 10 s is shown at once
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -21,8 +23,9 @@ app:add_systems(Startup, { Commands }, function(commands)
     library = commands:spawn({ ["zz/library"] = {} }):id()
 end)
 
+--- The shown card for `path` (a notification), or nil.
 local function card(world, path)
-    for _, e in ipairs(world:query({ with = { "edit/notice/card" }, optional = { "notification", "notification/fade", "Children" } })) do
+    for _, e in ipairs(world:query({ with = { "edit/notice/card", "notification" }, optional = { "notification/fade", "Children" } })) do
         if e:get("edit/notice/card").path == path then return e end
     end
 end
@@ -43,6 +46,10 @@ local function row(world, path)
         if e:get("core/library/upload").path == path then return e end
     end
 end
+local function upload(commands, path, bytes, total, state)
+    commands:spawn({ ["core/library/upload"] = { path = path, bytes = bytes, total = total, got = 0, state = state },
+        ChildOf = library, ["core/net/sync"] = false })
+end
 
 local phase, clock = "spawn", 0
 app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
@@ -55,15 +62,16 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     if phase == "done" then return end
 
     if phase == "spawn" then
-        commands:spawn({ ["core/library/upload"] = { path = "maps/lab.glb", bytes = 10 * MB, total = 100, got = 0, state = "waiting" },
-            ChildOf = library, ["core/net/sync"] = false })
-        commands:spawn({ ["core/library/upload"] = { path = "small.lua", bytes = 100, total = 1, got = 0, state = "waiting" },
-            ChildOf = library, ["core/net/sync"] = false })
+        upload(commands, "maps/lab.glb", 10 * MB, 100, "waiting")
+        upload(commands, "small.lua", 100, 1, "waiting")
+        step("early")
+    elseif phase == "early" and clock > 3 then
+        T("E0_a_waiting_upload_shows_nothing_at_first", card(world, "maps/lab.glb") == nil, "a card after 3 s")
         step("waiting")
     elseif phase == "waiting" then
         local s = said(world, "maps/lab.glb")
-        if not s and clock < 5 then return end
-        T("E1_a_card_says_it_waits_for_the_world", s == "Waiting for the world to accept maps/lab.glb…", tostring(s))
+        if not s and clock < 12 then return end
+        T("E1_after_its_wait_a_card_says_it_waits_for_the_world", s == "Waiting for the world to accept maps/lab.glb…", tostring(s))
         T("E3_a_one_chunk_upload_gets_no_card", card(world, "small.lua") == nil, "a card for small.lua")
         row(world, "maps/lab.glb"):patch({ ["core/library/upload"] = { got = 50, state = "sending" } })
         step("sending")
@@ -80,6 +88,16 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         local fading = c == nil or c:has("notification/fade") or (c:get("notification") or {}).dismiss == true
         if not fading and clock < 5 then return end
         T("E4_the_card_fades_when_the_upload_is_answered", fading, "card still shown")
+        upload(commands, "maps/quick.glb", 2 * MB, 20, "waiting")
+        step("quick")
+    elseif phase == "quick" and clock > 0.5 then
+        row(world, "maps/quick.glb"):patch({ ["core/library/upload"] = { got = 10, state = "sending" } })
+        step("quick shown")
+    elseif phase == "quick shown" then
+        local s = said(world, "maps/quick.glb")
+        if not s and clock < 3 then return end
+        T("E5_an_upload_streaming_early_is_shown_at_once", s ~= nil and s:find("Sending", 1, true) ~= nil and clock < 3,
+            tostring(s) .. string.format(" after %.1f s", clock))
         finish()
     end
 end):in_set("zz/edit_notice_flow")

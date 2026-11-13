@@ -1,16 +1,18 @@
 -- edit/notice: what is happening to this player's edits, said on screen. Core states each upload in
 -- flight as `core/library/upload { path, bytes, total, got, state }`, a child of its library; this
 -- mod shows one card for each that is more than one chunk: "Waiting for the world to accept <path>…"
--- while the world's write policy decides, then "Sending <path>" with a bar of what the world holds.
--- Local UI: never synced. A world's client boot (or a mod it uses) adds `edit/notice` to an entity
--- of its own, and the cards go with it.
+-- once the world's write policy has been deciding for 10 s, and "Sending <path>" with a bar of what
+-- the world holds as soon as it streams. Local UI: never synced. A world's client boot (or a mod it
+-- uses) adds `edit/notice` to an entity of its own, and the cards go with it.
 --
 -- edit/notice = {}
 --
--- edit/notice/card = { path = <the upload's path> }: the card, a notification. Its children are its
--- line (`Text`) and the bar's track, whose child is the fill, `edit/notice/bar = {}`.
+-- edit/notice/card = { path = <the upload's path> }: the card. While it waits to be shown it carries
+-- the `cooldown` timer `edit/notice/wait`; shown, it is a notification, and its children are its line
+-- (`Text`) and the bar's track, whose child is the fill, `edit/notice/bar = {}`.
 
 local MB = 1024 * 1024
+local WAIT = 10
 
 --- "x / y MB" for `got` of `total` chunks of a `bytes` long file.
 local function amount(row)
@@ -30,7 +32,30 @@ local function filled(row)
     return math.min(100, (row.got or 0) / row.total * 100)
 end
 
--- Each upload of more than one chunk gets a card, and its line and bar follow the row. A one-chunk
+--- Makes card `id` a notification showing `row`.
+local function show(commands, id, row)
+    commands:entity(id):insert({ notification = { width = 320 } })
+    commands:spawn({
+        Text = { text = line(row) },
+        TextFont = { font_size = 11 },
+        ["ui/style"] = { text = "text" },
+        ChildOf = id,
+    })
+    local track = commands:spawn({
+        Node = { width = { Percent = 100 }, height = { Px = 4 } },
+        ["ui/style"] = { background = "border" },
+        ChildOf = id,
+    }):id()
+    commands:spawn({
+        ["edit/notice/bar"] = {},
+        Node = { width = { Percent = filled(row) }, height = { Px = 4 } },
+        ["ui/style"] = { background = "accent" },
+        ChildOf = track,
+    })
+end
+
+-- Each upload of more than one chunk gets a card. A card for an upload still waiting is shown once
+-- its timer ends; one streaming is shown at once, and its line and bar follow the row. A one-chunk
 -- upload is answered within a frame or two, so it shows nothing.
 app:add_systems(Update, {
     Query[{
@@ -55,27 +80,14 @@ app:add_systems(Update, {
                 end
             end
             if card == nil then
-                local id = commands:spawn({
-                    ["edit/notice/card"] = { path = row.path },
-                    notification = { width = 320 },
-                }):id()
-                commands:spawn({
-                    Text = { text = line(row) },
-                    TextFont = { font_size = 11 },
-                    ["ui/style"] = { text = "text" },
-                    ChildOf = id,
-                })
-                local track = commands:spawn({
-                    Node = { width = { Percent = 100 }, height = { Px = 4 } },
-                    ["ui/style"] = { background = "border" },
-                    ChildOf = id,
-                }):id()
-                commands:spawn({
-                    ["edit/notice/bar"] = {},
-                    Node = { width = { Percent = filled(row) }, height = { Px = 4 } },
-                    ["ui/style"] = { background = "accent" },
-                    ChildOf = track,
-                })
+                local id = commands:spawn({ ["edit/notice/card"] = { path = row.path } }):id()
+                if row.state == "sending" then
+                    show(commands, id, row)
+                else
+                    commands:entity(id):insert({ cooldown = { ["edit/notice/wait"] = { remaining = WAIT } } })
+                end
+            elseif not card:has("notification") then
+                if row.state == "sending" then show(commands, card:id(), row) end
             else
                 for _, t in ipairs(texts:iter_many_mut(card:get("Children") or {})) do
                     t:get_mut("Text"):set_if_neq(line(row))
@@ -95,16 +107,40 @@ end):in_set("edit/notice")
         return not touched:is_empty()
     end)
 
--- An upload answered or dropped: its card fades out.
+-- A card's wait is over: shown, if its upload is still waiting and the card is not shown yet.
+app:add_systems(Update, {
+    Query[{ removed = { "edit/notice/wait" }, with = { "edit/notice/card" }, optional = { "notification" } }],
+    Query[{ with = { "core/library/upload" }, without = { "WorldMirror" } }],
+    Commands,
+}, function(waited, rows, commands)
+    for _, c in ipairs(waited:iter()) do
+        if not c:has("notification") then
+            for _, r in ipairs(rows:iter()) do
+                local row = r:get("core/library/upload")
+                if row.path == c:get("edit/notice/card").path then
+                    show(commands, c:id(), row)
+                    break
+                end
+            end
+        end
+    end
+end):in_set("edit/notice")
+
+-- An upload answered or dropped: its card fades out, or goes if it was never shown.
 app:add_systems(Update, {
     Query[{ with = { "core/library/upload" }, without = { "WorldMirror" } }],
-    Query[{ with = { "edit/notice/card", Mut["notification"] } }],
-}, function(rows, cards)
+    Query[{ with = { "edit/notice/card" }, optional = { Mut["notification"] } }],
+    Commands,
+}, function(rows, cards, commands)
     local live = {}
     for _, r in ipairs(rows:iter()) do live[r:get("core/library/upload").path] = true end
     for _, c in ipairs(cards:iter_mut()) do
-        if not live[c:get("edit/notice/card").path] and not c:get("notification").dismiss then
-            c:get_mut("notification").dismiss = true
+        if not live[c:get("edit/notice/card").path] then
+            if not c:has("notification") then
+                commands:entity(c:id()):despawn()
+            elseif not c:get("notification").dismiss then
+                c:get_mut("notification").dismiss = true
+            end
         end
     end
 end):in_set("edit/notice")
