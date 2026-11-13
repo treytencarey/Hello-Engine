@@ -12,14 +12,15 @@
 -- S6  git/world/served taken off an entity that stays takes both with it
 -- S7  turning them on asks the player's root for the writer proof once, under the carrier, naming
 --     no nonce
--- S8  ...and the answered request is closed
+-- S8  ...and the answered request stays open (it owns the ref); the checkout moving away closes it
 -- S9  a reload of the mod asks at most once: the sign-in system's first run sees root's identity as
 --     changed, and the sub-mods are not added again
 -- S10 signed out (root's identity without `site_user_id`), turning them on asks for no proof
 -- S12 signing in while they are on asks for the proof once
 -- S13 signing in while root's join record is still bound to the anonymous player asks for no proof:
 --     root would push the ref the anonymous ticket names
--- S14 ...and root's join record bound to the player afterwards (the new ticket) asks for it once
+-- S14 ...and root's join record bound to the player afterwards (the new ticket) asks for it once,
+--     replacing the open request
 -- S11 in both-mode (root's `core/process`), turning them on asks for no proof
 -- S15 signed in, turning them on shows no notice
 -- S16 signed out, turning them on says once that edits stay local, in a `git/merge/notice`
@@ -78,9 +79,9 @@ app:add_systems(First, {
     end
 end):in_set("zz/served_count")
 
--- How many proof requests have opened. One is open at a time here, as the suite answers each at
--- once, so each opening is a new ask.
-local pushes, push_open, push_parent, push_nonce = 0, false, nil, nil
+-- How many proof requests have opened: each new request entity is a new ask.
+local pushes, push_parent, push_nonce = 0, nil, nil
+local known_requests = {}
 
 local function proof_requests(world)
     return world:query({
@@ -114,10 +115,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local watching = c ~= nil and c:has("git/world/served/status") and c:has("git/world/served/merge")
     local stopped = c ~= nil and not c:has("git/world/served/status") and not c:has("git/world/served/merge")
     local requests = proof_requests(world)
-    if #requests > 0 and not push_open then
-        pushes, push_parent, push_nonce = pushes + 1, requests[1]:get("ChildOf"), requests[1]:get("vault/git").nonce
+    for _, r in ipairs(requests) do
+        if not known_requests[r:id()] then
+            known_requests[r:id()] = true
+            pushes, push_parent, push_nonce = pushes + 1, r:get("ChildOf"), r:get("vault/git").nonce
+        end
     end
-    push_open = #requests > 0
     -- Root's answer, as the suite stands in for it.
     for _, r in ipairs(requests) do
         if not r:has("vault/git/proof/reply") then
@@ -146,14 +149,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("%d notice(s), the last '%s'", notices, tostring(notice_text)))
         step("s8")
 
-    elseif phase == "s8" and (#requests == 0 or clock > 5) then
-        T("S8_the_answered_proof_request_is_closed", #requests == 0, #requests .. " still open")
+    elseif phase == "s8" and clock > 1 then
+        local answered = #requests == 1 and requests[1]:has("vault/git/proof/reply")
+        T("S8_the_answered_proof_request_stays_open", answered, #requests .. " open")
         edits(false)
         step("s2")
 
-    elseif phase == "s2" and (stopped or clock > 5) then
+    elseif phase == "s2" and ((stopped and #requests == 0) or clock > 5) then
         T("S2_the_checkout_moving_away_takes_it_off", stopped,
             "both must go when this world's tree stops being the checkout")
+        T("S8b_the_checkout_moving_away_closes_the_proof_request", #requests == 0, #requests .. " still open")
         edits(true)
         step("s3")
 
@@ -212,8 +217,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("s14")
 
     elseif phase == "s14" and ((pushes > seen_pushes and clock > 1) or clock > 5) then
-        T("S14_the_join_bound_to_the_player_asks_once", pushes == seen_pushes + 1,
-            string.format("%d asked", pushes - seen_pushes))
+        T("S14_the_join_bound_to_the_player_asks_once", pushes == seen_pushes + 1 and #requests == 1,
+            string.format("%d asked, %d open", pushes - seen_pushes, #requests))
         commands:spawn({ ["core/process"] = { mode = "both" }, ["zz/served/process"] = {}, ["core/net/sync"] = false })
         edits(false)
         step("s11 off")

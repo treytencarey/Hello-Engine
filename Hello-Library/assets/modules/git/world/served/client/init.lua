@@ -9,7 +9,9 @@
 -- git/world/served = {}
 
 -- The world's host lets this player write once it finds the proof ref in the world's repository.
--- Root pushes it for the world it joined, naming nothing from here.
+-- Root pushes it for the world it joined, naming nothing from here. The request owns the ref: root
+-- deletes the ref when the request goes, so it stays open while the checkout is this world's, and
+-- is replaced when root's join record changes (a new ticket names a new ref).
 local function push(commands, carrier)
     commands:spawn({
         ["vault/git/proof"] = {},
@@ -66,7 +68,7 @@ end
 app:add_systems(Update, {
     Query[{
         with = { "git/world/served" },
-        optional = { "git/world/served/status", "git/world/served/merge" },
+        optional = { "git/world/served/status", "git/world/served/merge", "Children" },
     }],
     Query[{ with = { "core/library" }, without = { "WorldMirror" } }],
     Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
@@ -82,8 +84,9 @@ app:add_systems(Update, {
         with = { "core/world/join" },
         optional = { "WorldMirror" },
     }],
+    Query[{ with = { "vault/git/proof", "Request" } }],
     Commands,
-}, function(carriers, libraries, statuses, identities, processes, joins, commands)
+}, function(carriers, libraries, statuses, identities, processes, joins, open, commands)
     local me = statuses:iter()[1]
     local status = me and me:get("core/world/status")
     local scope = status and status.scope_key
@@ -118,6 +121,9 @@ app:add_systems(Update, {
             end
         elseif not holds and (status_on or merge_on) then
             commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice")
+            for _, ask in ipairs(open:iter_many(e:get("Children") or {})) do
+                commands:entity(ask:id()):try_despawn()
+            end
             print(string.format("[GIT/WORLD/SERVED] '%s' is no longer your checkout: stopped watching", tostring(scope)))
         end
     end
@@ -134,7 +140,8 @@ end):in_set("git/world/served")
 -- Signing in while the sub-mods are on asks too, once root's join record is bound to the player:
 -- on the identity's edge when the record already is (a launch signed in), else on the record's
 -- edge when root has the new ticket. Root's identity changes for other reasons while signed in (a
--- linked account), so a push already open is not asked again.
+-- linked account), so on its edge alone a push already open is not asked again. Root's join record
+-- changing replaces the open request: the old ref names the old ticket.
 app:add_systems(Update, {
     Query[{
         ["or"] = { added = { "core/world/join" }, changed = { "core/player/identity", "core/world/join" } },
@@ -159,13 +166,21 @@ app:add_systems(Update, {
     Query[{ with = { "vault/git/proof", "Request" } }],
     Commands,
 }, function(touched, identities, joins, processes, carriers, open, commands)
-    local by_root = false
+    local by_root, joined = false, false
     for _, row in ipairs(touched:iter()) do
-        if from_root(row) then by_root = true end
+        if from_root(row) then
+            by_root = true
+            if row:has("core/world/join") then joined = true end
+        end
     end
-    if not by_root or not provable(identities, joins, processes) then return end
+    if not by_root then return end
+    local proving = provable(identities, joins, processes)
     for _, e in ipairs(carriers:iter()) do
-        if open:iter_many(e:get("Children") or {})[1] == nil then
+        local asks = open:iter_many(e:get("Children") or {})
+        if joined then
+            for _, ask in ipairs(asks) do commands:entity(ask:id()):try_despawn() end
+        end
+        if proving and (joined or asks[1] == nil) then
             push(commands, e)
             print("[GIT/WORLD/SERVED] signed in: asking root for the writer proof")
         end
@@ -182,19 +197,23 @@ end):in_set("git/world/served")
         return not touched:is_empty()
     end)
 
--- git/world/served was taken off an entity that stays: the sub-mods it added go. A despawned
--- carrier is in the `removed` rows too, which `try_remove` passes by.
+-- git/world/served was taken off an entity that stays: the sub-mods it added go, and its proof
+-- request. A despawned carrier is in the `removed` rows too, which `try_remove` passes by.
 app:add_systems(Update, {
     Query[{ removed = { "git/world/served" } }],
+    Query[{ with = { "vault/git/proof", "Request", "ChildOf" } }],
     Commands,
-}, function(removed, commands)
+}, function(removed, open, commands)
     for _, e in ipairs(removed:iter()) do
         commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice")
+        for _, ask in ipairs(open:iter()) do
+            if ask:get("ChildOf") == e:id() then commands:entity(ask:id()):try_despawn() end
+        end
     end
 end)
 
 -- A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so the
--- reply's own edge is all this runs on.
+-- reply's own edge is all this runs on. The request stays: it owns the ref.
 app:add_systems(Update, {
     Query[{
         added = { "vault/git/proof/reply" },
@@ -202,13 +221,11 @@ app:add_systems(Update, {
         without = { "RequestFrom", "WorldMirror" },
     }],
     Query[{ with = { "git/world/served" } }],
-    Commands,
-}, function(replies, carriers, commands)
+}, function(replies, carriers)
     for _, row in ipairs(replies:iter()) do
         if carriers:contains(row:get("ChildOf")) then
             local reply = row:get("vault/git/proof/reply")
             print(string.format("[GIT/WORLD/SERVED] proof push: %s %s", tostring(reply.status), tostring(reply.message or "")))
-            commands:entity(row:id()):despawn()
         end
     end
 end):in_set("git/world/served")
