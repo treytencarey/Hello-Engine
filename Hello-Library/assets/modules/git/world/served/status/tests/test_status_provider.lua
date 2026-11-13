@@ -7,6 +7,9 @@
 -- P3  the checkout on another commit of the world's branch: no marker
 -- P4  root's identity signed out: paused
 -- P5  git/world/served/status taken off the carrier: the marker goes
+-- P6  a fact whose file the world changed too (`git/world/head/dirty` on this player) says `both`;
+--     one the world did not change does not
+-- P7  the world's list changing restates `both`
 
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
@@ -39,6 +42,17 @@ local function scan(commands, head, branch)
     commands:spawn({ ["vault/git/status/reply"] = { status = "ok", head = head, branch = branch, entries = {} },
         ChildOf = carrier })
 end
+local dirty_entity
+local function scan_with(commands, entries)
+    commands:spawn({ ["vault/git/status/reply"] = { status = "ok", head = SHA, branch = "main", entries = entries },
+        ChildOf = carrier })
+end
+local function fact(world, path)
+    for _, e in ipairs(world:query({ with = { "core/library/edit" } })) do
+        local f = e:get("core/library/edit")
+        if f.path == path then return f end
+    end
+end
 local function said(m)
     if m == false then return "none" end
     if m == nil then return "no carrier" end
@@ -61,6 +75,21 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         step("p1")
     elseif phase == "p1" and ((m and not m.paused) or clock > 5) then
         T("P1_on_the_worlds_commit_and_branch_the_marker_is_active", m and m.ref == SCOPE and not m.paused, said(m))
+        dirty_entity = commands:spawn({ ["git/world/head/dirty"] = { ["modules/a.lua"] = "write" }, ["core/net/sync"] = false }):id()
+        step("p6 dirty")
+    elseif phase == "p6 dirty" and clock > 0.3 then
+        scan_with(commands, { { path = "assets/modules/a.lua", op = "write" }, { path = "assets/modules/b.lua", op = "write" } })
+        step("p6")
+    elseif phase == "p6" and ((fact(world, "modules/a.lua") and fact(world, "modules/b.lua")) or clock > 5) then
+        local a, b = fact(world, "modules/a.lua") or {}, fact(world, "modules/b.lua") or {}
+        T("P6_a_file_the_world_changed_too_is_both", a.both == true and b.both == nil,
+            "a=" .. tostring(a.both) .. " b=" .. tostring(b.both))
+        commands:entity(dirty_entity):insert({ ["git/world/head/dirty"] = { ["modules/b.lua"] = "write" } })
+        step("p7")
+    elseif phase == "p7" and (((fact(world, "modules/b.lua") or {}).both == true) or clock > 5) then
+        local a, b = fact(world, "modules/a.lua") or {}, fact(world, "modules/b.lua") or {}
+        T("P7_the_worlds_list_changing_restates_both", a.both == nil and b.both == true,
+            "a=" .. tostring(a.both) .. " b=" .. tostring(b.both))
         scan(commands, SHA, "elsewhere")
         step("p2")
     elseif phase == "p2" and ((m and m.paused) or clock > 5) then

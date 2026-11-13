@@ -138,8 +138,11 @@ app:add_systems(Update, {
     Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
     Query[{ with = { "git/world/head" } }],
     Query[{ with = { "git/world/served/status" }, optional = { "core/library/edit/provider" } }],
+    Query[{ with = { "git/world/head/dirty" } }],
     Commands,
-}, function(replies, carriers, edits, statuses, heads, markers, commands)
+}, function(replies, carriers, edits, statuses, heads, markers, dirties, commands)
+    local mine = dirties:iter()[1]
+    local dirty = mine and mine:get("git/world/head/dirty") or {}
     local me = statuses:iter()[1]
     local scope = me and me:get("core/world/status").scope_key
     local head = heads:iter()[1]
@@ -178,6 +181,9 @@ app:add_systems(Update, {
                             fact.mtime = now.mtime
                             print("[GIT/WORLD/SERVED/STATUS] " .. tostring(now.op) .. ": " .. path)
                         end
+                        if fact.both ~= (dirty[path] ~= nil or nil) then
+                            fact.both = dirty[path] ~= nil or nil
+                        end
                     elseif was ~= nil and not moved then
                         -- A revert leaves git's list and is still the person's change: the committed
                         -- version goes up once more, and the next scan drops it. A file git listed as
@@ -198,7 +204,10 @@ app:add_systems(Update, {
                         -- Kept through a reload of this mod, so the edit's `seq` runs on; it goes
                         -- with the carrier.
                         commands:spawn({
-                            ["core/library/edit"] = { path = path, seq = 1, deleted = now.op == "delete", mtime = now.mtime },
+                            ["core/library/edit"] = {
+                                path = path, seq = 1, deleted = now.op == "delete", mtime = now.mtime,
+                                both = dirty[path] ~= nil or nil,
+                            },
                             ["core/net/sync"] = false,
                             ["core/script/owner"] = false,
                             ChildOf = carrier:id(),
@@ -246,6 +255,28 @@ app:add_systems(Update, {
 end):in_set("git/world/served/status")
     :run_if({ Query[{ added = { "core/library/edit/refused" } }] }, function(refused)
         return not refused:is_empty()
+    end)
+
+-- The world's live edits changed (`git/world/head/dirty`, on this player's own entity, which only a
+-- writer is sent): each fact says again whether the world changed its file too.
+app:add_systems(Update, {
+    Query[{ with = { "git/world/head/dirty" } }],
+    Query[{ with = { "git/world/served/status" }, without = { "WorldMirror" }, optional = { "Children" } }],
+    Query[{ with = { Mut["core/library/edit"] } }],
+}, function(dirties, carriers, edits)
+    local mine = dirties:iter()[1]
+    local dirty = mine and mine:get("git/world/head/dirty") or {}
+    for _, carrier in ipairs(carriers:iter()) do
+        for _, e in ipairs(edits:iter_many_mut(carrier:get("Children") or {})) do
+            local fact = e:get("core/library/edit")
+            local both = dirty[fact.path] ~= nil or nil
+            if fact.both ~= both then e:get_mut("core/library/edit").both = both end
+        end
+    end
+end):in_set("git/world/served/status")
+    :run_if({ Query[{ ["or"] = { added = { "git/world/head/dirty" }, changed = { "git/world/head/dirty" },
+        removed = { "git/world/head/dirty" } } }] }, function(touched)
+        return not touched:is_empty()
     end)
 
 -- Signed out, this mod asks nothing, and an edit could only be refused: the tree is paused (nothing

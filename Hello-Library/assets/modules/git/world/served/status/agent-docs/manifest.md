@@ -1,5 +1,5 @@
 ---
-depends_on: [vault/git, core/process, git/merge/notice, notification]
+depends_on: [vault/git, core/process, git/merge/notice, notification, git/world/head]
 conflicts_with: []
 exposes: [git/world/served/status, git/world/served/status/scan]
 ---
@@ -43,7 +43,7 @@ The carrier also says this mod states its tree's edit facts, with core's `core/l
 - the checkout on another branch: `{ ref, paused = true }`. Nothing goes up and nothing lands until the checkout is back, as before the home re-roots after a branch switch;
 - the checkout on another commit of the world's branch: no marker, and core keeps its own guard.
 
-Signed out (root's `core/player/identity` without `site_user_id`), it says `paused = true` on the identity's edge. The marker goes with this mod. Each fact also carries `mtime`, the file's time in milliseconds as root read it.
+Signed out (root's `core/player/identity` without `site_user_id`), it says `paused = true` on the identity's edge. The marker goes with this mod. Each fact also carries `mtime`, the file's time in milliseconds as root read it, and `both = true` when the world changed the same file too: when it is in `git/world/head/dirty`, the world's live edits, which the server sends to a writer's own player. The facts restate `both` when that list changes.
 
 ## A refused edit
 
@@ -56,6 +56,7 @@ When this world refuses an edit that was not stale, core marks the path's edit `
 | Update | `git/world/served/status` | While a carrier exists, outside both-mode and while signed in: asks root every 2 s, one request at a time. A request root has not answered in 10 s is closed and asked again |
 | Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, sets the provider marker, and closes the request. Runs on the reply's edge |
 | Update | `git/world/served/status` | On a changed root `core/player/identity`, signed out: the provider marker paused |
+| Update | `git/world/served/status` | On an added, changed or removed `git/world/head/dirty`: each fact under a carrier restates `both` |
 | Update | `git/world/served/status` | On `added core/library/edit/refused`, for an edit under a carrier: the `REFUSED` notice |
 | Update | none | When `git/world/served/status` is taken off an entity that stays: despawns its edits and its open request, and takes the provider marker off |
 
