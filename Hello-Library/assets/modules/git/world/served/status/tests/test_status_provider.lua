@@ -74,7 +74,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         scan(commands, SHA, "main")
         step("p1")
     elseif phase == "p1" and ((m and not m.paused) or clock > 5) then
-        T("P1_on_the_worlds_commit_and_branch_the_marker_is_active", m and m.ref == SCOPE and not m.paused, said(m))
+        T("P1_on_the_worlds_commit_and_branch_the_marker_is_active", m and m.ref == SCOPE and not m.paused and m.merges == true, said(m))
         dirty_entity = commands:spawn({ ["git/world/head/dirty"] = { ["modules/a.lua"] = "write" }, ["core/net/sync"] = false }):id()
         step("p6 dirty")
     elseif phase == "p6 dirty" and clock > 0.3 then

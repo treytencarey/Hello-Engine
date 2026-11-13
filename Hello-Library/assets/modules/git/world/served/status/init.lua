@@ -37,7 +37,8 @@ local function provider_for(scope, branch, head, world_sha)
         return { ref = scope, paused = true }
     end
     if head ~= nil and world_sha ~= nil and head == world_sha then
-        return { ref = scope }
+        -- git/world/served/merge rides the same carrier: git's text merge answers core's requests.
+        return { ref = scope, merges = true }
     end
     return nil
 end
@@ -45,7 +46,7 @@ end
 --- Puts `want` on the carrier as its provider marker, or takes it off, when it differs from `have`.
 local function set_provider(commands, carrier, have, want)
     local same = (have == nil and want == nil) or (have ~= nil and want ~= nil and have.ref == want.ref
-        and (have.paused == true) == (want.paused == true))
+        and (have.paused == true) == (want.paused == true) and (have.merges == true) == (want.merges == true))
     if same then return end
     if want == nil then
         commands:entity(carrier):try_remove("core/library/edit/provider")

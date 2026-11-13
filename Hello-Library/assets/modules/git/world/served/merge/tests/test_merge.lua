@@ -1,358 +1,121 @@
--- test_merge.lua: git/world/served/merge asks root to merge each held version into the player's checkout, and
--- root merges with real git in a repository this suite makes, the tree of a client world root
--- starts. Core's held state is a stand-in the suite moves, and so is the player's edit.
+-- test_merge.lua: git/world/served/merge as core's resolver for a file both sides changed. The suite
+-- stands in for core (its `core/library/merge` requests) and for root (each `vault/git/merge`
+-- answer); `test_merge_flow` runs the whole path against root's real git.
 --
--- M1  edits that do not overlap: root writes both into the file, the record says clean, and the
---     path's edit names the held version (`on`)
--- M2  edits that overlap: git's markers in the file, a CONFLICT notice, and no `on`
--- M3  a binary both sides changed: a COULD NOT MERGE notice, the file untouched, and no `on`
--- M4  a binary only the player changed: theirs is not written, and the edit names the held version
--- M5  a binary only the world changed: root writes the held version
--- M6  one request per held version, each asking root to apply it, and each closed once answered
--- M7  a new held version is merged again, and a path no longer held loses its record
--- M8  an edit stated after the answer names the held version too
--- M9  a world root did not start is never answered: after the timeout its record says failed, a
---     notice says so, and the request is closed
--- M10 git/world/served/merge taken off an entity that stays: its open request and its record go
+-- M1  core's request asks root once to merge it, applying only a clean merge, with a record
+-- M2  root's clean merge answers core "merged"
+-- M3  a conflict answers "no", and so does a failure
+-- M4  core's request gone: its record and root's open request go
+-- M5  root's silence answers "no" after 30 s
 
 require("modules/core/init.lua")
-require("modules/core/world/creator.lua")
 require("modules/core/mod_registry/init.lua")
-
 local helpers = require("modules/core/test_helpers.lua")
+local Time = require("bevy::time::Time")
 
 local suite = helpers.create_suite("GitMergeSuite")
 local T = suite.assert_test
 
+local carrier
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    carrier = commands:spawn({ ["git/world/served/merge"] = {}, ["core/net/sync"] = false }):id()
 end)
 
-local ROOT = "test_fixtures/zz-merge"
-local CK = "assets/" .. ROOT
-local OUT = "assets/test_fixtures/zz-merge.out"
-local H = { 3999999911, 3999999912, 3999999913, 3999999914, 3999999915, 3999999916, 3999999917 }
-
-local BASE = "a\nb\nc\nd\ne\nf\ng\nh\ni\n"
-local MINE = "A\nb\nc\nd\ne\nf\ng\nh\ni\n"
-local THEIRS = "a\nb\nc\nd\ne\nf\ng\nh\nI\n"
-local MERGED = "A\nb\nc\nd\ne\nf\ng\nh\nI\n"
-local THEIRS2 = "a\nb\nc\nd\nE\nf\ng\nh\nI\n"
-local MERGED2 = "A\nb\nc\nd\nE\nf\ng\nh\nI\n"
-
-local seen = helpers.shared_state("GitMergeSeen", { notices = 0, asks = 0, open = 0, stage = 0 })
-
-local BOOT = [==[
-local seen = require("modules/core/test_helpers.lua").shared_state("GitMergeSeen", {})
-
-app:add_systems(Startup, { Commands }, function(commands)
-    seen.booted = true
-    commands:spawn({ ["core/library"] = { ref = "zz:launch", root = "", order = 2 }, ["core/net/sync"] = false })
-    commands:spawn({
-        ["core/library"] = { ref = "zz:merge", root = "@ROOT", order = 0, edits = true },
-        ["core/library/upstream"] = { held = {} },
-        ["zz/merge/checkout"] = { stage = 0 },
-        ["core/net/sync"] = false,
-    })
-    for _, path in ipairs({ "clean.txt", "clash.txt", "blob.bin", "mine.bin" }) do
-        commands:spawn({ ["core/library/edit"] = { path = path, seq = 1 }, ["core/net/sync"] = false })
-    end
-    commands:spawn({ ["git/world/served/merge"] = {} })
-end)
-
-app:add_systems(Update, {
-    Query[{ with = { Mut["core/library/upstream"], Mut["zz/merge/checkout"] } }],
+-- Root's stand-in: each request under the carrier answered as `answers[path]` says, once; root's
+-- own refusal (the suite is root) is taken off first. A path with no answer waits.
+local answers, asked = {}, {}
+app:add_systems(First, {
+    Query[{ with = { "vault/git/merge", "vault/git", "Request" }, optional = { "vault/git/merge/reply" } }],
     Commands,
-}, function(checkouts, commands)
-    for _, lib in ipairs(checkouts:iter_mut()) do
-        if lib:get("zz/merge/checkout").stage ~= seen.stage then
-            lib:get_mut("zz/merge/checkout").stage = seen.stage
-            if seen.stage == 1 then
-                lib:get_mut("core/library/upstream").held = {
-                    ["clean.txt"] = @H1, ["clash.txt"] = @H2, ["blob.bin"] = @H3, ["mine.bin"] = @H4,
-                    ["theirs.bin"] = @H5,
-                }
-            elseif seen.stage == 2 then
-                lib:get_mut("core/library/upstream").held = {
-                    ["clean.txt"] = @H6, ["clash.txt"] = @H2, ["blob.bin"] = @H3, ["theirs.bin"] = @H5,
-                }
-            end
+}, function(requests, commands)
+    for _, r in ipairs(requests:iter()) do
+        local v = r:get("vault/git")
+        if not asked[r:id()] then
+            asked[r:id()] = true
+            asked[v.path] = (asked[v.path] or 0) + 1
+            asked["apply:" .. v.path] = v.apply
+            asked["hash:" .. v.path] = v.hash
+        end
+        local reply = r:has("vault/git/merge/reply") and r:get("vault/git/merge/reply") or nil
+        if reply and reply.status == "refused" then
+            commands:entity(r:id()):remove("vault/git/merge/reply")
+        elseif not reply and answers[v.path] then
+            commands:entity(r:id()):insert({ ["vault/git/merge/reply"] = { status = answers[v.path], message = "zz" } })
+            answers[v.path] = nil
         end
     end
-    if seen.late_edit and not seen.late_spawned then
-        seen.late_spawned = true
-        commands:spawn({ ["core/library/edit"] = { path = "theirs.bin", seq = 1 }, ["core/net/sync"] = false })
-    end
-end)
+end):in_set("zz/merge_root")
 
-app:add_systems(Update, {
-    Query[{ added = { "git/merge/notice" } }],
-    Query[{ added = { "vault/git/merge" }, with = { "vault/git" }, without = { "RequestFrom" } }],
-    Query[{ with = { "vault/git/merge", "vault/git" }, without = { "RequestFrom" } }],
-    Query[{ with = { "git/world/served/merge/result" } }],
-    Query[{ with = { "core/library/edit" } }],
-}, function(notices, asked, open, records, edits)
-    for _, e in ipairs(notices:iter()) do
-        local n = e:get("git/merge/notice")
-        seen.notices = seen.notices + 1
-        seen["notice_" .. seen.notices] = tostring(n.title) .. ": " .. tostring(n.text)
-    end
-    for _, e in ipairs(asked:iter()) do
-        local v = e:get("vault/git")
-        seen.asks = seen.asks + 1
-        seen["ask_" .. seen.asks] = tostring(v.path) .. " " .. tostring(v.hash) .. " apply=" .. tostring(v.apply)
-    end
-    seen.open = #open:iter()
-    local list = {}
-    for _, e in ipairs(records:iter()) do
-        local r = e:get("git/world/served/merge/result")
-        list[#list + 1] = tostring(r.key) .. "=" .. tostring(r.status) .. ":" .. tostring(r.hash)
-    end
-    table.sort(list)
-    seen.records = table.concat(list, ",")
-    for _, e in ipairs(edits:iter()) do
-        local d = e:get("core/library/edit")
-        seen["on_" .. d.path] = tostring(d.on)
-    end
-end)
-]==]
-
-local st = { phase = "clean", t = 0 }
-local queue, pid = {}, nil
-
-local function git(...)
-    local args = {
-        "-C", CK, "-c", "user.name=zz", "-c", "user.email=zz@zz.invalid",
-        "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false",
-    }
-    for _, a in ipairs({ ... }) do args[#args + 1] = a end
-    queue[#queue + 1] = { args = args }
+local function ask(commands, path, theirs)
+    return commands:spawn({ ["core/library/merge"] = { path = path, mine = 1, theirs = theirs }, ["core/net/sync"] = false }):id()
 end
-
-local function write(path, text)
-    queue[#queue + 1] = { write = { path, text } }
-end
-
-local function read(path)
-    local ok, text = pcall(read_file_bytes, path)
-    return ok and text or nil
-end
-
-local function held(n) return ".hello/held/" .. H[n] end
-
-local function finish()
-    pcall(os.remove_dir, CK)
-    pcall(os.remove, OUT)
-    for n = 1, #H do pcall(os.remove, held(n)) end
-    suite.finish("GIT_MERGE")
-    st.phase = "done"
-end
-
-local function has_record(entry) return ("," .. tostring(seen.records) .. ","):find("," .. entry .. ",", 1, true) ~= nil end
-
-local function busy()
-    if pid ~= nil then
-        if process_alive(pid) then return true end
-        local code = process_exit_code(pid)
-        kill_process(pid)
-        pid = nil
-        local step = table.remove(queue, 1)
-        if code ~= 0 then
-            T("M_git_" .. tostring(step.args[#step.args]), false, read(OUT) or "")
+local function reply(world, path)
+    for _, e in ipairs(world:query({ with = { "core/library/merge" }, optional = { "core/library/merge/reply" } })) do
+        if e:get("core/library/merge").path == path then
+            return e:has("core/library/merge/reply") and e:get("core/library/merge/reply").status or false
         end
     end
-    while queue[1] and queue[1].write do
-        local w = table.remove(queue, 1).write
-        write_file_bytes(w[1], w[2])
+end
+local function records(world, path)
+    local n = 0
+    for _, e in ipairs(world:query({ with = { "git/world/served/merge/result" } })) do
+        if e:get("git/world/served/merge/result").key == path then n = n + 1 end
     end
-    if queue[1] == nil then return false end
-    pid = spawn_process("git", queue[1].args, { output = OUT })
-    return true
+    return n
+end
+local function open(world, path)
+    local n = 0
+    for _, e in ipairs(world:query({ with = { "vault/git/merge", "vault/git" } })) do
+        if e:get("vault/git").path == "assets/" .. path then n = n + 1 end
+    end
+    return n
 end
 
-local function root_view(world)
-    local view = { records = {}, waiting = 0, open = 0, notices = {}, under = {} }
-    for _, e in ipairs(world:query({
-        with = { "git/world/served/merge/result", "ChildOf" },
-        without = { "WorldMirror" },
-    })) do
-        local r = e:get("git/world/served/merge/result")
-        if r.status == nil then
-            view.waiting = view.waiting + 1
-        else
-            view.records[#view.records + 1] = tostring(r.key) .. "=" .. tostring(r.status) .. ":" .. tostring(r.hash)
-        end
-        view.under[tostring(e:get("ChildOf"))] = (view.under[tostring(e:get("ChildOf"))] or 0) + 1
+local phase, clock, ids = "start", 0, {}
+app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, commands)
+    clock = clock + time:delta_secs()
+    local function step(p) phase, clock = p, 0 end
+    local function finish()
+        phase = "done"
+        suite.finish("GIT_MERGE")
     end
-    for _, e in ipairs(world:query({ with = { "vault/git/merge", "vault/git", "ChildOf" }, without = { "RequestFrom" } })) do
-        view.open = view.open + 1
-        view.under[tostring(e:get("ChildOf"))] = (view.under[tostring(e:get("ChildOf"))] or 0) + 1
-    end
-    for _, e in ipairs(world:query({ with = { "git/merge/notice" } })) do
-        view.notices[#view.notices + 1] = tostring(e:get("git/merge/notice").text)
-    end
-    return view
-end
+    if phase == "done" then return end
 
-app:add_systems(Update, { World, Commands }, function(world, commands)
-    if st.phase == "done" then return end
-    st.t = st.t + (world:delta_time() or 0)
-    if busy() then return end
-
-    if st.phase == "clean" then
-        pcall(os.remove_dir, CK)
-        queue[#queue + 1] = { args = { "init", "-q", "-b", "main", CK } }
-        write(CK .. "/assets/clean.txt", BASE)
-        write(CK .. "/assets/clash.txt", BASE)
-        write(CK .. "/assets/blob.bin", "\0\1\2\3")
-        write(CK .. "/assets/mine.bin", "\0\1\2\3")
-        write(CK .. "/assets/theirs.bin", "\0\1\2\3")
-        git("add", "-A")
-        git("commit", "-q", "--no-verify", "-m", "base")
-        write(CK .. "/assets/clean.txt", MINE)
-        write(CK .. "/assets/clash.txt", "a\nb\nc\nd\nMINE\nf\ng\nh\ni\n")
-        write(CK .. "/assets/blob.bin", "\0\1\2\9")
-        write(CK .. "/assets/mine.bin", "\0\1\2\9")
-        write(held(1), THEIRS)
-        write(held(2), "a\nb\nc\nd\nTHEIRS\nf\ng\nh\ni\n")
-        write(held(3), "\0\1\2\7")
-        write(held(4), "\0\1\2\3")
-        write(held(5), "\0\1\2\7")
-        write(held(6), THEIRS2)
-        write(held(7), "late\n")
-        st.phase = "boot"
-        return
-    end
-
-    if st.phase == "boot" then
-        local boot = BOOT:gsub("@ROOT", ROOT):gsub("@H(%d)", function(n) return tostring(H[tonumber(n)]) end)
-        write_file_bytes(CK .. "/assets/modules/world/boot/client/init.lua", boot)
-        commands:spawn({ ["core/world/instance"] = {
-            mode = "client", scope_key = "zz:merge", asset_root = ROOT, headless = true,
-        }, ["core/net/sync"] = false })
-        -- At root, which root did not start: its requests are never answered. Root keeps its own
-        -- tree on its ladder beside the stand-in.
-        commands:spawn({ ["core/library"] = { ref = "zz:launch", root = "", order = 2 }, ["core/net/sync"] = false })
-        commands:spawn({
-            ["core/library"] = { ref = "zz:merge-root", root = ROOT, order = 0, edits = true },
-            ["core/library/upstream"] = { held = { ["late.txt"] = H[7] } },
-            ["core/net/sync"] = false,
-        })
-        commands:spawn({ ["git/world/served/merge"] = {}, ["zz/merge/root"] = {}, ["core/net/sync"] = false })
-        st.phase, st.t = "booting", 0
-        return
-    end
-
-    if st.phase == "booting" then
-        if not seen.booted and st.t < 30 then return end
-        if st.t < 2 then return end
-        T("M0_the_world_booted", seen.booted == true, "the world never ran its boot")
-        local view = root_view(world)
-        T("M9_a_request_root_does_not_answer_stays_open_before_the_timeout",
-            view.open == 1 and view.waiting == 1 and #view.records == 0,
-            string.format("%d open, %d waiting, records %s", view.open, view.waiting, table.concat(view.records, ",")))
-        seen.stage = 1
-        st.phase, st.t = "answers", 0
-        return
-    end
-
-    if st.phase == "answers" then
-        local done = seen.asks >= 5 and seen.open == 0 and seen.notices >= 2
-            and seen["on_clean.txt"] == tostring(H[1]) and seen["on_mine.bin"] == tostring(H[4])
-        if not done and st.t < 40 then return end
-        if st.t < 1 then return end
-        T("M1_edits_that_do_not_overlap_are_written_merged_and_the_edit_is_on_the_held_version",
-            read(CK .. "/assets/clean.txt") == MERGED and has_record("clean.txt=clean:" .. H[1])
-            and seen["on_clean.txt"] == tostring(H[1]),
-            string.format("file %q, records %s, on %s", tostring(read(CK .. "/assets/clean.txt")),
-                tostring(seen.records), tostring(seen["on_clean.txt"])))
-        local clash = read(CK .. "/assets/clash.txt") or ""
-        local said = tostring(seen.notice_1) .. " | " .. tostring(seen.notice_2)
-        T("M2_edits_that_overlap_leave_markers_a_notice_and_no_on",
-            clash:find("<<<<<<< ", 1, true) ~= nil and clash:find("MINE", 1, true) ~= nil
-            and clash:find("THEIRS", 1, true) ~= nil and has_record("clash.txt=conflict:" .. H[2])
-            and said:find("CONFLICT: Someone else changed clash.txt", 1, true) ~= nil
-            and seen["on_clash.txt"] == "nil",
-            string.format("file %q, records %s, notices %s, on %s", clash, tostring(seen.records), said,
-                tostring(seen["on_clash.txt"])))
-        T("M3_a_binary_both_changed_fails_with_a_notice_untouched_and_no_on",
-            read(CK .. "/assets/blob.bin") == "\0\1\2\9" and has_record("blob.bin=failed:" .. H[3])
-            and said:find("COULD NOT MERGE: blob.bin", 1, true) ~= nil and seen["on_blob.bin"] == "nil",
-            string.format("records %s, notices %s, on %s", tostring(seen.records), said, tostring(seen["on_blob.bin"])))
-        T("M4_a_binary_only_you_changed_stands_and_the_edit_is_on_the_held_version",
-            read(CK .. "/assets/mine.bin") == "\0\1\2\9" and has_record("mine.bin=clean:" .. H[4])
-            and seen["on_mine.bin"] == tostring(H[4]),
-            string.format("records %s, on %s", tostring(seen.records), tostring(seen["on_mine.bin"])))
-        T("M5_a_binary_only_the_world_changed_is_written_with_the_held_version",
-            read(CK .. "/assets/theirs.bin") == "\0\1\2\7" and has_record("theirs.bin=clean:" .. H[5]),
-            string.format("records %s", tostring(seen.records)))
-        local asks = {}
-        for n = 1, seen.asks do asks[#asks + 1] = tostring(seen["ask_" .. n]) end
-        local all = table.concat(asks, " | ")
-        T("M6_one_request_per_held_version_each_applied_and_closed",
-            seen.asks == 5 and seen.open == 0 and select(2, all:gsub("apply=true", "")) == 5
-            and all:find("assets/clean.txt " .. H[1], 1, true) ~= nil,
-            string.format("%d asked (%s), %d open", seen.asks, all, seen.open))
-        seen.stage = 2
-        st.phase, st.t = "again", 0
-        return
-    end
-
-    if st.phase == "again" then
-        local done = seen.asks >= 6 and seen.open == 0 and has_record("clean.txt=clean:" .. H[6])
-            and seen["on_clean.txt"] == tostring(H[6]) and read(CK .. "/assets/clean.txt") == MERGED2
-        if not done and st.t < 30 then return end
-        if st.t < 1 then return end
-        T("M7_a_new_held_version_is_merged_again_and_a_path_no_longer_held_loses_its_record",
-            seen.asks == 6 and tostring(seen.ask_6):find("assets/clean.txt " .. H[6], 1, true) ~= nil
-            and read(CK .. "/assets/clean.txt") == MERGED2 and seen["on_clean.txt"] == tostring(H[6])
-            and has_record("clean.txt=clean:" .. H[6]) and not has_record("mine.bin=clean:" .. H[4]),
-            string.format("%d asked (last %s), file %q, records %s, on %s", seen.asks, tostring(seen.ask_6),
-                tostring(read(CK .. "/assets/clean.txt")), tostring(seen.records), tostring(seen["on_clean.txt"])))
-        seen.late_edit = true
-        st.phase, st.t = "late", 0
-        return
-    end
-
-    if st.phase == "late" then
-        if seen["on_theirs.bin"] ~= tostring(H[5]) and st.t < 10 then return end
-        T("M8_an_edit_stated_after_the_answer_is_on_the_held_version",
-            seen["on_theirs.bin"] == tostring(H[5]), "on " .. tostring(seen["on_theirs.bin"]))
-        st.phase, st.t = "timeout", 0
-        return
-    end
-
-    if st.phase == "timeout" then
-        local view = root_view(world)
-        if (#view.records == 0 or view.open > 0 or #view.notices == 0) and st.t < 45 then return end
-        T("M9_an_unanswered_request_fails_after_the_timeout_and_is_closed",
-             table.concat(view.records, ",") == "late.txt=failed:" .. H[7] and view.open == 0 and view.waiting == 0
-            and table.concat(view.notices, " | "):find("late.txt: git did not answer", 1, true) ~= nil,
-            string.format("records %s, %d open, notices %s", table.concat(view.records, ","), view.open,
-                table.concat(view.notices, " | ")))
-        commands:spawn({ ["git/world/served/merge"] = {}, ["zz/merge/second"] = {}, ["core/net/sync"] = false })
-        st.phase, st.t = "second", 0
-        return
-    end
-
-    if st.phase == "second" then
-        local second = world:query({ with = { "zz/merge/second" } })[1]
-        local view = root_view(world)
-        if (second == nil or (view.under[tostring(second:id())] or 0) < 2) and st.t < 10 then return end
-        st.second, st.second_had = second, second and view.under[tostring(second:id())] or 0
-        if second then commands:entity(second:id()):remove("git/world/served/merge") end
-        st.phase, st.t = "second off", 0
-        return
-    end
-
-    if st.phase == "second off" then
-        local view = root_view(world)
-        local left = st.second and view.under[tostring(st.second:id())] or 0
-        if left > 0 and st.t < 5 then return end
-        if st.t < 1 then return end
-        T("M10_taking_the_carrier_off_takes_its_open_request_and_record",
-            st.second_had == 2 and left == 0 and view.open == 0,
-            string.format("%d under it before, %d after, %d open", st.second_had, left, view.open))
+    if phase == "start" and clock > 0.3 then
+        ids.clean = ask(commands, "modules/clean.txt", 11)
+        ids.clash = ask(commands, "modules/clash.txt", 12)
+        ids.blob = ask(commands, "modules/blob.bin", 13)
+        ids.gone = ask(commands, "modules/gone.txt", 14)
+        ids.quiet = ask(commands, "modules/quiet.txt", 15)
+        step("asked")
+    elseif phase == "asked" and (asked["assets/modules/clean.txt"] or clock > 5) and clock > 1 then
+        T("M1_a_request_asks_root_once_applying_only_a_clean_merge",
+            asked["assets/modules/clean.txt"] == 1 and asked["apply:assets/modules/clean.txt"] == "clean"
+                and asked["hash:assets/modules/clean.txt"] == 11 and records(world, "modules/clean.txt") == 1,
+            string.format("asks=%s apply=%s records=%d", tostring(asked["assets/modules/clean.txt"]),
+                tostring(asked["apply:assets/modules/clean.txt"]), records(world, "modules/clean.txt")))
+        answers["assets/modules/clean.txt"] = "clean"
+        answers["assets/modules/clash.txt"] = "conflict"
+        answers["assets/modules/blob.bin"] = "failed"
+        step("answered")
+    elseif phase == "answered" and ((reply(world, "modules/clean.txt") and reply(world, "modules/clash.txt")
+        and reply(world, "modules/blob.bin")) or clock > 5) then
+        T("M2_a_clean_merge_answers_merged", reply(world, "modules/clean.txt") == "merged", tostring(reply(world, "modules/clean.txt")))
+        T("M3_a_conflict_or_a_failure_answers_no", reply(world, "modules/clash.txt") == "no" and reply(world, "modules/blob.bin") == "no",
+            tostring(reply(world, "modules/clash.txt")) .. "/" .. tostring(reply(world, "modules/blob.bin")))
+        commands:entity(ids.gone):despawn()
+        step("gone")
+    elseif phase == "gone" and ((records(world, "modules/gone.txt") == 0 and open(world, "modules/gone.txt") == 0) or clock > 5) then
+        T("M4_cores_request_gone_takes_the_record_and_roots_request", records(world, "modules/gone.txt") == 0
+            and open(world, "modules/gone.txt") == 0, "")
+        step("quiet")
+    elseif phase == "quiet" and (reply(world, "modules/quiet.txt") or clock > 35) then
+        T("M5_silence_answers_no_after_30_s", reply(world, "modules/quiet.txt") == "no", tostring(reply(world, "modules/quiet.txt")))
         finish()
     end
-end)
+    if phase ~= "done" and phase ~= "quiet" and clock > 10 then
+        T("M0_reached_" .. phase, false, "stuck")
+        finish()
+    end
+end):in_set("zz/merge_flow")
