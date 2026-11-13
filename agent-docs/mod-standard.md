@@ -311,7 +311,7 @@ return {
 
 ## Docs
 
-- Every mod has `agent-docs/manifest.md`: front matter (`depends_on`, `conflicts_with`, `exposes`), then sections Components, Systems (a table of schedule, set and purpose), Use (short examples) and Notes. It describes the mod as it is now, and changes with the code.
+- Every mod has `agent-docs/manifest.md`: front matter (`depends_on`, `conflicts_with`, `exposes`), then sections Components, Systems (a table of schedule, set and purpose), Use (short examples) and Notes. It describes the mod as it is now, and changes with the code. It holds no target and no "Today differs" note: what a mod is to become lives in its design and the engine's reference, and the manifest changes when the code does.
 
 ## Tests
 
@@ -431,7 +431,7 @@ Before a design is shown, check it against every item, and list the rules above 
 18. Green means zero Lua errors in the log.
 19. Nothing is shared through Lua memory, and no component holds a function.
 20. No mod names its children or filters on another mod's marker, and each mod does one job.
-21. The mod has its `agent-docs/manifest.md`, matching the code.
+21. The mod has its `agent-docs/manifest.md`, matching the code, with no target or "Today differs" note.
 22. Entities the mod spawns are children of what they belong to and carry the mod's own marker; no stored ids. An entity inside another mod's UI is spawned there on that UI's `added` edge, and again for a new one. A body that moves on its own is a root, never a child of something that moves. An entity that must outlive the entity spawning it is `["core/script/owner"] = false`.
 23. Tunable numbers are configuration on the mod's component, and query columns are read into locals first.
 24. A child reading its base's fields allows for them being missing until the base's mod has loaded.
