@@ -21,6 +21,7 @@ What is happening to this player's edits, said on screen. Core states each of th
 |----------|-----|---------|
 | Update | `edit/notice` | On an upload row's `added` or `changed` edge: a card for it (waiting: with its timer; streaming: shown), or its line and bar redrawn. "Waiting for the world to accept <path>…", then "Sending <path> — x / y MB" |
 | Update | `edit/notice` | When a card's `edit/notice/wait` ends: shows it, if its upload is still there and it is not shown yet |
+| Update | `edit/notice` | On an added `core/library/replaced` (a copy core replaced, `{ path, by, kept?, both? }`): a 20 s card, outliving this mod. `BOTH CHANGED` says whose newer copy is kept and that the other is in `.hello/held/<kept>`; `MERGED`, that both sides' changes were merged; `REPLACED`, that the world's newer copy replaced this one (yours in `.hello/held/<kept>`); `WENT UP`, that this newer copy went up |
 | Update | `edit/notice` | On an upload row's `removed` edge: each card whose upload is gone fades out (`notification.dismiss`), or goes if it was never shown |
 
 ## Notes

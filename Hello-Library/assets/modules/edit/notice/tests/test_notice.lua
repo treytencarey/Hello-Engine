@@ -6,6 +6,8 @@
 -- E3  an upload of one chunk gets no card
 -- E4  the upload answered, its card fades out
 -- E5  an upload that streams within its first 10 s is shown at once
+-- E6  a replacement core records gets a card that says which copy is kept and where the other is
+-- E7  a clean merge says the changes were merged
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -98,6 +100,19 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         if not s and clock < 3 then return end
         T("E5_an_upload_streaming_early_is_shown_at_once", s ~= nil and s:find("Sending", 1, true) ~= nil and clock < 3,
             tostring(s) .. string.format(" after %.1f s", clock))
+        commands:spawn({ ["core/library/replaced"] = { path = "maps/a.glb", by = "world", kept = 7, both = true },
+            ChildOf = library, ["core/net/sync"] = false })
+        commands:spawn({ ["core/library/replaced"] = { path = "m.lua", by = "me", both = true },
+            ChildOf = library, ["core/net/sync"] = false })
+        step("replaced")
+    elseif phase == "replaced" then
+        local lines = {}
+        for _, t in ipairs(world:query({ with = { "Text" } })) do lines[tostring(t:get("Text"))] = true end
+        local both = lines["maps/a.glb changed here and in the world. The world's newer copy is kept; yours is in .hello/held/7."]
+        local merged = lines["m.lua changed here and in the world; the changes were merged."]
+        if not (both and merged) and clock < 3 then return end
+        T("E6_a_replacement_says_which_copy_is_kept", both == true, "")
+        T("E7_a_clean_merge_says_so", merged == true, "")
         finish()
     end
 end):in_set("zz/edit_notice_flow")
