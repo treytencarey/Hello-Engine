@@ -9,10 +9,13 @@
 --     while it is open asks nothing more
 -- A3  proved allows both waiting writes and closes the check
 -- A4  bob's next write is allowed at once, with no new check
--- A5  absent soon after carol's first ask asks again while her write waits, and a push that lands
---     meanwhile allows it
--- A6  absent 10 s or more after frank's first ask denies his waiting write
+-- A5  absent soon after carol's first ask leaves her write waiting and asks again a moment later,
+--     and a push that lands meanwhile allows it
+-- A6  absent on every check: frank's write waits, root is asked again on a growing back-off (not
+--     on every answer), and at `proof_wait` (pinned to 6 s) his write is denied
 -- A6b ...and his next write asks again
+-- A10 gina on two connections, absent on both: her write is denied at `proof_wait` too, not left
+--     to core's ceiling
 -- A7  an anonymous author is denied, and so is a connection attested anonymous, with no check
 -- A8  bob re-attests: his record goes, and his next write asks with the new nonce
 -- A9  dave's connection goes while his check is open: the check goes with it, and his waiting write is
@@ -29,6 +32,9 @@ local N2 = "22222222-2222-4222-8222-222222222222"
 local N3 = "33333333-3333-4333-8333-333333333333"
 local N4 = "44444444-4444-4444-8444-444444444444"
 local N5 = "55555555-5555-4555-8555-555555555555"
+local N6 = "66666666-6666-4666-8666-666666666666"
+local N7 = "77777777-7777-4777-8777-777777777777"
+local WAIT = 6
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
@@ -62,15 +68,41 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["zz/authorize/player"] = { name = "frank" },
         ["core/net/sync"] = false,
     })
+    commands:spawn({
+        ["core/player/attest"] = { state = "attested", user = "gina", nonce = N6 },
+        ["core/net/connection"] = { client_id = 6 },
+        ["zz/authorize/player"] = { name = "gina" },
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({
+        ["core/player/attest"] = { state = "attested", user = "gina", nonce = N7 },
+        ["core/net/connection"] = { client_id = 7 },
+        ["zz/authorize/player"] = { name = "gina2" },
+        ["core/net/sync"] = false,
+    })
 end)
+
+-- The suite is root, so root's own vault/git judges each check as root's own request and refuses
+-- it. The suite stands in for root's answer instead: that refusal is taken off before the
+-- authorizer reads it.
+app:add_systems(First, {
+    Query[{ with = { "vault/git/proof/reply", "vault/git/proof", "Request" } }],
+    Commands,
+}, function(replies, commands)
+    for _, r in ipairs(replies:iter()) do
+        if r:get("vault/git/proof/reply").status == "refused" then
+            commands:entity(r:id()):remove("vault/git/proof/reply")
+        end
+    end
+end):in_set("zz/authorize_stand_in"):before("git/collaborators/authorize")
 
 -- nonce -> how many checks named it. One is open at a time per nonce, so a check not seen open
 -- before is a new ask: `added` on `vault/git/proof` fired twice per check here, as vault/git loads
 -- at root. A re-ask replaces its check in one frame.
 local asks, last_open = {}, {}
 
--- nonce -> the status root answers with, once
-local answers = {}
+-- nonce -> the status root answers with, once; `always`: every check of that nonce
+local answers, always = {}, {}
 
 local function player(world, name)
     for _, e in ipairs(world:query({
@@ -135,8 +167,15 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             answers[nonce] = nil
         end
     end
+    for nonce, status in pairs(always) do
+        for _, open in ipairs(checks(world, nonce)) do
+            if not open:has("vault/git/proof/reply") then
+                commands:entity(open:id()):insert({ ["vault/git/proof/reply"] = { status = status, message = "zz" } })
+            end
+        end
+    end
 
-    for _, nonce in ipairs({ N1, N2, N3, N4, N5 }) do
+    for _, nonce in ipairs({ N1, N2, N3, N4, N5, N6, N7 }) do
         local open = checks(world, nonce)[1]
         if open ~= nil and open:id() ~= last_open[nonce] then
             asks[nonce], last_open[nonce] = (asks[nonce] or 0) + 1, open:id()
@@ -146,7 +185,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local bob, carol, dave = player(world, "bob"), player(world, "carol"), player(world, "dave")
 
     if phase == "start" and clock > 0.2 then
-        commands:spawn({ ["git/collaborators/authorize"] = {}, ["zz/authorize/carrier"] = {}, ["core/net/sync"] = false })
+        commands:spawn({ ["git/collaborators/authorize"] = { proof_wait = WAIT }, ["zz/authorize/carrier"] = {}, ["core/net/sync"] = false })
         step("a1")
 
     elseif phase == "a1" then
@@ -210,25 +249,36 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         if asks[N5] == 1 and not seen.f1 then
             seen.f1 = true
             clock = 0
+            always[N5] = "absent"
         end
-        if seen.f1 and clock > 10.5 and not seen.f1_answered then
-            seen.f1_answered = true
-            answers[N5] = "absent"
-        end
-        if not reply(world, "f1") and clock < 14 then return end
+        if not reply(world, "f1") and clock < WAIT + 4 then return end
         local r = reply(world, "f1")
         local proof = player(world, "frank"):get("git/collaborators/authorize/proof")
-        T("A6_a_late_absent_denies_the_waiting_write",
-            r and r.verdict == "deny" and proof ~= nil and proof.state == "absent" and asks[N5] == 1,
-            string.format("verdict=%s proof=%s asks=%s", tostring(r and r.verdict), tostring(proof and proof.state),
-                tostring(asks[N5])))
+        T("A6_absent_waits_on_a_back_off_and_is_denied_at_the_wait",
+            r and r.verdict == "deny" and proof ~= nil and proof.state == "absent"
+                and asks[N5] >= 2 and asks[N5] <= 5 and clock >= WAIT - 1,
+            string.format("verdict=%s proof=%s asks=%s after %.1f s", tostring(r and r.verdict),
+                tostring(proof and proof.state), tostring(asks[N5]), clock))
+        seen.f_asks = asks[N5]
         write(commands, "f2", { role = "player", user = "frank" })
         step("a6b")
 
-    elseif phase == "a6b" and (asks[N5] == 2 or clock > 5) then
-        T("A6b_absent_is_asked_again_on_the_next_write", asks[N5] == 2 and reply(world, "f2") == false,
+    elseif phase == "a6b" and (asks[N5] == seen.f_asks + 1 or clock > 5) then
+        T("A6b_absent_is_asked_again_on_the_next_write", asks[N5] == seen.f_asks + 1 and reply(world, "f2") == false,
             string.format("asks=%s reply=%s", tostring(asks[N5]), tostring(reply(world, "f2"))))
-        answers[N5] = "absent"
+        always[N5] = nil
+        always[N6], always[N7] = "absent", "absent"
+        write(commands, "g1", { role = "player", user = "gina" })
+        step("a10")
+
+    elseif phase == "a10" then
+        if not reply(world, "g1") and clock < WAIT + 4 then return end
+        local r = reply(world, "g1")
+        T("A10_two_connections_absent_are_denied_at_the_wait_too",
+            r and r.verdict == "deny" and asks[N6] and asks[N7] and clock >= WAIT - 1,
+            string.format("verdict=%s asks=%s/%s after %.1f s", tostring(r and r.verdict), tostring(asks[N6]),
+                tostring(asks[N7]), clock))
+        always[N6], always[N7] = nil, nil
         seen.asks = total_asks()
         write(commands, "x1", nil)
         write(commands, "e1", { role = "player", user = "erin" })

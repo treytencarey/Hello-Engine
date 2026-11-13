@@ -12,12 +12,13 @@ Server only. `git/world/served`'s server half brings it as its base, and its cli
 
 ## Components
 
-- `git/collaborators/authorize = {}`: on the world's boot entity. The mod marks it `core/asset/authorizer = {}`, so core asks it about every write, and takes the marker off when the component leaves an entity that stays.
-- `git/collaborators/authorize/proof { user, nonce, state, why, asked_at }`: one per client, on the server's `core/net/connection`, where `core/player/attest` writes who the client is. Never synced. It lasts as long as the connection, whichever player entity the client controls or however often it respawns.
+- `git/collaborators/authorize = { proof_wait }`: on the world's boot entity. `proof_wait` (default 90) is how many seconds after the first ask an `absent` may still turn into `writer`. The mod marks it `core/asset/authorizer = {}`, so core asks it about every write, and takes the marker off when the component leaves an entity that stays.
+- `git/collaborators/authorize/proof { user, nonce, state, why, asked_at, next_at }`: one per client, on the server's `core/net/connection`, where `core/player/attest` writes who the client is. Never synced. It lasts as long as the connection, whichever player entity the client controls or however often it respawns.
   - `user` and `nonce`: the connection's `core/player/attest` when the check was asked;
   - `state`: `"checking"` (a check is open), `"writer"` (root found the ref), `"absent"` (root did not), `"denied"` (root answered `failed` or `refused`);
   - `why`: root's message, with `denied`;
-  - `asked_at`: this world's clock, in seconds, at the first ask for this nonce.
+  - `asked_at`: this world's clock, in seconds, at the first ask for this nonce;
+  - `next_at`: while `absent` may still turn into `writer`, when root is asked again; absent once `absent` is final.
   - It goes with the connection, and is removed when the connection's attestation changes: a new nonce, a refusal or an anonymous ticket.
 - The checks are children of the connection, so they go with it: `{ ["vault/git/proof"] = {}, ["vault/git"] = { nonce }, Request = {} }`, one open at a time per connection, each closed once answered or when the record goes.
 
@@ -29,10 +30,12 @@ Core spawns `core/asset/write { op, path, author, client }` for each write it ho
 - No such connection in this world: deny.
 - A connection whose proof is `writer`, for the same user and nonce: allow.
 - A check open: the write waits.
-- No proof, or `absent`: ask root once, and the write waits.
+- No proof: ask root once, and the write waits.
+- `absent` with a `next_at`: the write waits.
+- `absent` and final: a write that just arrived asks again from its own arrival; one that already waited is denied.
 - `denied`: deny.
 
-Root's answer settles every write waiting for that connection: `proved` allows them, anything else denies them. The player's push may still be landing, as the player's status uploads a dirty file as soon as its world turns edits on. So an `absent` less than 10 s after the first ask is asked again at once, and the writes keep waiting, inside core's 20 s hold; root's round trip spaces those asks. A later `absent` denies, and the next write asks again. A reply counts only on this mod's own check, for the nonce the record holds; a delivered or mirrored row is never read. Core refuses a write still waiting after its own timeout.
+Root's answer settles every write waiting for that connection: `proved` allows them, `failed` or `refused` denies them. `absent` is not a verdict while the player's push may still be landing (one measured live took about 30 s): the writes keep waiting, which core allows up to its ceiling, and root is asked again after as long as it has been since the first ask (about 1, 2, 4, 8, 16, 32 s), until `proof_wait`. Then `absent` is final for that nonce, and every write still waiting on it is denied, however many connections its author has. A later write asks again. A reply counts only on this mod's own check, for the nonce the record holds; a delivered or mirrored row is never read. Core refuses a write still waiting after its own timeout.
 
 ## Systems
 
@@ -40,7 +43,8 @@ Root's answer settles every write waiting for that connection: `proved` allows t
 |----------|-----|---------|
 | First | `git/collaborators/authorize` | On an added `git/collaborators/authorize`: marks the carrier `core/asset/authorizer` |
 | First | none | When `git/collaborators/authorize` leaves an entity that stays: takes the marker off |
-| First | `git/collaborators/authorize` | After `core/asset/server_ops`, before `core/asset/server_verdict`: reads root's answers on its checks, asking again on an early `absent`, then answers each waiting write or asks root. Runs on a new write, a reply or a removed record |
+| First | `git/collaborators/authorize` | After `core/asset/server_ops`, before `core/asset/server_verdict`: reads root's answers on its checks (an early `absent` sets `next_at`), then answers each waiting write or asks root. Runs on a new write, a reply, or a changed or removed record |
+| First | `git/collaborators/authorize` | Timed: a record `absent` whose `next_at` has come is asked of root again, or made final once `proof_wait` has passed. Runs only while one is due |
 | Update | `git/collaborators/authorize` | After `core/player/attest`: on a changed attestation, removes a record for another nonce, and its open check |
 
 ## Use
