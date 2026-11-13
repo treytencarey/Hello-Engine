@@ -12,7 +12,7 @@ Server only. `git/world/served`'s server half brings it as its base, and its cli
 
 ## Components
 
-- `git/collaborators/authorize = { proof_wait }`: on the world's boot entity. `proof_wait` (default 90) is how many seconds after the first ask an `absent` may still turn into `writer`. The mod marks it `core/asset/authorizer = {}`, so core asks it about every write, and takes the marker off when the component leaves an entity that stays.
+- `git/collaborators/authorize = { proof_wait }`: on the world's boot entity. `proof_wait` (default 90) is how many seconds after the first ask an `absent` may still turn into `writer`; a world's boot may set another. The mod marks it `core/asset/authorizer = {}`, so core asks it about every write, and takes the marker off when the component leaves an entity that stays.
 - `git/collaborators/authorize/proof { user, nonce, state, why, asked_at, next_at }`: one per client, on the server's `core/net/connection`, where `core/player/attest` writes who the client is. Never synced. It lasts as long as the connection, whichever player entity the client controls or however often it respawns.
   - `user` and `nonce`: the connection's `core/player/attest` when the check was asked;
   - `state`: `"checking"` (a check is open), `"writer"` (root found the ref), `"absent"` (root did not), `"denied"` (root answered `failed` or `refused`);
@@ -35,7 +35,7 @@ Core spawns `core/asset/write { op, path, author, client }` for each write it ho
 - `absent` and final: a write that just arrived asks again from its own arrival; one that already waited is denied.
 - `denied`: deny.
 
-Root's answer settles every write waiting for that connection: `proved` allows them, `failed` or `refused` denies them. `absent` is not a verdict while the player's push may still be landing (one measured live took about 30 s): the writes keep waiting, which core allows up to its ceiling, and root is asked again after as long as it has been since the first ask (about 1, 2, 4, 8, 16, 32 s), until `proof_wait`. Then `absent` is final for that nonce, and every write still waiting on it is denied, however many connections its author has. A later write asks again. A reply counts only on this mod's own check, for the nonce the record holds; a delivered or mirrored row is never read. Core refuses a write still waiting after its own timeout.
+Root's answer settles every write waiting for that connection: `proved` allows them, `failed` or `refused` denies them. `absent` is not a verdict while the player's push may still be landing (one measured live took about 30 s): the writes keep waiting, which core allows up to its ceiling, and root is asked again after as long as it has been since the first ask (about 1, 2, 4, 8, 16, 32 s), until `proof_wait`. Then `absent` is final for that nonce, and every write still waiting on it is denied, however many connections its author has. A later write asks again. A reply counts only on this mod's own check, for the nonce the record holds; a delivered or mirrored row is never read. Core refuses a write still waiting at its own ceiling (300 s), which only bounds a policy that never answers. The back-off replaced fixed asks under which one connection's `absent` was final at 10 s while two or more asked until core's old 20 s cut: the wait is now the same for any number of connections.
 
 ## Systems
 
