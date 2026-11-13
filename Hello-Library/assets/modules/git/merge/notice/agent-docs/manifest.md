@@ -6,7 +6,7 @@ exposes: [git/merge/notice, git/merge/notice/row]
 
 # git/merge/notice
 
-What happened to an edit, said to the person who made it: a plain-text `notification` with a title and a line. The git mods use it for a merge conflict, a merge that failed, a checkout behind its world, a world asked to pull, edits that stay local while the player is signed out, and an edit the world refused. Local UI: never synced.
+What happened to an edit, said to the person who made it: a plain-text `notification` with a title and a line. The git mods use it for a checkout behind its world, a world asked to pull, edits that stay local while the player is signed out, and an edit the world refused. A file both the player and the world changed is said by `edit/notice`, since that outcome is core's and needs no git. Local UI: never synced.
 
 ## Components
 
@@ -23,7 +23,7 @@ What happened to an edit, said to the person who made it: a plain-text `notifica
 
 ```lua
 commands:spawn({
-    ["git/merge/notice"] = { title = "CONFLICT", text = "Someone else changed a.txt too." },
+    ["git/merge/notice"] = { title = "REFUSED", text = "This world refused your edit of a.txt. It stays in your copy only." },
     notification = { timeout = 20 },
     ["core/script/owner"] = false,
 })
