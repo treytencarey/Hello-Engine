@@ -1,7 +1,7 @@
 ---
-depends_on: [vault/git, git/merge/notice, notification]
+depends_on: [vault/git, git/merge/notice, notification, git/collaborators/authorize, player]
 conflicts_with: []
-exposes: [git/world/head]
+exposes: [git/world/head, git/world/head/dirty]
 ---
 
 # git/world/head
@@ -13,14 +13,16 @@ Neither half runs git. Each asks root (`vault/git`), which reads the checkout of
 ## Components
 
 - `git/world/head = { sha }`, server authority, synced to the world's players: the commit the world's tree is on. One entity per world, spawned by the world's server; this mod writes `sha`. Absent until root has answered.
+- `git/world/head/dirty = { [path] = "write" | "create" | "delete" }` (server writes it): the tree's live edits, the files that differ from its commit, asset relative, `server/` halves included. It goes on each writer's own player entity, with an entry `{ authority = "server", target = "owner" }` in that player's `core/net/sync`, so only that player receives it, and only while the proof on their connection (`git/collaborators/authorize/proof`) is `writer`. Anonymous and unauthorized players get none of it. It goes from a player whose proof stops being `writer`, and from every player when the head goes.
 - The requests this mod sends root are children of the `git/world/head` entity, so they go with it: `{ ["vault/git/status"] = {}, ["vault/git"] = {}, Request = {} }` (the server's commit), `{ ["vault/git/pull"] = {}, ["vault/git"] = { sha }, Request = {} }` (a pull, server) and `{ ["vault/git/head"] = {}, ["vault/git"] = { sha }, Request = {} }` (the comparison, client). Each is answered on `<method>/reply` and closed once answered.
 
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-----|---------|
-| Update (server) | `git/world/head/state` | On an added `git/world/head`: asks root for the tree's status |
-| Update (server) | `git/world/head/state` | On a status or pull reply under a `git/world/head`: writes the commit it names into `sha`, and closes the request. Runs on the reply's edge |
+| Update (server) | `git/world/head/state` | Asks root for the tree's status: on an added `git/world/head` (replacing an open request), and, while none is open, on a changed `core/library/files` row (the served tree changed) or a changed or removed proof |
+| Update (server) | `git/world/head/state` | On a status or pull reply under a `git/world/head`: writes the commit it names into `sha`, and closes the request; a status reply also restates `git/world/head/dirty` on each writer's player and takes it off others. Runs on the reply's edge |
+| Update (server) | `git/world/head/state` | On a removed `git/world/head`: takes the dirty lists and their sync entries off every player |
 | Update (server) | `git/world/head/pulling` | On an added `core/net/predict` carrying `git/world/head/pull`: despawns it; asks root to pull when the ask names the world's current commit and no pull is under way |
 | Update (client) | `git/world/head/compare` | On an added or changed `git/world/head` with a `sha`: asks root how this player's checkout stands against it, closing a request for a commit the world has left. Only in a world with a `core/library` marked `edits` (the tree the player edits by hand); the edges wait until there is one |
 | Update (client) | `git/world/head/compare` | On a head reply for the world's current commit: a notice when behind or not fetched; when `pushed`, a `git/world/head/pull` and a notice. Closes the request. Runs on the reply's edge |
