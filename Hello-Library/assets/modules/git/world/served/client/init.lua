@@ -1,6 +1,7 @@
 -- git/world/served, the client's half: while this world's own content library is the player's
 -- checkout, its carrier also carries its two sub-mods: git/world/served/status, which watches the
--- player's edits there, and git/world/served/merge, which merges the world's versions into them.
+-- player's edits there, and git/world/served/merge, which merges the world's versions into them;
+-- and edit/notice, which shows the uploads on screen.
 -- Core sets the library's `edits` from the home fact, so it is true exactly while this world holds
 -- the checkout. As it turns them on, it asks the player's root for the writer proof
 -- (`vault/git/proof`), which the world's host checks before it takes a write.
@@ -96,7 +97,9 @@ app:add_systems(Update, {
     for _, e in ipairs(carriers:iter()) do
         local status_on, merge_on = e:has("git/world/served/status"), e:has("git/world/served/merge")
         if holds and not (status_on and merge_on) then
-            commands:entity(e:id()):insert_if_new({ ["git/world/served/status"] = {}, ["git/world/served/merge"] = {} })
+            commands:entity(e:id()):insert_if_new({
+                ["git/world/served/status"] = {}, ["git/world/served/merge"] = {}, ["edit/notice"] = {},
+            })
             if proving then push(commands, e) end
             print(string.format("[GIT/WORLD/SERVED] '%s' is your checkout: watching your edits", tostring(scope)))
             -- Signed out, git/world/served/status sends nothing, and a save would otherwise pass
@@ -114,7 +117,7 @@ app:add_systems(Update, {
                 })
             end
         elseif not holds and (status_on or merge_on) then
-            commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge")
+            commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice")
             print(string.format("[GIT/WORLD/SERVED] '%s' is no longer your checkout: stopped watching", tostring(scope)))
         end
     end
@@ -186,7 +189,7 @@ app:add_systems(Update, {
     Commands,
 }, function(removed, commands)
     for _, e in ipairs(removed:iter()) do
-        commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge")
+        commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice")
     end
 end)
 
