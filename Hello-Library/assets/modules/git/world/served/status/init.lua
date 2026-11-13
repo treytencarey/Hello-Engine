@@ -3,6 +3,13 @@
 -- world asks with a `vault/git/status` request and reads the answer. A sub-mod of git/world/served,
 -- which adds and removes it.
 --
+-- It also tells core it is the provider of those facts, with `core/library/edit/provider { ref }`
+-- on its carrier, so a file git does not list is not the player's edit: while the checkout is on
+-- the commit the world states (`git/world/head.sha`), a file clean against it holds the world's own
+-- version. On another commit it says nothing (core keeps its own guard), and while the checkout is
+-- on another branch than the world's, or the player is signed out, it says `paused = true`:
+-- nothing goes up and nothing lands.
+--
 -- git/world/served/status = {}
 -- git/world/served/status/scan = {
 --     asked_at = <this world's clock, in seconds, when the last request was asked>,
@@ -16,6 +23,36 @@
 -- }
 
 local Time = require("bevy::time::Time")
+
+--- The branch a scope names: its last `:` part (`github:owner/name:branch`).
+local function scope_branch(scope)
+    return tostring(scope or ""):match(":([^:]+)$")
+end
+
+--- What this mod tells core about the facts it states for the world `scope`: nil (nothing), or the
+--- value of `core/library/edit/provider`.
+local function provider_for(scope, branch, head, world_sha)
+    local wanted = scope_branch(scope)
+    if branch ~= nil and wanted ~= nil and branch ~= wanted then
+        return { ref = scope, paused = true }
+    end
+    if head ~= nil and world_sha ~= nil and head == world_sha then
+        return { ref = scope }
+    end
+    return nil
+end
+
+--- Puts `want` on the carrier as its provider marker, or takes it off, when it differs from `have`.
+local function set_provider(commands, carrier, have, want)
+    local same = (have == nil and want == nil) or (have ~= nil and want ~= nil and have.ref == want.ref
+        and (have.paused == true) == (want.paused == true))
+    if same then return end
+    if want == nil then
+        commands:entity(carrier):try_remove("core/library/edit/provider")
+    else
+        commands:entity(carrier):insert({ ["core/library/edit/provider"] = want })
+    end
+end
 
 -- A save in the player's editor changes nothing a query can see, so this asks on a timer, every
 -- 2 s, and only while a carrier exists. One request is open at a time. Root answers only a world it
@@ -98,12 +135,24 @@ app:add_systems(Update, {
         optional = { "Children" },
     }],
     Query[{ with = { Mut["core/library/edit"] } }],
+    Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
+    Query[{ with = { "git/world/head" } }],
+    Query[{ with = { "git/world/served/status" }, optional = { "core/library/edit/provider" } }],
     Commands,
-}, function(replies, carriers, edits, commands)
+}, function(replies, carriers, edits, statuses, heads, markers, commands)
+    local me = statuses:iter()[1]
+    local scope = me and me:get("core/world/status").scope_key
+    local head = heads:iter()[1]
+    local world_sha = head and head:get("git/world/head").sha
     for _, row in ipairs(replies:iter()) do
         local carrier = carriers:get_mut(row:get("ChildOf"))
         if carrier then
             local reply = row:get("vault/git/status/reply")
+            if reply.status == "ok" and scope ~= nil then
+                local marked = markers:get(carrier:id())
+                set_provider(commands, carrier:id(), marked and marked:get("core/library/edit/provider"),
+                    provider_for(scope, reply.branch, reply.head, world_sha))
+            end
             if reply.status == "ok" then
                 local scan = carrier:get_mut("git/world/served/status/scan")
                 local before = scan.ops or {}
@@ -126,6 +175,7 @@ app:add_systems(Update, {
                         if was == nil or was.op ~= now.op or was.mtime ~= now.mtime then
                             fact.seq = (fact.seq or 0) + 1
                             fact.deleted = now.op == "delete"
+                            fact.mtime = now.mtime
                             print("[GIT/WORLD/SERVED/STATUS] " .. tostring(now.op) .. ": " .. path)
                         end
                     elseif was ~= nil and not moved then
@@ -148,7 +198,7 @@ app:add_systems(Update, {
                         -- Kept through a reload of this mod, so the edit's `seq` runs on; it goes
                         -- with the carrier.
                         commands:spawn({
-                            ["core/library/edit"] = { path = path, seq = 1, deleted = now.op == "delete" },
+                            ["core/library/edit"] = { path = path, seq = 1, deleted = now.op == "delete", mtime = now.mtime },
                             ["core/net/sync"] = false,
                             ["core/script/owner"] = false,
                             ChildOf = carrier:id(),
@@ -198,8 +248,38 @@ end):in_set("git/world/served/status")
         return not refused:is_empty()
     end)
 
+-- Signed out, this mod asks nothing, and an edit could only be refused: the tree is paused (nothing
+-- goes up, nothing lands) until a scan signed in says otherwise. Root's identity only: any world can
+-- share a `core/player/identity` of its own.
+app:add_systems(Update, {
+    Query[{ changed = { "core/player/identity" }, optional = { "WorldMirror" } }],
+    Query[{
+        with = { "git/world/served/status" },
+        without = { "WorldMirror" },
+        optional = { "core/library/edit/provider" },
+    }],
+    Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
+    Commands,
+}, function(identities, carriers, statuses, commands)
+    local signed_out = false
+    for _, row in ipairs(identities:iter()) do
+        local from = row:has("WorldMirror") and row:get("WorldMirror").world_id or world_id or 0
+        if from == 0 then signed_out = row:get("core/player/identity").site_user_id == nil end
+    end
+    local me = statuses:iter()[1]
+    local scope = me and me:get("core/world/status").scope_key
+    if not signed_out or scope == nil then return end
+    for _, carrier in ipairs(carriers:iter()) do
+        local have = carrier:has("core/library/edit/provider") and carrier:get("core/library/edit/provider") or nil
+        set_provider(commands, carrier:id(), have, { ref = scope, paused = true })
+    end
+end):in_set("git/world/served/status")
+    :run_if({ Query[{ changed = { "core/player/identity" } }] }, function(changed)
+        return not changed:is_empty()
+    end)
+
 -- git/world/served/status taken off an entity that stays: its edits and its open request go with
--- it. A despawned carrier takes its children itself.
+-- it, and its provider marker. A despawned carrier takes its children itself.
 app:add_systems(Update, {
     Query[{
         removed = { "git/world/served/status" },
@@ -209,6 +289,7 @@ app:add_systems(Update, {
     Commands,
 }, function(removed, children, commands)
     for _, e in ipairs(removed:iter()) do
+        commands:entity(e:id()):try_remove("core/library/edit/provider")
         for _, child in ipairs(children:iter_many(e:get("Children") or {})) do
             commands:entity(child:id()):try_despawn()
         end

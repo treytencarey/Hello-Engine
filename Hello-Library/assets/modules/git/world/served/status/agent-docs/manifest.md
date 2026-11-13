@@ -35,6 +35,16 @@ Git answers the branch-switch case by itself. A `git checkout` rewrites many fil
 - A path that left the list because HEAD moved, a commit or a branch switch, is dropped at once.
 - A scan that failed changes nothing.
 
+## The provider of the facts
+
+The carrier also says this mod states its tree's edit facts, with core's `core/library/edit/provider { ref, paused? }`, `ref` being the world's scope (its `core/world/status.scope_key`). Each scan sets it:
+
+- the checkout on the commit the world states (`git/world/head.sha`) and on the world's branch (the scope's last `:` part): `{ ref }`. Core then takes a file git does not list as not the player's, so the world's version of it lands;
+- the checkout on another branch: `{ ref, paused = true }`. Nothing goes up and nothing lands until the checkout is back, as before the home re-roots after a branch switch;
+- the checkout on another commit of the world's branch: no marker, and core keeps its own guard.
+
+Signed out (root's `core/player/identity` without `site_user_id`), it says `paused = true` on the identity's edge. The marker goes with this mod. Each fact also carries `mtime`, the file's time in milliseconds as root read it.
+
 ## A refused edit
 
 When this world refuses an edit that was not stale, core marks the path's edit `core/library/edit/refused = {}` and takes the mark off when the path goes up again. On the mark's `added` edge, for an edit under a status carrier, this mod prints "this world refused your edit of <path>" and spawns a `git/merge/notice` with the title `REFUSED`, the text "This world refused your edit of <path>. It stays in your copy only.", `notification = { timeout = 20 }` and `["core/script/owner"] = false`. A stale refusal is held and merged instead, and shows nothing here.
@@ -44,9 +54,10 @@ When this world refuses an edit that was not stale, core marks the path's edit `
 | Schedule | Set | Purpose |
 |----------|-----|---------|
 | Update | `git/world/served/status` | While a carrier exists, outside both-mode and while signed in: asks root every 2 s, one request at a time. A request root has not answered in 10 s is closed and asked again |
-| Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, and closes the request. Runs on the reply's edge |
+| Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, sets the provider marker, and closes the request. Runs on the reply's edge |
+| Update | `git/world/served/status` | On a changed root `core/player/identity`, signed out: the provider marker paused |
 | Update | `git/world/served/status` | On `added core/library/edit/refused`, for an edit under a carrier: the `REFUSED` notice |
-| Update | none | When `git/world/served/status` is taken off an entity that stays: despawns its edits and its open request |
+| Update | none | When `git/world/served/status` is taken off an entity that stays: despawns its edits and its open request, and takes the provider marker off |
 
 ## Use
 
