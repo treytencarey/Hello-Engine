@@ -66,5 +66,5 @@ commands:entity(player):insert_if_new({ ["git/collaborators"] = {} })
 - Root takes a send only into the asker's own repository, so a list of another repository has no Invite buttons.
 - No token reaches the panel: root answers with public facts only. Its suite stubs a sign-in reply that carries a token and finds it on no other component.
 - A reload keeps the panel open, as `sidebar/profile` does, and asks root again under the new panel; the sends outlive it.
-- Not yet: avatar images (a world has no network of its own) and voice controls on the rows.
+- The rows show no avatar images, as a world has no network of its own, and no voice controls.
 - `test_collaborators.lua` runs headless with `world_id` set off root's, so root's mods answer nothing and the suite writes every reply itself, with real clicks on the sidebar's button and the rows' buttons.

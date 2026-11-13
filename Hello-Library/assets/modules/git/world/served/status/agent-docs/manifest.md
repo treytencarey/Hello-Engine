@@ -41,7 +41,7 @@ The carrier also says this mod states its tree's edit facts, with core's `core/l
 
 - the checkout on the commit the world states (`git/world/head.sha`) and on the world's branch (the scope's last `:` part): `{ ref }`. Core then takes a file git does not list as not the player's, so the world's version of it lands;
 - the checkout on another branch: `{ ref, paused = true }`. Nothing goes up and nothing lands until the checkout is back, as before the home re-roots after a branch switch;
-- the checkout on another commit of the world's branch: no marker, and core keeps its own guard. Today differs: the target answers this case too, from root's `vault/git/head` naming the paths whose content differs between the two commits: a path among them dirty on either side is `both`, and one dirty on neither is no edit, as the commit flow (pull) moves it.
+- the checkout on another commit of the world's branch: no marker, and core keeps its own guard.
 
 Git's answer is exact where core's own would guess: the shared commit is the base, each side's changes are its own `git status`, and no file time decides a path only one side changed. It is cheap too: a status of a 189 MB tree took about 0.12 s, where hashing it in Lua takes about 8 s. The pause exists because, until the home re-roots after a branch switch, the old world is still rooted at this checkout, and a version landing then would land in the other branch's files.
 
