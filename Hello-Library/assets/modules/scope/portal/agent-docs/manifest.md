@@ -68,6 +68,8 @@ commands:entity(player):insert({ ["git/panel/request"] = { op = "portal", target
 
 A scene door: give the node the custom properties `scope/portal = {"target": "<scope key>"}` and `scope/portal/view = {"mode": "none"}`; `gltf/mod_registry` inserts them on each side. To fit the two maps together at the door, add `"at"`, the `Name` of a node in the target's map (an empty placed and turned as the door is, turned about its vertical axis only): `scope/portal = {"target": "<scope key>", "at": "<node name>"}`. Walking through then arrives at that node, as far in front of it and as turned as the player was at the door, and the door shows the target from there. Without `at` the two maps are fitted where they stand.
 
+**The door rule:** a door's opening lies on its node's origin, and the door is crossed along the node's local Z (Blender's Y axis: the empty's green arrow is square to the opening). Put the door's origin in the middle of its opening, and the node `at` names where that opening should be in the target's map, turned the same way.
+
 ### Two-ended map doors
 
 A map door gets no return end. A door that leads both ways is two door empties at the same spot, one leading each way. Branches of one repository share one map file, so both empties exist in each world, and the one leading to the world it is in is ignored there: a portal to its own world links nothing, takes no one in and shows nothing. Each empty's own `scope/portal/view` decides whether that side sees the other world: in branch `room-a` the empty leading to `room-b` is the door, so its view is what `room-a` sees; leave the view off for a door that is only walked through.
