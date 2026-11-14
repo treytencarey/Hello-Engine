@@ -1,31 +1,23 @@
 ---
-depends_on: [notification, ui/style, cooldown]
+depends_on: [notification, ui/style]
 conflicts_with: []
-exposes: [edit/notice, edit/notice/card, edit/notice/wait, edit/notice/bar]
+exposes: [edit/notice]
 ---
 
 # edit/notice
 
-What is happening to this player's edits, said on screen. Core states each of this VM's uploads in flight as `core/library/upload { path, bytes, total, got, state }`, a child of its library: `"waiting"` while the world's write policy decides, then `"sending"`, with `got` the chunks the world holds. This mod shows a card for each upload of more than one chunk. Local UI: never synced. It needs no version control.
+What happened to this player's edits, said on screen. Core records each copy it replaced as `core/library/replaced { path, by = "world" | "me", kept?, both? }`, a child of its library; this mod shows a card for each. Local UI: never synced. It needs no version control. Uploads in flight are not shown here: the `transfers` mod lists them, with downloads.
 
 ## Components
 
-- `edit/notice = {}`: the carrier. A world's client boot, or a mod it uses (`git/world/served` adds it with its sub-mods), adds it to an entity of its own; the cards go with the mod.
-- `edit/notice/card = { path }`: one card for the upload of `path`. An upload still waiting gets its card with the `cooldown` timer `edit/notice/wait` (10 s) and nothing on screen; the card is shown when the timer ends, or at once when the upload starts streaming. Shown, it is a `notification` 320 px wide, and its children are its line (`Text`, styled `text`) and the bar's track (styled `border`).
-- `edit/notice/wait`: the timer, while it runs (`cooldown`).
-- `edit/notice/bar = {}`: the track's child, the fill (styled `accent`), its width the share of the file the world holds.
+- `edit/notice = {}`: the carrier. A world's client boot, or a mod it uses (`git/world/served` adds it with its sub-mods), adds it to an entity of its own.
 
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-----|---------|
-| Update | `edit/notice` | On an upload row's `added` or `changed` edge: a card for it (waiting: with its timer; streaming: shown), or its line and bar redrawn. "Waiting for the world to accept <path>…", then "Sending <path> — x / y MB" |
-| Update | `edit/notice` | When a card's `edit/notice/wait` ends: shows it, if its upload is still there and it is not shown yet |
-| Update | `edit/notice` | On an added `core/library/replaced` (a copy core replaced, `{ path, by, kept?, both? }`): a 20 s card, outliving this mod. `BOTH CHANGED` says whose newer copy is kept and that the other is in `.hello/held/<kept>`; `MERGED`, that both sides' changes were merged; `REPLACED`, that the world's newer copy replaced this one (yours in `.hello/held/<kept>`); `WENT UP`, that this newer copy went up |
-| Update | `edit/notice` | On an upload row's `removed` edge: each card whose upload is gone fades out (`notification.dismiss`), or goes if it was never shown |
+| Update | `edit/notice` | On an added `core/library/replaced` (not a mirror), while a carrier is here: a `notification` 320 px wide with a 20 s timeout, owned by no mod (`core/script/owner = false`) so it outlives this one, holding a title (`Text`, font 9, styled `accent`) and a line (font 11, styled `text`). `BOTH CHANGED` says whose newer copy is kept and that the other is in `.hello/held/<kept>`; `MERGED` (`both`, `by = "me"`, no `kept`), that both sides' changes were merged; `REPLACED` (`by = "world"`, no `both`), that the world's newer copy replaced this one (yours in `.hello/held/<kept>` when kept); `WENT UP` (otherwise), that this newer copy went up |
 
 ## Notes
 
-- An upload of one chunk shows nothing: it is answered within a frame or two. One the world allows within 10 s shows only its progress.
-- The bar follows the world's acknowledgements (one every 8 chunks, about 240 KB), not what left this machine.
-- Its suite runs headless: it reads the line's `Text` and the bar's `Node` width, not the layout.
+- Its suite runs headless: it reads the cards' `Text`, not the layout.
