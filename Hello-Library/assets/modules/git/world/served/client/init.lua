@@ -1,7 +1,8 @@
 -- git/world/served, the client's half: while this world's own content library is the player's
 -- checkout, its carrier also carries its two sub-mods: git/world/served/status, which watches the
 -- player's edits there, and git/world/served/merge, which merges the world's versions into them;
--- and edit/notice, which shows the uploads on screen.
+-- and edit/notice, which shows the uploads on screen. The library's own entity carries git/ignore
+-- meanwhile, the filter core asks about that tree's paths.
 -- Core sets the library's `edits` from the home fact, so it is true exactly while this world holds
 -- the checkout. As it turns them on, it asks the player's root for the writer proof
 -- (`vault/git/proof`), which the world's host checks before it takes a write.
@@ -70,7 +71,7 @@ app:add_systems(Update, {
         with = { "git/world/served" },
         optional = { "git/world/served/status", "git/world/served/merge", "Children" },
     }],
-    Query[{ with = { "core/library" }, without = { "WorldMirror" } }],
+    Query[{ with = { "core/library" }, without = { "WorldMirror" }, optional = { "git/ignore" } }],
     Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
     Query[{
         with = { "core/player/identity" },
@@ -90,10 +91,20 @@ app:add_systems(Update, {
     local me = statuses:iter()[1]
     local status = me and me:get("core/world/status")
     local scope = status and status.scope_key
-    local holds = false
+    local holds, own = false, nil
     for _, lib in ipairs(libraries:iter()) do
         local declared = lib:get("core/library")
-        if scope ~= nil and declared.ref == scope and declared.edits == true then holds = true end
+        if scope ~= nil and declared.ref == scope and declared.edits == true then holds, own = true, lib:id() end
+    end
+    -- git/ignore on the checkout's library, and on no other, while a carrier is here.
+    if carriers:is_empty() then own = nil end
+    for _, lib in ipairs(libraries:iter()) do
+        local on = lib:has("git/ignore")
+        if lib:id() == own and not on then
+            commands:entity(lib:id()):insert({ ["git/ignore"] = {} })
+        elseif on and lib:id() ~= own then
+            commands:entity(lib:id()):try_remove("git/ignore")
+        end
     end
     local proving = provable(identities, joins, processes)
     local local_only = signed_out(identities, processes)
@@ -198,13 +209,20 @@ end):in_set("git/world/served")
     end)
 
 -- git/world/served was taken off an entity that stays: the sub-mods it added go, and its proof
--- request. A despawned carrier is in the `removed` rows too, which `try_remove` passes by.
+-- request. A despawned carrier is in the `removed` rows too, which `try_remove` passes by. With
+-- the last carrier gone, git/ignore leaves the library.
 app:add_systems(Update, {
     Query[{ removed = { "git/world/served" } }],
     Query[{ with = { "vault/git/proof", "Request", "ChildOf" } }],
+    Query[{ with = { "git/world/served" } }],
+    Query[{ with = { "core/library", "git/ignore" }, without = { "WorldMirror" } }],
     Commands,
-}, function(removed, open, commands)
-    for _, e in ipairs(removed:iter()) do
+}, function(removed, open, carriers, filtered, commands)
+    local gone = removed:iter()
+    if gone[1] ~= nil and carriers:is_empty() then
+        for _, lib in ipairs(filtered:iter()) do commands:entity(lib:id()):try_remove("git/ignore") end
+    end
+    for _, e in ipairs(gone) do
         commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice")
         for _, ask in ipairs(open:iter()) do
             if ask:get("ChildOf") == e:id() then commands:entity(ask:id()):try_despawn() end

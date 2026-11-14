@@ -4,12 +4,13 @@
 -- (`edits`, which core sets from the home fact). No home fact is published here, so the two
 -- components are the fact under test, not what they do.
 --
--- S1  the checkout was already this world's when the carrier arrived: the first run catches up
--- S2  the checkout moving away takes both off
--- S3  ...and coming back puts them back
--- S4  another scope's library being edited is not this world's checkout
+-- S1  the checkout was already this world's when the carrier arrived: the first run catches up, and
+--     the library's own entity carries git/ignore and the core/library/filter base it brings
+-- S2  the checkout moving away takes both off, and git/ignore and its base off the library
+-- S3  ...and coming back puts them back, git/ignore included
+-- S4  another scope's library being edited is not this world's checkout, and gets no git/ignore
 -- S5  a reload of the mod keeps both on, added once
--- S6  git/world/served taken off an entity that stays takes both with it
+-- S6  git/world/served taken off an entity that stays takes both with it, and git/ignore
 -- S7  turning them on asks the player's root for the writer proof once, under the carrier, naming
 --     no nonce
 -- S8  ...and the answered request stays open (it owns the ref); the checkout moving away closes it
@@ -98,6 +99,12 @@ local function own(world)
     return world:query({ with = { "core/library", "zz/served/own" } })[1]
 end
 
+--- Whether the library marked `marker` carries git/ignore, and the filter base it brings.
+local function ignored(world, marker)
+    local lib = world:query({ with = { "core/library", marker }, optional = { "git/ignore", "core/library/filter" } })[1]
+    return lib ~= nil and lib:has("git/ignore"), lib ~= nil and lib:has("core/library/filter")
+end
+
 local function identity(world)
     return world:query({ with = { "core/player/identity", "zz/served/identity" } })[1]
 end
@@ -140,9 +147,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:spawn({ ["git/world/served"] = {}, ["zz/served/carrier"] = {}, ["core/net/sync"] = false })
         step("s1")
 
-    elseif phase == "s1" and (watching or clock > 5) then
-        T("S1_already_the_checkout_on_arrival_is_caught_up", watching,
-            "the carrier lacks its sub-mods after it arrived in a world whose tree is the checkout")
+    elseif phase == "s1" and ((watching and select(2, ignored(world, "zz/served/own"))) or clock > 5) then
+        local ig, base = ignored(world, "zz/served/own")
+        T("S1_already_the_checkout_on_arrival_is_caught_up", watching and ig and base,
+            string.format("sub-mods %s, git/ignore %s, filter base %s on the checkout's library",
+                tostring(watching), tostring(ig), tostring(base)))
         T("S7_the_proof_is_asked_once_under_the_carrier", pushes == 1 and push_parent == c:id() and push_nonce == nil,
             string.format("%d asked, under %s, nonce %s", pushes, tostring(push_parent), tostring(push_nonce)))
         T("S15_signed_in_shows_no_notice", notices == 0,
@@ -155,26 +164,29 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         edits(false)
         step("s2")
 
-    elseif phase == "s2" and ((stopped and #requests == 0) or clock > 5) then
-        T("S2_the_checkout_moving_away_takes_it_off", stopped,
-            "both must go when this world's tree stops being the checkout")
+    elseif phase == "s2" and ((stopped and #requests == 0 and not select(2, ignored(world, "zz/served/own"))) or clock > 5) then
+        local ig, base = ignored(world, "zz/served/own")
+        T("S2_the_checkout_moving_away_takes_it_off", stopped and not ig and not base,
+            string.format("sub-mods off %s, git/ignore %s, filter base %s", tostring(stopped), tostring(ig), tostring(base)))
         T("S8b_the_checkout_moving_away_closes_the_proof_request", #requests == 0, #requests .. " still open")
         edits(true)
         step("s3")
 
-    elseif phase == "s3" and (watching or clock > 5) then
-        T("S3_the_checkout_coming_back_puts_it_back", watching,
-            "both must come back with the checkout")
+    elseif phase == "s3" and ((watching and ignored(world, "zz/served/own")) or clock > 5) then
+        T("S3_the_checkout_coming_back_puts_it_back", watching and ignored(world, "zz/served/own"),
+            "both and git/ignore must come back with the checkout")
         edits(false)
         commands:spawn({
             ["core/library"] = { ref = OTHER, root = "test_fixtures/zz_served_other", order = 6, edits = true },
+            ["zz/served/other"] = {},
             ["core/net/sync"] = false,
         })
         step("s4")
 
     elseif phase == "s4" and clock > 1 then
-        T("S4_another_scopes_edited_library_is_not_this_worlds", stopped,
-            "a library edited under another scope made this world watch")
+        T("S4_another_scopes_edited_library_is_not_this_worlds", stopped and not ignored(world, "zz/served/other")
+            and not ignored(world, "zz/served/own"),
+            "a library edited under another scope made this world watch, or carries git/ignore")
         local me = world:query({ with = { "core/player/identity", "zz/served/identity" } })[1]
         commands:entity(me:id()):insert({ ["core/player/identity"] = {} })
         seen_pushes = pushes
@@ -248,9 +260,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:entity(c:id()):remove("git/world/served")
         step("s6")
 
-    elseif phase == "s6" and (stopped or clock > 5) then
-        T("S6_taking_the_carrier_off_takes_git_status", stopped,
-            "a sub-mod stayed on an entity that is no longer git/world/served's")
+    elseif phase == "s6" and ((stopped and not ignored(world, "zz/served/own")) or clock > 5) then
+        T("S6_taking_the_carrier_off_takes_git_status", stopped and not ignored(world, "zz/served/own"),
+            "a sub-mod or git/ignore stayed after git/world/served left")
         phase = "done"
         suite.finish("GIT_WORLD_SERVED")
     end
