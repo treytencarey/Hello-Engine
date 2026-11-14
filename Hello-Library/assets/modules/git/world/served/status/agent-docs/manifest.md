@@ -37,11 +37,13 @@ Git answers the branch-switch case by itself. A `git checkout` rewrites many fil
 
 ## The provider of the facts
 
-The carrier also says this mod states its tree's edit facts, with core's `core/library/edit/provider { ref, paused? }`, `ref` being the world's scope (its `core/world/status.scope_key`). Each scan sets it:
+The carrier also says this mod states its tree's edit facts, with core's `core/library/edit/provider { ref, paused?, merges? }`, `ref` being the world's scope (its `core/world/status.scope_key`). Each scan that succeeds sets it:
 
-- the checkout on the commit the world states (`git/world/head.sha`) and on the world's branch (the scope's last `:` part): `{ ref }`. Core then takes a file git does not list as not the player's, so the world's version of it lands;
+- the checkout on the commit the world states (`git/world/head.sha`) and on the world's branch (the scope's last `:` part): `{ ref, merges = true }`. Core then takes a file git does not list as not the player's, so the world's version of it lands, and asks `git/world/served/merge` about a file both sides changed;
 - the checkout on another branch: `{ ref, paused = true }`. Nothing goes up and nothing lands until the checkout is back, as before the home re-roots after a branch switch;
-- the checkout on another commit of the world's branch: no marker, and core keeps its own guard.
+- the checkout on another commit of the world's branch: no marker, so core's own fallback compares the tree by hash and time.
+
+Before the first scan's answer there is no marker either, and core's fallback runs for those frames. In both cases a world that declares `git/ignore` still keeps what git ignores off the wire.
 
 Git's answer is exact where core's own would guess: the shared commit is the base, each side's changes are its own `git status`, and no file time decides a path only one side changed. It is cheap too: a status of a 189 MB tree took about 0.12 s, where hashing it in Lua takes about 8 s. The pause exists because, until the home re-roots after a branch switch, the old world is still rooted at this checkout, and a version landing then would land in the other branch's files.
 
