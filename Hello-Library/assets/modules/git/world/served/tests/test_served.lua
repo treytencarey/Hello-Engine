@@ -1,6 +1,6 @@
 -- --host
 -- git/world/served on a client: its carrier carries its sub-mods git/world/served/status and
--- git/world/served/merge only while this world's own content library is the player's checkout
+-- git/world/served/merge, and transfers, only while this world's own content library is the player's checkout
 -- (`edits`, which core sets from the home fact). No home fact is published here, so the two
 -- components are the fact under test, not what they do.
 --
@@ -92,7 +92,7 @@ local function proof_requests(world)
 end
 
 local function carrier(world)
-    return world:query({ with = { "zz/served/carrier" }, optional = { "git/world/served/status", "git/world/served/merge" } })[1]
+    return world:query({ with = { "zz/served/carrier" }, optional = { "git/world/served/status", "git/world/served/merge", "transfers" } })[1]
 end
 
 local function own(world)
@@ -120,7 +120,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     clock = clock + (world:delta_time() or 0)
     local c = carrier(world)
     local watching = c ~= nil and c:has("git/world/served/status") and c:has("git/world/served/merge")
+        and c:has("transfers")
     local stopped = c ~= nil and not c:has("git/world/served/status") and not c:has("git/world/served/merge")
+        and not c:has("transfers")
     local requests = proof_requests(world)
     for _, r in ipairs(requests) do
         if not known_requests[r:id()] then
