@@ -6,11 +6,14 @@ exposes: [git/ignore]
 
 # git/ignore
 
-What git ignores in a world's tree is left out of it: never served, listed or sent. Git decides, through root: this mod parses nothing.
+What git ignores in a tree is left out of it: never served, listed or sent. Git decides, through root: this mod parses nothing. The filter belongs to the tree: this mod rides on the tree's own entity, and core asks it about that tree's paths alone.
 
 ## Components
 
-- `git/ignore = {}`: on any entity of the world, normally its boot's (`base = { "git/world/served", "git/ignore" }`). Its own base is core's `core/library/filter`, so core asks this mod about each path before it serves, lists or sends it.
+- `git/ignore = {}`: on the entity of the tree it filters, put there by `git/world/served` with its sub-mods and removed with them. A world never declares it itself.
+  - On a server: the asset endpoint serving the world's tree (`core/asset { mode = "server" }`, not a `read_only` library front).
+  - On a client: the world's own content library, the `core/library` whose `ref` is the world's scope, while it is the player's checkout (`edits = true`).
+  - Its own base is core's `core/library/filter`, so it brings that onto the same entity, and core asks this mod about each path of that tree before it serves, lists or sends it. Core never asks it about another tree in the VM.
 - For each `core/library/filter/ask { paths }` under a carrier, the mod asks root `{ ["vault/git/check_ignore"] = { paths }, ["vault/git"] = {}, Request = {} }`, children of the ask:
   - one request per chunk of at most 100 paths, 12000 characters in all;
   - root runs `git check-ignore --no-index` in the tree it started the world on.
@@ -28,8 +31,8 @@ What git ignores in a world's tree is left out of it: never served, listed or se
 ## Use
 
 ```lua
--- in a world's world/boot halves, beside its other bases
-return { base = { "git/world/served", "git/ignore" } }
+-- in a world's world/boot halves: git/world/served brings git/ignore onto the tree's entity
+return { base = "git/world/served" }
 ```
 
 ## Notes

@@ -3,7 +3,8 @@
 -- (`vault/git/check_ignore`), which reads every rule itself: nested `.gitignore` files, `!`, the
 -- global excludes, and paths that don't exist yet.
 --
--- git/ignore = {}   on the carrier, beside the core/library/filter base it brings
+-- git/ignore = {}   on the entity of the tree it filters (git/world/served puts it there), beside
+--                   the core/library/filter base it brings
 --
 -- An ask's paths go to root in requests of at most CHUNK paths, CHUNK_CHARS in all, each a child
 -- of the ask, so they go with it. Once every request is answered, the ask is answered
