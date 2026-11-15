@@ -2,7 +2,7 @@
 --
 -- E6  a replacement core records gets a card that says which copy is kept and where the other is
 -- E7  a clean merge says the changes were merged
--- E8  an upload in flight, waiting or sending, gets no card here (it is `transfers`'s)
+-- E8  an upload in flight, waiting or sending, gets no card here (root lists it, `core/transfers`)
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")

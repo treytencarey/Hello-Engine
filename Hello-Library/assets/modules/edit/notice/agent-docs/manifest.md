@@ -6,7 +6,7 @@ exposes: [edit/notice]
 
 # edit/notice
 
-What happened to this player's edits, said on screen. Core records each copy it replaced as `core/library/replaced { path, by = "world" | "me", kept?, both? }`, a child of its library; this mod shows a card for each. Local UI: never synced. It needs no version control. Uploads in flight are not shown here: the `transfers` mod lists them, with downloads.
+What happened to this player's edits, said on screen. Core records each copy it replaced as `core/library/replaced { path, by = "world" | "me", kept?, both? }`, a child of its library; this mod shows a card for each. Local UI: never synced. It needs no version control. Uploads in flight are not shown here: core lists every file in transit, uploads and downloads, in root's window (`core/transfers`).
 
 ## Components
 

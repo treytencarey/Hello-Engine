@@ -1,7 +1,7 @@
 -- edit/notice: what happened to this player's edits, said on screen. Core records each copy it
 -- replaced as `core/library/replaced { path, by, kept?, both? }`, a child of its library; this mod
 -- shows a card for each. Local UI: never synced. A world's client boot (or a mod it uses) adds
--- `edit/notice` to an entity of its own. Uploads in flight are `transfers`'s.
+-- `edit/notice` to an entity of its own. Uploads in flight are core's (`core/transfers`, at root).
 --
 -- edit/notice = {}
 
