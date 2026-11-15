@@ -1,8 +1,8 @@
 -- git/world/served, the client's half: while this world's own content library is the player's
 -- checkout, its carrier also carries its two sub-mods: git/world/served/status, which watches the
 -- player's edits there, and git/world/served/merge, which merges the world's versions into them;
--- edit/notice, which says what happened to them, and transfers, which shows the files in transit.
--- The library's own entity carries git/ignore meanwhile, the filter core asks about that tree's paths.
+-- and edit/notice, which says what happened to them. The library's own entity carries git/ignore
+-- meanwhile, the filter core asks about that tree's paths.
 -- Core sets the library's `edits` from the home fact, so it is true exactly while this world holds
 -- the checkout. As it turns them on, it asks the player's root for the writer proof
 -- (`vault/git/proof`), which the world's host checks before it takes a write.
@@ -112,7 +112,7 @@ app:add_systems(Update, {
         local status_on, merge_on = e:has("git/world/served/status"), e:has("git/world/served/merge")
         if holds and not (status_on and merge_on) then
             commands:entity(e:id()):insert_if_new({
-                ["git/world/served/status"] = {}, ["git/world/served/merge"] = {}, ["edit/notice"] = {}, transfers = {},
+                ["git/world/served/status"] = {}, ["git/world/served/merge"] = {}, ["edit/notice"] = {},
             })
             if proving then push(commands, e) end
             print(string.format("[GIT/WORLD/SERVED] '%s' is your checkout: watching your edits", tostring(scope)))
@@ -131,7 +131,7 @@ app:add_systems(Update, {
                 })
             end
         elseif not holds and (status_on or merge_on) then
-            commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice", "transfers")
+            commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice")
             for _, ask in ipairs(open:iter_many(e:get("Children") or {})) do
                 commands:entity(ask:id()):try_despawn()
             end
@@ -223,7 +223,7 @@ app:add_systems(Update, {
         for _, lib in ipairs(filtered:iter()) do commands:entity(lib:id()):try_remove("git/ignore") end
     end
     for _, e in ipairs(gone) do
-        commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice", "transfers")
+        commands:entity(e:id()):try_remove("git/world/served/status", "git/world/served/merge", "edit/notice")
         for _, ask in ipairs(open:iter()) do
             if ask:get("ChildOf") == e:id() then commands:entity(ask:id()):try_despawn() end
         end
