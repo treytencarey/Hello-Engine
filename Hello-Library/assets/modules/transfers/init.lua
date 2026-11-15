@@ -1,11 +1,12 @@
--- transfers: this VM's files in transit, in a screen corner. Core states each as a child row of its
--- library, local and never synced: `core/library/download { path, total, got }` in bytes, and
--- `core/library/upload { path, bytes, total, got, state = "waiting" | "sending" }` with `total` and
--- `got` in chunks of a `bytes` long file. While any row of more than one chunk is here, an icon sits
--- in the bottom-right corner saying how many go each way; hovered, it shows one line per transfer:
--- its direction, path, "x / y MB" and a bar, or that an upload still waits for the world.
+-- transfers: this world's files in transit, in a screen corner. Core states each as a child row of
+-- its library, never synced: `core/library/download { ref, path, total, got }` in bytes, shared
+-- across the process's VMs, and `core/library/upload { path, bytes, total, got, state = "waiting" |
+-- "sending" }`, this VM's own, with `total` and `got` in chunks of a `bytes` long file. While any row
+-- of more than one chunk is here, an icon sits in the bottom-right corner saying how many go each
+-- way; hovered, it shows one line per transfer: its direction, path, "x / y MB" and a bar, or that an
+-- upload still waits for the world.
 --
--- transfers = {}
+-- transfers = {}: the carrier, which a world's boot names in its `base` list.
 --
 -- transfers/icon = {}: the icon, a Button; its children are its count (`Text`) and the list.
 --
@@ -14,12 +15,17 @@
 
 local MB = 1024 * 1024
 
---- Every transfer of more than one chunk, downloads first, each by path.
-local function transfers(uploads, downloads)
-    local out = {}
+--- Every transfer of more than one chunk, downloads first, each by path. A download made in
+--- another VM counts only when its library is one this world asks (its own `core/library/fetch`
+--- rows name it): every VM sees every library VM's rows, and other worlds' too.
+local function transfers(uploads, downloads, asks)
+    local out, asked = {}, {}
+    for _, a in ipairs(asks:iter()) do asked[a:get("core/library/fetch").ref] = true end
     for _, r in ipairs(downloads:iter()) do
         local row = r:get("core/library/download")
-        out[#out + 1] = { dir = "down", path = tostring(row.path), got = row.got or 0, size = row.total or 0 }
+        if not r:has("WorldMirror") or (row.ref ~= nil and asked[row.ref]) then
+            out[#out + 1] = { dir = "down", path = tostring(row.path), got = row.got or 0, size = row.total or 0 }
+        end
     end
     for _, r in ipairs(uploads:iter()) do
         local row = r:get("core/library/upload")
@@ -95,14 +101,15 @@ end
 -- follows them, and so does the list while the icon is hovered; the list shows on the hover's edge.
 app:add_systems(Update, {
     Query[{ with = { "core/library/upload" }, without = { "WorldMirror" } }],
-    Query[{ with = { "core/library/download" }, without = { "WorldMirror" } }],
+    Query[{ with = { "core/library/download" }, optional = { "WorldMirror" } }],
+    Query[{ with = { "core/library/fetch" }, without = { "WorldMirror" } }],
     Query[{ with = { "transfers" } }],
     Query[{ with = { "transfers/icon" }, optional = { "Children", "Interaction" } }],
     Query[{ with = { "transfers/list", Mut["Node"] }, optional = { "Children" } }],
     Query[{ with = { Mut["Text"], "ChildOf" } }],
     Commands,
-}, function(uploads, downloads, carriers, icons, lists, texts, commands)
-    local all = carriers:is_empty() and {} or transfers(uploads, downloads)
+}, function(uploads, downloads, asks, carriers, icons, lists, texts, commands)
+    local all = carriers:is_empty() and {} or transfers(uploads, downloads, asks)
     local shown = icons:iter()
     if #all == 0 then
         for _, icon in ipairs(shown) do commands:entity(icon:id()):despawn() end
@@ -173,11 +180,11 @@ end):in_set("transfers")
     :run_if({
         Query[{
             ["or"] = {
-                added = { "core/library/upload", "core/library/download", "transfers" },
+                added = { "core/library/upload", "core/library/download", "core/library/fetch", "transfers" },
                 changed = { "core/library/upload", "core/library/download" },
             },
         }],
-        Query[{ ["or"] = { removed = { "core/library/upload", "core/library/download" } } }],
+        Query[{ ["or"] = { removed = { "core/library/upload", "core/library/download", "core/library/fetch" } } }],
         Query[{ changed = { "Interaction" }, with = { "transfers/icon" } }],
     }, function(rows, gone, hover)
         return not (rows:is_empty() and gone:is_empty() and hover:is_empty())

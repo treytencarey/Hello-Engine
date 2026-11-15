@@ -1,5 +1,6 @@
 -- transfers: files in transit, in a screen corner.
 --
+-- X0  a boot naming transfers in its base list carries it
 -- X1  with no transfer there is no icon
 -- X2  a download or upload of more than one chunk brings the icon, counting each way; one chunk does not count
 -- X3  not hovered, the list shows nothing
@@ -17,10 +18,14 @@ local T = suite.assert_test
 
 local MB = 1024 * 1024
 local library
+-- A world's boot, as a world names transfers beside its other base.
+helpers.make_fixture("modules/test_fixtures/zztr/other/init.lua", "return {}\n")
+helpers.make_fixture("modules/test_fixtures/zztr/boot/init.lua",
+    'return { base = { "test_fixtures/zztr/other", "transfers" } }\n')
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-    commands:spawn({ transfers = {} })
+    commands:spawn({ ["test_fixtures/zztr/boot"] = {} })
     library = commands:spawn({ ["zz/library"] = {} }):id()
 end)
 
@@ -78,7 +83,13 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     local function step(p) phase, clock = p, 0 end
     if phase == "done" then return end
 
-    if phase == "start" and clock > 1 then
+    if phase == "start" then
+        local boot = world:query({ with = { "test_fixtures/zztr/boot" }, optional = { "transfers", "test_fixtures/zztr/other" } })[1]
+        local carried = boot ~= nil and boot:has("transfers") and boot:has("test_fixtures/zztr/other")
+        if not carried and clock < 5 then return end
+        T("X0_a_boot_naming_transfers_in_its_base_list_carries_it", carried, "")
+        step("empty")
+    elseif phase == "empty" and clock > 1 then
         T("X1_no_transfer_no_icon", icon(world) == nil, "an icon")
         commands:spawn({ ["core/library/download"] = { path = "maps/big.glb", total = 4 * MB, got = 1 * MB },
             ChildOf = library, ["core/net/sync"] = false })
@@ -95,6 +106,11 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         T("X2_the_icon_counts_each_way", c == "1 down  2 up", tostring(c))
         T("X3_not_hovered_the_list_shows_nothing", display(world) == "None" and count(shown(world)) == 0,
             string.format("display=%s lines=%d", tostring(display(world)), count(shown(world))))
+        if icon(world) == nil then
+            phase = "done"
+            suite.finish("TRANSFERS")
+            return
+        end
         commands:entity(icon(world):id()):insert({ Interaction = "Hovered" })
         step("hover")
     elseif phase == "hover" then
