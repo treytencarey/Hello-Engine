@@ -1,12 +1,16 @@
 -- test_ignore.lua: git/ignore answers core's filter asks with root's real git, in a client world
--- root starts on a repository this suite makes. The world's boot carries git/ignore and asks as
--- core would, `core/library/filter/ask { paths }` children of the carrier.
+-- root starts on a repository this suite makes. The world's boot carries git/ignore on a carrier
+-- holding the tree's list as core puts it there (`core/library/filter/out`, core's own entry), and
+-- asks as core would, `core/library/filter/ask { paths }` children of the carrier. What git leaves
+-- out is read from the list once the asks are answered.
 --
--- I1  `assets/config/x.json` is out though no `assets/config/` exists, and a new `.blend1` is out
+-- I1  `assets/config/x.json` joins the list though no `assets/config/` exists, and so does a new
+--     `.blend1`; core's own entry stays
 -- I2  a nested `.gitignore` holds for its folder only, and its `!` puts a file back
--- I3  a path git doesn't ignore is not out
--- I4  an ask root refuses (an unsafe path) answers every path of it out
+-- I3  a path git doesn't ignore does not join it
+-- I4  an ask root refuses (an unsafe path) puts every path of it on the list
 -- I5  an ask under a carrier without git/ignore gets no answer from it
+-- I6  every answer is `{}`: what is out is on the list alone
 
 require("modules/core/init.lua")
 require("modules/core/world/creator.lua")
@@ -23,7 +27,7 @@ end)
 local ROOT = "test_fixtures/zz-ignore"
 local CK = "assets/" .. ROOT
 local OUT = "assets/test_fixtures/zz-ignore.out"
-local seen = helpers.shared_state("GitIgnoreSeen", { good = "", bad = "", none = "", booted = false })
+local seen = helpers.shared_state("GitIgnoreSeen", { list = "", replies = 0, with_out = 0, none = "", booted = false })
 
 local BOOT = [==[
 local seen = require("modules/core/test_helpers.lua").shared_state("GitIgnoreSeen", {})
@@ -32,7 +36,8 @@ local GOOD = { "assets/config/x.json", "assets/modules/maps/lab/lab.blend1", "as
 app:add_systems(Startup, { Commands }, function(commands)
     seen.booted = true
     commands:spawn({ ["core/library"] = { ref = "zz:launch", root = "", order = 2 }, ["core/net/sync"] = false })
-    local c = commands:spawn({ ["git/ignore"] = {}, ["core/net/sync"] = false }):id()
+    local c = commands:spawn({ ["git/ignore"] = {}, ["core/library/filter/out"] = { paths = { "assets/config/" } },
+        ["zz/ignore/carrier"] = {}, ["core/net/sync"] = false }):id()
     commands:spawn({ ["core/library/filter/ask"] = { paths = GOOD }, ["zz/ignore/good"] = {}, ChildOf = c, ["core/net/sync"] = false })
     commands:spawn({ ["core/library/filter/ask"] = { paths = { "assets/../x.txt", "assets/fine.txt" } }, ["zz/ignore/bad"] = {},
         ChildOf = c, ["core/net/sync"] = false })
@@ -42,14 +47,18 @@ app:add_systems(Startup, { Commands }, function(commands)
 end)
 app:add_systems(Update, {
     Query[{ added = { "core/library/filter/ask/reply" }, optional = { "zz/ignore/good", "zz/ignore/bad", "zz/ignore/none" } }],
-}, function(rows)
+    Query[{ with = { "zz/ignore/carrier", "core/library/filter/out" } }],
+}, function(rows, carriers)
     for _, r in ipairs(rows:iter()) do
-        local out = r:get("core/library/filter/ask/reply").out or {}
-        table.sort(out)
-        local text = table.concat(out, ",")
-        if r:has("zz/ignore/good") then seen.good = text end
-        if r:has("zz/ignore/bad") then seen.bad = text end
-        if r:has("zz/ignore/none") then seen.none = text end
+        if r:get("core/library/filter/ask/reply").out ~= nil then seen.with_out = seen.with_out + 1 end
+        if r:has("zz/ignore/none") then seen.none = "answered" else seen.replies = seen.replies + 1 end
+    end
+    local c = carriers:iter()[1]
+    if c then
+        local paths = {}
+        for _, p in ipairs(c:get("core/library/filter/out").paths or {}) do paths[#paths + 1] = p end
+        table.sort(paths)
+        seen.list = table.concat(paths, ",")
     end
 end)
 ]==]
@@ -108,18 +117,22 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         }, ["core/net/sync"] = false })
         step("answers")
     elseif st.phase == "answers" then
-        if (seen.good == "" or seen.bad == "") and st.t < 30 then return end
+        if seen.replies < 2 and st.t < 30 then return end
         if st.t < 2 then return end
-        local good = "," .. tostring(seen.good) .. ","
-        local function has(p) return good:find("," .. p .. ",", 1, true) ~= nil end
-        T("I1_config_is_out_with_no_config_folder_and_a_blend1_is_out",
-            has("assets/config/x.json") and has("assets/modules/maps/lab/lab.blend1"), "out " .. tostring(seen.good))
+        local list = "," .. tostring(seen.list) .. ","
+        local function has(p) return list:find("," .. p .. ",", 1, true) ~= nil end
+        T("I1_config_and_a_blend1_join_the_list_beside_cores_entry",
+            has("assets/config/x.json") and has("assets/modules/maps/lab/lab.blend1") and has("assets/config/"),
+            "list " .. tostring(seen.list))
         T("I2_a_nested_gitignore_holds_for_its_folder_and_its_bang_puts_back",
             has("assets/modules/a/local.txt") and not has("assets/modules/b/local.txt") and not has("assets/modules/a/keep.blend1"),
-            "out " .. tostring(seen.good))
-        T("I3_a_path_git_does_not_ignore_is_not_out", not has("assets/modules/ok.lua"), "out " .. tostring(seen.good))
-        T("I4_a_refused_ask_answers_every_path_out", seen.bad == "assets/../x.txt,assets/fine.txt", "out " .. tostring(seen.bad))
-        T("I5_no_answer_without_git_ignore", seen.none == "", "out " .. tostring(seen.none))
+            "list " .. tostring(seen.list))
+        T("I3_a_path_git_does_not_ignore_does_not_join_it", not has("assets/modules/ok.lua"), "list " .. tostring(seen.list))
+        T("I4_a_refused_ask_puts_every_path_on_the_list", has("assets/../x.txt") and has("assets/fine.txt"),
+            "list " .. tostring(seen.list))
+        T("I5_no_answer_without_git_ignore", seen.none == "", tostring(seen.none))
+        T("I6_every_answer_is_empty", seen.replies == 2 and seen.with_out == 0,
+            string.format("replies %d, with out %d", seen.replies, seen.with_out))
         finish()
     end
 end)

@@ -6,7 +6,7 @@ exposes: [git/ignore]
 
 # git/ignore
 
-What git ignores in a tree is left out of it: never served, listed or sent. Git decides, through root: this mod parses nothing. The filter belongs to the tree: this mod rides on the tree's own entity, and core asks it about that tree's paths alone.
+What git ignores in a tree is left out of it: never served, listed or sent. Git decides, through root: this mod parses nothing, and writes what git ignores into the tree's list of what it leaves out (`core/library/filter/out`), which core reads. The filter belongs to the tree: this mod rides on the tree's own entity, and core asks it about that tree's paths alone.
 
 ## Components
 
@@ -17,16 +17,17 @@ What git ignores in a tree is left out of it: never served, listed or sent. Git 
 - For each `core/library/filter/ask { paths }` under a carrier, the mod asks root `{ ["vault/git/check_ignore"] = { paths }, ["vault/git"] = {}, Request = {} }`, children of the ask:
   - one request per chunk of at most 100 paths, 12000 characters in all;
   - root runs `git check-ignore --no-index` in the tree it started the world on.
-- Once every request is answered, the mod answers the ask: `core/library/filter/ask/reply { out }`, the union of what git ignores.
-  - When any request was refused or failed, `out` is every path of the ask, said once in the log, so nothing goes on a question git didn't answer.
-  - An ask with no paths is answered at once with none.
+- Once every request is answered, the paths git ignores join the list on the same entity (`core/library/filter/out { paths }`, which core puts there with its own `assets/config/`), each once, the additions to one entity gathered into one write. Then the mod answers the ask `core/library/filter/ask/reply = {}`, and core reads the list for the ask's paths.
+  - When any request was refused or failed, every path of the ask joins the list, said once in the log, so nothing goes on a question git didn't answer.
+  - An ask with no paths is answered at once.
+  - A carrier with no list yet gets no answer, said in the log: the ask's paths stay held, as an unanswered ask holds them.
 
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-----|---------|
 | Update | `git/ignore` | On an added ask under a carrier: its paths go to root in chunks |
-| Update | `git/ignore` | On a root reply: when every request under its ask is answered, answers the ask. Runs on the reply's edge |
+| Update | `git/ignore` | On a root reply: when every request under its ask is answered, adds what git ignores to the carrier's list, then answers the ask. Runs on the reply's edge |
 
 ## Use
 
@@ -40,8 +41,9 @@ return { base = "git/world/served" }
 - Git answers for paths that don't exist: a Gateway whose clone has no `assets/config/` still says `assets/config/x.json` is ignored.
 - Nested `.gitignore` files, `!` and the global excludes are git's own. `--no-index` makes a tracked file that a rule matches count as ignored.
 - Suite: `tests/test_ignore.lua` runs a client world root started on a scratch repository and asks with real git. It checks:
-  - a `config/` file with no `config/` folder, and a `.blend1`, are out;
+  - a `config/` file with no `config/` folder, and a `.blend1`, join the list, and core's own entry stays;
   - a nested `.gitignore` and its `!` hold;
-  - a path git doesn't ignore is in;
-  - a refused ask puts every path out;
-  - an ask under a carrier without this mod gets no answer.
+  - a path git doesn't ignore doesn't join it;
+  - a refused ask puts every path on the list;
+  - an ask under a carrier without this mod gets no answer;
+  - every answer is `{}`.

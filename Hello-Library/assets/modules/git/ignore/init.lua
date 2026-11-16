@@ -7,9 +7,11 @@
 --                   the core/library/filter base it brings
 --
 -- An ask's paths go to root in requests of at most CHUNK paths, CHUNK_CHARS in all, each a child
--- of the ask, so they go with it. Once every request is answered, the ask is answered
--- `core/library/filter/ask/reply { out }`: the paths git ignores, or, when any request was
--- refused or failed, every path of the ask, so nothing goes on a question git didn't answer.
+-- of the ask, so they go with it. Once every request is answered, the paths git ignores join the
+-- tree's list of what it leaves out (`core/library/filter/out`, on the same entity, which core
+-- puts there), or, when any request was refused or failed, every path of the ask does, so nothing
+-- goes on a question git didn't answer. Then the ask is answered `core/library/filter/ask/reply = {}`.
+-- A tree with no list yet gets no answer, which holds the ask's paths back.
 
 local CHUNK = 100
 local CHUNK_CHARS = 12000
@@ -55,7 +57,7 @@ app:add_systems(Update, {
                 chars = chars + #p + 1
             end
             send()
-            if #paths == 0 then commands:entity(ask:id()):insert({ ["core/library/filter/ask/reply"] = { out = {} } }) end
+            if #paths == 0 then commands:entity(ask:id()):insert({ ["core/library/filter/ask/reply"] = {} }) end
         end
     end
 end):in_set("git/ignore"):run_if({
@@ -64,14 +66,29 @@ end):in_set("git/ignore"):run_if({
     return not touched:is_empty()
 end)
 
--- Root's answers: once every request under an ask is in, the ask's.
+-- Root's answers: once every request under an ask is in, into the tree's list, then the ask's reply.
 app:add_systems(Update, {
     Query[{ added = { "vault/git/check_ignore/reply" }, with = { "ChildOf" } }],
-    Query[{ with = { "core/library/filter/ask" }, without = { "core/library/filter/ask/reply" }, optional = { "Children" } }],
+    Query[{ with = { "core/library/filter/ask", "ChildOf" }, without = { "core/library/filter/ask/reply" }, optional = { "Children" } }],
     Query[{ with = { "vault/git/check_ignore", "Request" }, optional = { "vault/git/check_ignore/reply" } }],
+    Query[{ with = { "git/ignore" }, without = { "WorldMirror" }, optional = { "core/library/filter/out" } }],
     Commands,
-}, function(replies, asks, requests, commands)
-    local seen = {}
+}, function(replies, asks, requests, carriers, commands)
+    local seen, lists, answered = {}, {}, {}
+    --- The carrier's list as this pass grows it: two asks answered in one frame both land.
+    local function list_of(carrier)
+        local l = lists[carrier:id()]
+        if l then return l end
+        local found = carrier:get("core/library/filter/out")
+        if not found then return nil end
+        l = { paths = {}, have = {} }
+        for _, p in ipairs(found.paths or {}) do
+            l.paths[#l.paths + 1] = p
+            l.have[p] = true
+        end
+        lists[carrier:id()] = l
+        return l
+    end
     for _, row in ipairs(replies:iter()) do
         local ask = asks:get(row:get("ChildOf"))
         if ask and not seen[ask:id()] then
@@ -87,16 +104,30 @@ app:add_systems(Update, {
                     for _, p in ipairs(reply.ignored or {}) do out[#out + 1] = p end
                 end
             end
-            if done then
+            local carrier = done and carriers:get(ask:get("ChildOf"))
+            local list = carrier and list_of(carrier)
+            if done and not list then
+                print("[GIT/IGNORE] the tree carries no list of what it leaves out: the ask is not answered")
+            elseif done then
                 if failed then
                     print("[GIT/IGNORE] root could not say what git ignores (" .. tostring(failed) .. "): every path of the ask is out")
                     out = {}
                     for _, p in ipairs(ask:get("core/library/filter/ask").paths or {}) do out[#out + 1] = p end
                 end
-                commands:entity(ask:id()):insert({ ["core/library/filter/ask/reply"] = { out = out } })
+                for _, p in ipairs(out) do
+                    p = tostring(p)
+                    if not list.have[p] then
+                        list.have[p] = true
+                        list.paths[#list.paths + 1] = p
+                    end
+                end
+                answered[#answered + 1] = ask:id()
             end
         end
     end
+    -- The lists before the replies: core reads the list once it sees the reply.
+    for id, l in pairs(lists) do commands:entity(id):insert({ ["core/library/filter/out"] = { paths = l.paths } }) end
+    for _, id in ipairs(answered) do commands:entity(id):insert({ ["core/library/filter/ask/reply"] = {} }) end
 end):in_set("git/ignore"):run_if({ Query[{ added = { "vault/git/check_ignore/reply" } }] }, function(replies)
     return not replies:is_empty()
 end)
