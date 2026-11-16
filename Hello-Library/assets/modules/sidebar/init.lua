@@ -27,6 +27,7 @@
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
+local AssetServer = require("bevy::asset::AssetServer")
 
 app:add_systems(First, {
     Query[{
@@ -202,8 +203,9 @@ end):in_set("sidebar/hide"):after("sidebar/toggle")
 -- A new button becomes an icon.
 app:add_systems(Update, {
     Query[{ added = { "sidebar/button" } }],
+    Res[AssetServer],
     Commands,
-}, function(buttons, commands)
+}, function(buttons, asset_server, commands)
     for _, b in ipairs(buttons:iter()) do
         local button = b:get("sidebar/button")
         local icon = commands:entity(b:id())
@@ -237,11 +239,23 @@ app:add_systems(Update, {
                 commands:entity(event.entity):insert({ ["sidebar/button/open"] = { order = order + 1 } })
             end
         end)
-        icon:add_child(commands:spawn({
-            Text = { text = string.sub(button.title or "?", 1, 1) },
-            TextFont = { font_size = 18 },
-            ["ui/style"] = { text = "text_dim" },
-        }):id())
+        -- A VM with no image loader (a headless one) refuses the load, and the icon shows the letter.
+        local loaded, image = false, nil
+        if button.icon ~= nil then
+            loaded, image = pcall(function() return asset_server:load(button.icon) end)
+        end
+        if loaded then
+            icon:add_child(commands:spawn({
+                ImageNode = { image = image },
+                Node = { width = { Px = 28 }, height = { Px = 28 } },
+            }):id())
+        else
+            icon:add_child(commands:spawn({
+                Text = { text = string.sub(button.title or "?", 1, 1) },
+                TextFont = { font_size = 18 },
+                ["ui/style"] = { text = "text_dim" },
+            }):id())
+        end
     end
 end):in_set("sidebar/icons")
 

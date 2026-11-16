@@ -28,7 +28,7 @@ A sidebar panel showing the files of the world's server, read-only: a tree with 
   - `{ op = "list", path, offset, error = "not available" }`, for a path that passes while a folder cannot be read;
   - `{ error = "refused" }`, for anything else.
 - `sidebar/file_browser/state = { open, expanded = { [path] = true } }` on the carrier, on the client: what the panel keeps through a reload. It goes with the carrier, and with `sidebar`, as a part of that name.
-- `sidebar/file_browser/button`: marks this mod's `sidebar/button`, in the bar.
+- `sidebar/file_browser/button`: marks this mod's `sidebar/button` (`icon = "icons/files.png"`, `title = "Files"`, `order = 2`), in the bar.
 - `sidebar/file_browser/view = { folders = { [path] = { files, has_more, next, unavailable } } }`: on the panel, a plain `sidebar/panel` in the container, there only while the panel is open.
 - `sidebar/file_browser/row = { index, kind, path, depth }`: a row's slot. `kind` is `folder`, `file`, `more` or `note`.
 - `sidebar/file_browser/rows`, `refresh`, `mark`, `name`, `size`: mark the rest of the content, in the panel's `sidebar/panel/scroll`.

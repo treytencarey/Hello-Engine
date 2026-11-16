@@ -439,7 +439,7 @@ app:add_systems(Update, {
         local login = said and said:get("vault/github/signin/reply").login
         if said and login ~= nil and bar ~= nil and buttons:is_empty() then
             commands:spawn({
-                ["sidebar/button"] = { title = "GitHub", order = 3 },
+                ["sidebar/button"] = { icon = "icons/github.png", title = "GitHub", order = 3 },
                 ["git/panel/button"] = {},
                 ChildOf = bar:id(),
             })

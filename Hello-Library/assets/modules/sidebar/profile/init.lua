@@ -234,7 +234,7 @@ app:add_systems(Update, {
     local bar = bars:iter()[1]
     if bar ~= nil and not carriers:is_empty() and buttons:is_empty() then
         commands:spawn({
-            ["sidebar/button"] = { title = "Accounts", order = 0 },
+            ["sidebar/button"] = { icon = "icons/account.png", title = "Accounts", order = 0 },
             ["sidebar/profile/button"] = {},
             ChildOf = bar:id(),
         })

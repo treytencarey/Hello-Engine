@@ -24,7 +24,7 @@ It reads this VM's `DiagnosticsStore`, which is per VM: it shows the systems of 
   | `bad_from` | from this, in ms, a cost reads `text_bad` | 8 |
 
 - `sidebar/profiler/state = { open, expanded }` on the carrier, added by this mod when the carrier arrives, if it has none: what the panel keeps through a reload. `open` says whether the panel is open, and `expanded` is the system whose query rows show, by name, absent when none does. It goes with the carrier, and with `sidebar`, as a part of that name.
-- `sidebar/profiler/button`: marks this mod's `sidebar/button`, in the bar.
+- `sidebar/profiler/button`: marks this mod's `sidebar/button` (`icon = "icons/profiler.png"`, `title = "Profiler"`, `order = 1`), in the bar.
 - `sidebar/profiler/view = { next }`: on the panel, a plain `sidebar/panel` in the container, there only while the panel is open. `next` is when the next refresh is due, in seconds of `Time`.
 - `sidebar/profiler/row = { rank, name }`: a row's slot, at most `max_rows` of them. A refresh rewrites a slot in place when another system takes its rank; slots are spawned or despawned only when the number of rows shown changes.
 - `sidebar/profiler/summary`, `span`, `rows`, `more`, `line`, `name`, `cost`, `query`: mark the rest of the content, in the panel's `sidebar/panel/scroll`.

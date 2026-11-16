@@ -247,6 +247,19 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and #letters(world, button(world, "Beta")) == 1 and #letters(world, button(world, "Gamma")) == 1,
             "icons=" .. #list)
         commands:entity(button(world, "Gamma"):id()):despawn()
+        commands:entity(bar(world):id())
+            :add_child(commands:spawn({ ["sidebar/button"] = { icon = "icons/account.png", title = "Delta", order = 0 }, ["core/script/owner"] = Instances.script_entity(PANEL) }):id())
+        step("delta")
+
+    elseif phase == "delta" and clock > 0.3 then
+        local delta = button(world, "Delta")
+        local images = world:query({ iter_many = world:descendants(delta:id()), with = { "ImageNode" } })
+        local image = images[1] and images[1]:get("ImageNode").image
+        local path = type(image) == "string" and image or (image ~= nil and tostring(image:path()) or "none")
+        suite.assert_test("R18_a_button_naming_an_icon_draws_its_image_and_no_letter",
+            #images == 1 and path == "icons/account.png" and #letters(world, delta) == 0,
+            string.format("images=%d path=%s letters=%d", #images, path, #letters(world, delta)))
+        commands:entity(delta:id()):despawn()
         escape()
         step("open before leaving")
 

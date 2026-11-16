@@ -14,7 +14,7 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 
 - `sidebar = {}` on the local player, added by the client itself (the player's client half). Never synced: the sidebar is local UI.
 - `sidebar/open = {}` on the player while the sidebar is open. Added and removed by `sidebar`.
-- `sidebar/button = { icon, title, order }`: a button, spawned by a panel mod into the bar. The sidebar gives it `Node`, `Button`, `BorderRadius` and `ui/style` and keeps the bar in `order`; until icons draw images, the icon shows the title's first letter.
+- `sidebar/button = { icon, title, order }`: a button, spawned by a panel mod into the bar. The sidebar gives it `Node`, `Button`, `BorderRadius` and `ui/style` and keeps the bar in `order`. `icon` is an image path (the library's own are in `icons/`), drawn in the icon; a button naming none shows the title's first letter.
 - `sidebar/button/open = { order }` on a button while its panel is open; `order` is one above the highest among the open buttons when it opened, so Escape closes the newest. Added and removed by `sidebar` (a click, Escape, closing the sidebar). A panel mod reacts to its `added` and `removed` edges on its own button.
 - `sidebar/container`, `sidebar/bar`: the sidebar's own UI, one of each, found as the first row of a query for its marker (`containers:iter()[1]`). The container is a UI root; panels go inside it, beside the bar.
 
@@ -28,7 +28,7 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 | Update | `sidebar/toggle` | Escape in game input opens the sidebar; in UI input it closes the newest open panel, or the sidebar |
 | Update, after `sidebar/toggle` | `sidebar/show` | On opening: show the container, UI input with the cursor |
 | Update, after `sidebar/toggle` | `sidebar/hide` | On closing: hide, game input, close every panel |
-| Update | `sidebar/icons` | A new button becomes an icon: style, click observer, letter |
+| Update | `sidebar/icons` | A new button becomes an icon: style, click observer, its image or letter |
 | Update | `sidebar/order` | When a button comes, put the bar's icons in `order` (`Children`) |
 | Update | `sidebar/icon_open` | An icon is drawn active when its panel opens |
 | Update, after `sidebar/toggle` and `sidebar/hide` | `sidebar/icon_closed` | An icon is drawn inactive again when its panel closes |
@@ -45,7 +45,7 @@ Query[{ added = { "sidebar/bar" } }]
 Query[{ added = { "sidebar/profiler" }, with = { "core/net/local" } }]
 -- local bar = bars:iter()[1]   (bars: a declared Query[{ with = { "sidebar/bar" } }])
 -- commands:spawn({
---     ["sidebar/button"] = { title = "Profiler", order = 1 },
+--     ["sidebar/button"] = { icon = "icons/profiler.png", title = "Profiler", order = 1 },
 --     ["sidebar/profiler/button"] = {},
 --     ChildOf = bar:id(),
 -- })

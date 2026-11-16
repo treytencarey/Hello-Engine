@@ -14,7 +14,7 @@ A sidebar panel, "Collaborators", listing one repository's collaborators from Gi
 
 - `git/collaborators = {}` on the local player. The player's client half adds and removes it.
 - `git/collaborators/state = { open }` on the carrier, added by this mod when the carrier arrives, if it has none: whether the panel is open, kept through a reload.
-- `git/collaborators/button`: marks this mod's `sidebar/button` (`title = "Collaborators"`, `order = 4`), in the bar.
+- `git/collaborators/button`: marks this mod's `sidebar/button` (`icon = "icons/friends.png"`, `title = "Collaborators"`, `order = 4`), in the bar.
 - `git/collaborators/view`: on the panel, a `sidebar/panel` (280 px) in the container, there only while the panel is open.
 - `git/collaborators/row`: marks each row in the panel's scroll area.
 

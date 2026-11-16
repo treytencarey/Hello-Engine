@@ -12,7 +12,7 @@ A sidebar panel, "Accounts", for the player's two sign-ins: Hello! (the Site) an
 
 - `sidebar/profile = {}` on the local player, beside `sidebar`. `player/client` adds and removes it.
 - `sidebar/profile/state = { open }` on the carrier, added by this mod when the carrier arrives, if it has none: whether the panel is open, kept through a reload. It goes with the carrier, and with `sidebar`, as a part of that name.
-- `sidebar/profile/button`: marks this mod's `sidebar/button`, in the bar.
+- `sidebar/profile/button`: marks this mod's `sidebar/button` (`icon = "icons/account.png"`, `title = "Accounts"`, `order = 0`), in the bar.
 - `sidebar/profile/view`: on the panel, a plain `sidebar/panel` in the container, there only while the panel is open.
 - `sidebar/profile/row`: marks each row in the panel's scroll area: a header, then one row per sign-in shown.
 
