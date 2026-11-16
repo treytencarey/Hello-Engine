@@ -8,18 +8,15 @@
 --- The title and line for a replacement core recorded (`core/library/replaced`), or nil for one
 --- that says nothing worth a card.
 local function replaced_words(r)
-    local kept = r.kept ~= nil and string.format(" in .hello/held/%s", tostring(r.kept)) or ""
-    if r.both and r.by == "me" and r.kept == nil then
+    local kept = r.kept ~= nil and " in .hello/kept/" or ""
+    if r.both and r.by == "me" then
         return "MERGED", string.format("%s changed here and in the world; the changes were merged.", tostring(r.path))
-    elseif r.both and r.by == "me" then
-        return "BOTH CHANGED", string.format("%s changed here and in the world. Your newer copy is kept; the world's is%s.",
-            tostring(r.path), kept)
     elseif r.both then
-        return "BOTH CHANGED", string.format("%s changed here and in the world. The world's newer copy is kept; yours is%s.",
+        return "BOTH CHANGED", string.format("%s changed here and in the world. The world's copy landed; yours is kept%s.",
             tostring(r.path), kept)
     elseif r.by == "world" then
         return "REPLACED", string.format("The world's newer %s replaced your copy.%s", tostring(r.path),
-            r.kept ~= nil and (" Yours is" .. kept .. ".") or "")
+            r.kept ~= nil and (" Yours is kept" .. kept .. ".") or "")
     end
     return "WENT UP", string.format("Your newer %s went up.", tostring(r.path))
 end

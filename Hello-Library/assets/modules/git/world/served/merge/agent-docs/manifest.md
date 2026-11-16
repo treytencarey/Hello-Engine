@@ -6,7 +6,7 @@ exposes: [git/world/served/merge, git/world/served/merge/result]
 
 # git/world/served/merge
 
-Git's three-way text merge, as core's resolver for a file both the player and the world changed. When the tree's provider of edit facts says it merges (`core/library/edit/provider { merges = true }`, which `git/world/served/status` sets), core asks for each such file with `core/library/merge { path, mine, theirs }`, `theirs` being the world's version, kept in the held store. This mod asks root to merge it into the player's checkout, and root writes only a merge with no conflict. Core keeps the newer copy whenever this mod says no. No conflict markers are ever written: a file holding them would count as the player's newer copy and go up into the world. World mods never touch files: core's watcher sees the file change. A sub-mod of `git/world/served`, which adds and removes it.
+Git's three-way text merge, as core's resolver for a file both the player and the world changed. When the tree's provider of edit facts says it merges (`core/library/edit/provider { merges = true }`, which `git/world/served/status` sets), core asks for each such file with `core/library/merge { path, mine, theirs }`, `theirs` being the world's version, kept in the held store. This mod asks root to merge it into the player's checkout, and root writes only a merge with no conflict. Whenever this mod says no, core lands the world's copy and keeps the player's by name in the cache home (`.hello/kept/`), which root's window offers back (`core/transfers`). No conflict markers are ever written: a file holding them would count as the player's newer copy and go up into the world. World mods never touch files: core's watcher sees the file change. A sub-mod of `git/world/served`, which adds and removes it.
 
 ## Components
 
@@ -38,6 +38,6 @@ commands:entity(e):insert({ ["git/world/served/merge"] = {} })
 ## Notes
 
 - Root merges over the working copy, its `HEAD` version and the world's: the base is the shared commit only when the checkout is on the commit the world states, which is when `git/world/served/status` says it merges.
-- A binary both sides changed is a failure to git, so core keeps the newer copy and says so.
+- A binary both sides changed is a failure to git, so core lands the world's copy, keeps the player's and says so.
 - A reply crosses from root's VM, and a mirrored edge arrives as surely as a local one, so each reply is read on its own edge; only the 30 s limit runs on the clock.
 - `test_merge` runs headless, standing in for core's requests and root's answers.

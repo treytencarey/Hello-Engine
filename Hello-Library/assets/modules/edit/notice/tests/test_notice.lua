@@ -46,7 +46,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         step("replaced")
     elseif phase == "replaced" then
         local seen = lines(world)
-        local both = seen["maps/a.glb changed here and in the world. The world's newer copy is kept; yours is in .hello/held/7."]
+        local both = seen["maps/a.glb changed here and in the world. The world's copy landed; yours is kept in .hello/kept/."]
         local merged = seen["m.lua changed here and in the world; the changes were merged."]
         if not (both and merged) and clock < 3 then return end
         T("E6_a_replacement_says_which_copy_is_kept", both == true, "")
