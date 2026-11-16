@@ -14,7 +14,7 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 
 - `sidebar = {}` on the local player, added by the client itself (the player's client half). Never synced: the sidebar is local UI.
 - `sidebar/open = {}` on the player while the sidebar is open. Added and removed by `sidebar`.
-- `sidebar/button = { icon, title, order }`: a button, spawned by a panel mod into the bar. The sidebar gives it `Node`, `Button`, `BorderRadius` and `ui/style` and keeps the bar in `order`. `icon` is an image path (the library's own are in `icons/`), drawn in the icon; a button naming none shows the title's first letter.
+- `sidebar/button = { icon, title, order }`: a button, spawned by a panel mod into the bar. The sidebar gives it `Node`, `Button`, `BorderRadius` and `ui/style` and keeps the bar in `order`. `icon` is an image path (the library's own are in `icons/`), drawn in the icon; a button naming none, or one in a VM that loads no images (a headless one), shows the title's first letter.
 - `sidebar/button/open = { order }` on a button while its panel is open; `order` is one above the highest among the open buttons when it opened, so Escape closes the newest. Added and removed by `sidebar` (a click, Escape, closing the sidebar). A panel mod reacts to its `added` and `removed` edges on its own button.
 - `sidebar/container`, `sidebar/bar`: the sidebar's own UI, one of each, found as the first row of a query for its marker (`containers:iter()[1]`). The container is a UI root; panels go inside it, beside the bar.
 
