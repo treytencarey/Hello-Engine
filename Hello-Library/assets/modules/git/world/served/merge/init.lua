@@ -3,7 +3,8 @@
 -- world's version, kept in the held store) when the tree's provider says it merges; this mod asks
 -- root to merge it into the player's checkout with `vault/git/merge`, `apply = "clean"`, so root
 -- writes only a merge with no conflict. It answers `core/library/merge/reply { status }`: "merged"
--- when root wrote it, "no" otherwise, and core then keeps the newer copy. No markers are ever
+-- when root wrote it, "no" otherwise, and core then lands the world's copy and keeps the player's
+-- in `.hello/kept/`. No markers are ever
 -- written. A sub-mod of git/world/served, which adds and removes it.
 --
 -- git/world/served/merge = {}
