@@ -109,9 +109,10 @@ app:add_systems(First, {
     end
 end):in_set("animation/link"):after("animation/graph")
 
--- What it is doing: from its body's velocity when it has one (physics moves a body in fixed
--- steps, so most frames show no movement), else from how it moved since last frame. Motion
--- is followed every frame.
+-- What it is doing: from its body's velocity while that says it moves (physics moves a body in
+-- fixed steps, so most frames show no movement), else from how it moved since last frame. A frame
+-- holding two steps reads a kinematic copy as still, as its Transform moved only before the first.
+-- Motion is followed every frame.
 app:add_systems(Update, {
     Res[Time],
     Query[{
@@ -126,13 +127,11 @@ app:add_systems(Update, {
         local a = e:get("animation")
         local at = e:get("Transform").translation
         local last = (e:get("animation/motion") or {}).at
-        local vx, vy, vz
+        local from = last or at
+        local vx, vy, vz = (at.x - from.x) / dt, (at.y - from.y) / dt, (at.z - from.z) / dt
         local body = e:get("Velocity3d")
-        if body and body.linvel then
-            vx, vy, vz = body.linvel.x or 0, body.linvel.y or 0, body.linvel.z or 0
-        else
-            local from = last or at
-            vx, vy, vz = (at.x - from.x) / dt, (at.y - from.y) / dt, (at.z - from.z) / dt
+        if body and body.linvel and (body.linvel.x ~= 0 or body.linvel.y ~= 0 or body.linvel.z ~= 0) then
+            vx, vy, vz = body.linvel.x, body.linvel.y, body.linvel.z
         end
         local state, speed = "idle", 1
         local action = e:get("animation/action")

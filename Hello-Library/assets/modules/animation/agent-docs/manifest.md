@@ -39,7 +39,7 @@ A character's skeletal animation: its model, and the clip it plays for what it i
 | First (client) | `animation/model` | On a changed `animation` whose fields are filled: spawn the model child with `SceneRoot = asset_server:load(scene)`, or replace it when the scene differs from the one it holds |
 | First (client) | `animation/graph` | On a changed `animation`: build the graph from the clips' handles, or rebuild it when a clip's path changed or one was taken out, and give it to a player already linked |
 | First (client), after `animation/graph` | `animation/link` | On an added AnimationPlayer, find its character (the nearest ancestor with a graph), give the player the graph and mark it `animation/player` |
-| Update (client) | `animation/state` | Polls: from the body's velocity when it has one, else its motion since last frame (or its `animation/action`), the state and speed to play |
+| Update (client) | `animation/state` | Polls: from the body's velocity while that says it moves, else its motion since last frame (or its `animation/action`), the state and speed to play |
 | Update (client), after `animation/state` | `animation/play` | When a character's state, speed or graph changes, or a new player appears: a state or graph its player has not started crossfades into its clip from the start; the same one at a new speed only changes the running clip's speed |
 
 ## Use
@@ -56,12 +56,12 @@ commands:entity(character):patch({ ["animation/action"] = null })
 
 ## Notes
 
-- The motion is the body's velocity when the character has one (its own player: physics moves a body in fixed steps, so most frames show no movement), else how its Transform moved since last frame (another player, eased toward what arrives).
+- The motion is the body's velocity while that says it moves (physics moves a body in fixed steps, so most frames show no movement), else how its Transform moved since last frame. Another player's copy is a kinematic body eased toward what arrives, and Rapier writes its velocity as still on a frame holding two steps, as its Transform moved only before the first; read from its velocity alone, it flickered between `walk` and `idle`, and each flip restarted the clip.
 - The state comes from how the character moved on this client: rising faster than 1 m/s is `jump`, falling faster is `fall`, moving across faster than 0.1 m/s is `walk` (its speed scaled by `walk_speed`, between 0.3 and 2), else `idle`. Two clients can play different clips for one character for a moment, where their copies move differently.
 - The scene and clips are asset handles (`asset_server:load`). Bevy refills them in place when a file changes or arrives, so a changed model or clip file respawns the scene and changes the clip on every character using it, and nothing here runs again.
 - A change to `animation` replaces only what it names anew: a new scene replaces the model child, a changed or removed clip rebuilds the graph, and a change to anything else (`walk_speed`) touches neither.
 - `animation/playing` is written whenever the speed changes, which for a character followed by its Transform is most frames; its clip is never restarted for it.
-- A headless run has no AnimationPlugin, so the client half's suite runs windowed.
+- A headless run has no AnimationPlugin, so no clip advances there: `test_animation_client.lua` runs windowed. `test_animation_state.lua`, the state picked for bodies whose velocity reads still, runs headless.
 - A file still downloading gives a handle that fills in when it lands (core), so a character draws and plays once its files arrive, without a rebuild.
 - `animation/graph` is written with `set`: a patch would merge into the old `nodes` and `clips`, and a clip taken out would stay listed.
 - `animation/graph` builds the graph as Bevy does: `AnimationGraph.new()`, `graph:add_clip(clip, 1.0, graph.root)` for each clip (loaded with `asset_server:load`), then `graphs:add(graph)` on a `ResMut[Assets[AnimationGraph]]` parameter.
