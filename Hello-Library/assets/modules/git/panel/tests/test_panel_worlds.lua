@@ -6,14 +6,18 @@
 -- W1  the header: "Loading sessions…" before root answers, the error, then "No visible sessions"
 -- W2  a row reads its scope without `github:`, cut to 24, "● " on this world's own, and the counts
 -- W3  "^" on another row asks core's flip for that row's scope
--- W6  signed out of the Site there is no "X"; signed in, "X" only on rows of this world's repository
--- W4  "X" arms as "sure?"; a second click asks root for one despawn; an arm lapses after 5 s
+-- W6  with no grants on this client's own net there is no "■ Stop for everyone"; with "writer", it is on
+--     the rows of this world's repository, and not on another repository's row
+-- W4  "■ Stop for everyone" arms as "sure?"; a second click asks root for one despawn; an arm lapses after 5 s
 -- W5  a refused despawn says why on its row, and 10 s later its ask goes
--- W7  a world root's sessions reply says it holds is listed with "background" or "playing", Stop and
---     Restart, a held world not on the registry's list getting a row of its own; nothing else (a
---     presence of root's, a world's row) makes a world held
--- W8  Stop asks root to stop the world here, in place of an earlier ask; each refusal in the row's
---     own words; done closes the ask
+-- W7  a world root's sessions reply says it holds is listed with "background" or "playing", "■ Stop here"
+--     and Restart, a held world not on the registry's list getting a row of its own; nothing else (a
+--     presence of root's, a world's row) makes a world held; a row neither held nor stoppable for
+--     everyone has no Stop
+-- W11 one Stop per row: with "writer", a held row of this world's repository has "■ Stop for everyone"
+--     and no "■ Stop here"; the grants removed, "■ Stop for everyone" goes and "■ Stop here" comes back
+-- W8  "■ Stop here" asks root to stop the world here, in place of an earlier ask; each refusal in the
+--     row's own words; done closes the ask
 -- W9  Restart asks root, reads "..." while restarting, and done closes the ask
 -- W10 a portal this player placed here has Close, which despawns it; one being placed or another
 --     player's has none
@@ -178,10 +182,6 @@ local function flips(world)
 end
 
 local function sessions_ask(world) return asks(world, "core/registry/sessions")[1] end
-local function site_ask(world)
-    local s = sessions_ask(world)
-    return s and asks(world, "core/player/session/signin", s.id)[1]
-end
 
 local LIST = {
     { scope = HERE, scope_root = "github:zzpanel/world", active = 2, background = 1, since = "zz" },
@@ -201,12 +201,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:entity(player):insert({ ["core/net/owner"] = own_net, ["git/panel"] = {} })
         step("asked")
 
-    elseif phase == "asked" and asks(world, "vault/github/repos")[1] ~= nil and site_ask(world) ~= nil and clock > 0.3 then
+    elseif phase == "asked" and asks(world, "vault/github/repos")[1] ~= nil and sessions_ask(world) ~= nil and clock > 0.3 then
         local repos = asks(world, "vault/github/repos")[1]
         local gh = asks(world, "vault/github/signin", repos.id)[1]
-        T("W0_the_carrier_asks_root_for_the_sessions_once_with_a_site_sign_in_ask_under_it",
+        T("W0_the_carrier_asks_root_for_the_sessions_once_with_no_site_sign_in_ask",
             #asks(world, "core/registry/sessions") == 1 and next(sessions_ask(world).wish) == nil
-            and site_ask(world) ~= nil, tostring(#asks(world, "core/registry/sessions")))
+            and #asks(world, "core/player/session/signin", sessions_ask(world).id) == 0,
+            string.format("sessions=%d signin under it=%d", #asks(world, "core/registry/sessions"),
+                #asks(world, "core/player/session/signin", sessions_ask(world).id)))
         reply(commands, gh.id, "vault/github/signin/reply", { login = "zz-octo", pending = false })
         reply(commands, repos.id, "vault/github/repos/reply", { repos = {
             { name = "world", owner = "zzpanel", default_branch = "main", is_base = true },
@@ -231,7 +233,6 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "empty" and has_text(shown, "No visible sessions") then
         T("W1_an_empty_list_says_so", not has_text(shown, "Loading sessions…"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
         reply(commands, sessions_ask(world).id, "core/registry/sessions/reply", { sessions = LIST })
-        reply(commands, site_ask(world).id, "core/player/session/signin/reply", { pending = false })
         step("listed")
 
     elseif phase == "listed" and has_text(shown, "● zzpanel/world:main") and clock > 0.3 then
@@ -239,13 +240,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             and has_text(shown, "zzother/elsewhere:main"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
         T("W2_the_current_one_is_marked_and_the_counts_read", has_text(shown, "2▸ 1◌") and has_text(shown, "0▸ 3◌"))
         T("W3_switch_on_every_row_but_the_current", count(shown, "^") == 2, tostring(count(shown, "^")))
-        T("W6_signed_out_of_the_site_no_x", count(shown, "X") == 0, tostring(count(shown, "X")))
-        reply(commands, site_ask(world).id, "core/player/session/signin/reply", { user = { id = "zz-u", name = "Zz" } })
-        step("signed_in")
+        T("W6_with_no_grants_no_stop_for_everyone", count(shown, "■ Stop for everyone") == 0, tostring(count(shown, "■ Stop for everyone")))
+        -- The grants as this world's server syncs them onto this client's own net entity.
+        commands:entity(own_net):insert({ ["core/permission/grants"] = { names = { "writer" } } })
+        step("granted")
 
-    elseif phase == "signed_in" and has_text(shown, "X") and clock > 0.3 then
-        T("W6_signed_in_x_only_on_this_world_s_repository", count(shown, "X") == 2
-            and not has_text(row_texts(world, "zzother/elsewhere:main"), "X"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
+    elseif phase == "granted" and has_text(shown, "■ Stop for everyone") and clock > 0.3 then
+        T("W6_with_writer_stop_for_everyone_only_on_this_world_s_repository", count(shown, "■ Stop for everyone") == 2
+            and has_text(row_texts(world, "● zzpanel/world:main"), "■ Stop for everyone")
+            and has_text(row_texts(world, "zzpanel/world:a-very-..."), "■ Stop for everyone")
+            and not has_text(row_texts(world, "zzother/elsewhere:main"), "■ Stop for everyone"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
         click(commands, button_in(world, "zzpanel/world:a-very-...", "^"))
         step("flipped")
 
@@ -253,7 +257,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local f = flips(world)
         T("W3_switch_asks_the_flip_for_that_row", #f == 1 and f[1]:get("core/world/flip").scope == LONG,
             tostring(#f))
-        click(commands, button_in(world, "zzpanel/world:a-very-...", "X"))
+        click(commands, button_in(world, "zzpanel/world:a-very-...", "■ Stop for everyone"))
         step("armed")
 
     elseif phase == "armed" and has_text(shown, "sure?") then
@@ -268,7 +272,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             and state_of(world).armed == nil, tostring(#d))
         T("W4_and_reads_dots_while_asked", has_text(row_texts(world, "zzpanel/world:a-very-..."), "..."), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
         mark.despawn = d[1].id
-        click(commands, button_in(world, "● zzpanel/world:main", "X"))
+        click(commands, button_in(world, "● zzpanel/world:main", "■ Stop for everyone"))
         step("armed_here")
 
     elseif phase == "armed_here" and state_of(world).armed ~= nil and clock > 0.2 then
@@ -280,7 +284,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "lapsed" and clock > 0.5 then
         T("W4_an_arm_lapses_after_5_s", state_of(world).armed == nil
-            and has_text(row_texts(world, "● zzpanel/world:main"), "X"), tostring(state_of(world).armed))
+            and has_text(row_texts(world, "● zzpanel/world:main"), "■ Stop for everyone"), tostring(state_of(world).armed))
         reply(commands, mark.despawn, "core/registry/despawn/reply", { status = "refused", reason = "zz-no" })
         step("refused")
 
@@ -308,15 +312,28 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("held")
 
     elseif phase == "held" and has_text(shown, "zzpanel/world:bg") and clock > 0.3 then
-        T("W7_a_background_world_has_its_own_row_with_stop_and_restart",
+        T("W7_a_background_world_has_its_own_row_with_stop_here_and_restart",
             has_text(row_texts(world, "zzpanel/world:bg", 1), "background")
-            and has_text(row_texts(world, "zzpanel/world:bg", 1), "■ Stop")
+            and has_text(row_texts(world, "zzpanel/world:bg", 1), "■ Stop here")
             and has_text(row_texts(world, "zzpanel/world:bg", 1), "↻ Restart"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
         T("W7_the_world_played_reads_playing", has_text(row_texts(world, "● zzpanel/world:main", 1), "playing"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
         T("W7_only_root_s_held_list_says_a_world_is_held", not has_text(shown, "zzpanel/world:gone"))
-        T("W7_no_held_line_on_a_world_root_does_not_hold",
-            not has_text(row_texts(world, "zzother/elsewhere:main", 1), "■ Stop"))
-        click(commands, button_in(world, "● zzpanel/world:main", "■ Stop", 1))
+        T("W7_a_row_neither_held_nor_stoppable_for_everyone_has_no_stop",
+            not has_text(row_texts(world, "zzother/elsewhere:main"), "■ Stop for everyone")
+            and not has_text(row_texts(world, "zzother/elsewhere:main", 1), "■ Stop here"))
+        T("W11_a_held_row_of_this_repository_with_writer_has_one_stop_for_everyone",
+            has_text(row_texts(world, "● zzpanel/world:main"), "■ Stop for everyone")
+            and has_text(row_texts(world, "● zzpanel/world:main", 1), "playing")
+            and not has_text(row_texts(world, "● zzpanel/world:main", 1), "■ Stop here")
+            and has_text(row_texts(world, "● zzpanel/world:main", 1), "↻ Restart"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
+        commands:entity(own_net):remove("core/permission/grants")
+        step("ungranted")
+
+    elseif phase == "ungranted" and not has_text(shown, "■ Stop for everyone") and clock > 0.3 then
+        T("W11_the_grants_removed_stop_for_everyone_goes_and_stop_here_comes_back",
+            count(shown, "■ Stop for everyone") == 0 and has_text(row_texts(world, "● zzpanel/world:main", 1), "■ Stop here"),
+            (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
+        click(commands, button_in(world, "● zzpanel/world:main", "■ Stop here", 1))
         step("stop_here")
 
     elseif phase == "stop_here" and #asks(world, "core/world/unload") > 0 and clock > 0.3 then
@@ -328,7 +345,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "playing" and has_text(shown, "⚠ can't stop the world you are in: switch first") then
         T("W8_playing_in_the_row_s_own_words", true)
-        click(commands, button_in(world, "zzpanel/world:bg", "■ Stop", 1))
+        click(commands, button_in(world, "zzpanel/world:bg", "■ Stop here", 1))
         step("stop_bg")
 
     elseif phase == "stop_bg" and #asks(world, "core/world/unload") == 2 and clock > 0.3 then
@@ -341,7 +358,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("watched")
 
     elseif phase == "watched" and has_text(shown, "⚠ can't stop it: a portal looks at it") then
-        click(commands, button_in(world, "zzpanel/world:bg", "■ Stop", 1))
+        click(commands, button_in(world, "zzpanel/world:bg", "■ Stop here", 1))
         step("stop_again")
 
     elseif phase == "stop_again" and clock > 0.3 then

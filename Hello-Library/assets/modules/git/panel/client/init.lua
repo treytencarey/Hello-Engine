@@ -86,20 +86,12 @@ local function ask_repos(commands, carrier)
     })
 end
 
--- The standing sessions ask, with the Site sign-in ask under it: a standing
--- `core/player/session/signin` among the carrier's children is `sidebar/profile`'s.
 local function ask_sessions(commands, carrier)
-    local sessions = commands:spawn({
+    commands:spawn({
         ["core/registry/sessions"] = {},
         Request = {},
         ["core/script/owner"] = false,
         ChildOf = carrier,
-    }):id()
-    commands:spawn({
-        ["core/player/session/signin"] = {},
-        Request = {},
-        ["core/script/owner"] = false,
-        ChildOf = sessions,
     })
 end
 
@@ -739,9 +731,8 @@ app:add_systems(Update, {
     Query[{ with = { "git/world/head/pull" } }],
     Query[{ with = { "scope/portal", "scope/portal/locked" } }],
     Query[{
-        any_of = { "core/registry/sessions", "core/player/session/signin" },
-        with = { "Request" },
-        optional = { "core/registry/sessions/reply", "core/player/session/signin/reply", "Children" },
+        with = { "core/registry/sessions", "Request" },
+        optional = { "core/registry/sessions/reply" },
     }],
     Query[{
         any_of = { "core/registry/despawn", "core/world/unload", "core/world/restart" },
@@ -753,9 +744,10 @@ app:add_systems(Update, {
     }],
     Query[{ with = { "scope/portal" }, without = { "placement" } }],
     Query[{ with = { "core/net", "core/net/owns" } }],
+    Query[{ with = { "core/net", "core/permission/grants" } }],
     Commands,
 }, function(views, carriers, scrolls, rows, texts, asks, statuses, flips, pulls, locked, standing, row_asks,
-            placed, own, commands)
+            placed, own, granted, commands)
     local view = views:iter_mut()[1]
     local carrier = carriers:iter()[1]
     local parts = view and scrolls:iter_descendants(view:id()) or {}
@@ -850,7 +842,7 @@ app:add_systems(Update, {
         local my_root = me and me:get("core/world/status").scope_root
         -- `held` is root's word for the worlds Stop on this PC counts as held, so a held line shows
         -- exactly where Stop is not refused `not-held`.
-        local sessions, list_error, site_user = nil, nil, nil
+        local sessions, list_error = nil, nil
         local holds = {}
         for _, ask in ipairs(standing:iter_many(carrier:get("Children") or {})) do
             if ask:has("core/registry/sessions") then
@@ -862,10 +854,6 @@ app:add_systems(Update, {
                             holds[h.scope] = h.playing and "playing" or "background"
                         end
                     end
-                end
-                for _, s in ipairs(standing:iter_many(ask:get("Children") or {})) do
-                    local who = opt(s, "core/player/session/signin/reply")
-                    if who ~= nil and who.user ~= nil then site_user = who.user end
                 end
             end
         end
@@ -883,6 +871,14 @@ app:add_systems(Update, {
         end
         table.sort(extra)
         for _, k in ipairs(extra) do world_rows[#world_rows + 1] = { scope = k } end
+        -- What this user may do in this world, as its server grants it on this client's own net entity.
+        local writer = false
+        for _, n in ipairs(granted:iter()) do
+            local grants = n:get("core/permission/grants")
+            for _, name in ipairs(grants.names or {}) do
+                writer = writer or name == "writer"
+            end
+        end
         -- Each row's own asks, by scope: what its buttons say and its refusal line.
         local by_scope = {}
         for _, ask in ipairs(row_asks:iter_many(carrier:get("Children") or {})) do
@@ -908,17 +904,19 @@ app:add_systems(Update, {
             local r = b.restart and b.restart.said
             w.current = scope ~= nil and w.scope == scope
             w.label = (w.current and "● " or "") .. short(w.scope)
-            -- Root takes a despawn only for a world of this world's repository.
-            w.can_x = site_user ~= nil and w.scope_root ~= nil and w.scope_root == my_root
+            -- One Stop per row. This world's grants say whether the player may stop its
+            -- repository's worlds for everyone, on any Gateway; a world of another repository is
+            -- stopped for everyone from inside it, where its own grants say.
+            w.everyone = writer and w.scope_root ~= nil and w.scope_root == my_root
             if b.despawn and (d == nil or d.status == "asking" or d.status == "requested") then
                 w.x = "..."
             elseif state.armed ~= nil and state.armed.scope == w.scope then
                 w.x = "sure?"
             else
-                w.x = "X"
+                w.x = "■ Stop for everyone"
             end
             w.held = holds[w.scope]
-            w.stop = (b.unload and u == nil) and "..." or "■ Stop"
+            w.stop = (b.unload and u == nil) and "..." or "■ Stop here"
             w.restart = (b.restart and (r == nil or r.status == "restarting")) and "..." or "↻ Restart"
             if d and d.status == "refused" then
                 w.refused = despawn_refused(d.reason)
@@ -968,10 +966,10 @@ app:add_systems(Update, {
                 wanted[#wanted + 1] = w.label
                 if w.counts ~= nil then wanted[#wanted + 1] = w.counts end
                 if not w.current then wanted[#wanted + 1] = "^" end
-                if w.can_x then wanted[#wanted + 1] = w.x end
+                if w.everyone then wanted[#wanted + 1] = w.x end
                 if w.held ~= nil then
                     wanted[#wanted + 1] = w.held
-                    wanted[#wanted + 1] = w.stop
+                    if not w.everyone then wanted[#wanted + 1] = w.stop end
                     wanted[#wanted + 1] = w.restart
                 end
                 if w.refused ~= nil then wanted[#wanted + 1] = w.refused end
@@ -1237,8 +1235,9 @@ app:add_systems(Update, {
                             })
                         end)
                     end
-                    if w.can_x then
-                        local x = small(row, w.x, w.x ~= "...", w.x == "sure?" and 40 or 24, w.x == "sure?")
+                    if w.everyone then
+                        local x = small(row, w.x, w.x ~= "...",
+                            (w.x == "sure?" and 40) or (w.x == "..." and 24) or 116, w.x == "sure?")
                         if w.x ~= "..." then
                             -- The first click arms it; a second within ARM_SECONDS asks root, in place of
                             -- any earlier ask for the world.
@@ -1279,10 +1278,10 @@ app:add_systems(Update, {
                         local line = line_row(22, background)
                         text_in(line, w.held, 9, "text_dim")
                         spacer(line)
-                        local stop = small(line, w.stop, w.stop ~= "...", 64, false)
+                        local stop = not w.everyone and small(line, w.stop, w.stop ~= "...", 76, false)
                         local restart = small(line, w.restart, w.restart ~= "...", 72, false)
                         -- Each asks root in place of any earlier ask of its kind for the world.
-                        if w.stop ~= "..." then
+                        if stop and w.stop ~= "..." then
                             stop:observe(On[Pointer[Click]], {
                                 Query[{ with = { "git/panel" }, optional = { "Children" } }],
                                 Query[{ with = { "core/world/unload", "Request" } }],
@@ -1440,12 +1439,12 @@ end):in_set("git/panel/render"):after("git/panel"):run_if({
     Query[{
         ["or"] = {
             added = {
-                "core/registry/sessions/reply", "core/player/session/signin/reply",
+                "core/registry/sessions/reply",
                 "core/registry/despawn", "core/world/unload", "core/world/restart",
                 "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
             },
             changed = {
-                "core/registry/sessions/reply", "core/player/session/signin/reply",
+                "core/registry/sessions/reply",
                 "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
             },
             removed = { "core/registry/despawn", "core/world/unload", "core/world/restart" },
@@ -1458,12 +1457,20 @@ end):in_set("git/panel/render"):after("git/panel"):run_if({
             removed = { "placement", "scope/portal" },
         },
     }],
-}, function(views, scrolls, asks, flips, statuses, pulls, locks, sessions, portals)
+    Query[{
+        ["or"] = {
+            added = { "core/permission/grants" },
+            changed = { "core/permission/grants" },
+            removed = { "core/permission/grants" },
+        },
+        with = { "core/net" },
+    }],
+}, function(views, scrolls, asks, flips, statuses, pulls, locks, sessions, portals, grants)
     -- Root's replies and the flip asks cross from root's VM, and a mirrored edge arrives as surely as
     -- a local one, so their edges are all this waits on.
     return not views:is_empty() and (not scrolls:is_empty() or not asks:is_empty() or not flips:is_empty()
         or not statuses:is_empty() or not pulls:is_empty() or not locks:is_empty() or not sessions:is_empty()
-        or not portals:is_empty())
+        or not portals:is_empty() or not grants:is_empty())
 end)
 
 return {}
