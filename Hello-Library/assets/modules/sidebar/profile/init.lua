@@ -19,14 +19,6 @@ local Click = require("bevy::picking::prelude::Click")
 -- What one sign-in's row says. `known`: root has answered the standing ask. `who`: the name root
 -- gave, while signed in. `wish` and `said`: the player's last sign-in or sign-out ask and root's
 -- answer to it, if any.
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 
 local function account(title, known, who, wish, said)
     local row = { title = title, status = "Not signed in", role = "text_dim" }
@@ -242,12 +234,16 @@ app:add_systems(Update, {
     Commands,
 }, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
-        commands:spawn({
-            ["sidebar/button"] = { icon = "icons/account.png", title = "Accounts", order = 0 },
-            ["sidebar/profile/button"] = {},
-            ChildOf = bar:id(),
-        })
+    if bar == nil or not buttons:is_empty() then return end
+    for _, n in ipairs(own:iter()) do
+        for _, _ in ipairs(carriers:iter_many(n:get("core/net/owns"))) do
+            commands:spawn({
+                ["sidebar/button"] = { icon = "icons/account.png", title = "Accounts", order = 0 },
+                ["sidebar/profile/button"] = {},
+                ChildOf = bar:id(),
+            })
+            return
+        end
     end
 end):in_set("sidebar/profile/add_button"):run_if({
     Query[{ added = { "sidebar/bar" } }],
@@ -448,19 +444,21 @@ app:add_systems(Update, {
                     Query[{ with = { "core/player/session/signin", "Request" } }],
                     Commands,
                 }, function(_, owners, own, asks, click_commands)
-                    for _, owner in ipairs(owned(own, owners)) do
-                        for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
-                            local wish = ask:get("core/player/session/signin")
-                            if wish.start or wish.sign_out then
-                                click_commands:entity(ask:id()):try_despawn()
+                    for _, n in ipairs(own:iter()) do
+                        for _, owner in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                            for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
+                                local wish = ask:get("core/player/session/signin")
+                                if wish.start or wish.sign_out then
+                                    click_commands:entity(ask:id()):try_despawn()
+                                end
                             end
+                            click_commands:spawn({
+                                ["core/player/session/signin"] = { start = true },
+                                Request = {},
+                                ["core/script/owner"] = false,
+                                ChildOf = owner:id(),
+                            })
                         end
-                        click_commands:spawn({
-                            ["core/player/session/signin"] = { start = true },
-                            Request = {},
-                            ["core/script/owner"] = false,
-                            ChildOf = owner:id(),
-                        })
                     end
                 end)
             elseif site_button ~= nil then
@@ -473,19 +471,21 @@ app:add_systems(Update, {
                     Query[{ with = { "core/player/session/signin", "Request" } }],
                     Commands,
                 }, function(_, owners, own, asks, click_commands)
-                    for _, owner in ipairs(owned(own, owners)) do
-                        for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
-                            local wish = ask:get("core/player/session/signin")
-                            if wish.start or wish.sign_out then
-                                click_commands:entity(ask:id()):try_despawn()
+                    for _, n in ipairs(own:iter()) do
+                        for _, owner in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                            for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
+                                local wish = ask:get("core/player/session/signin")
+                                if wish.start or wish.sign_out then
+                                    click_commands:entity(ask:id()):try_despawn()
+                                end
                             end
+                            click_commands:spawn({
+                                ["core/player/session/signin"] = { sign_out = true },
+                                Request = {},
+                                ["core/script/owner"] = false,
+                                ChildOf = owner:id(),
+                            })
                         end
-                        click_commands:spawn({
-                            ["core/player/session/signin"] = { sign_out = true },
-                            Request = {},
-                            ["core/script/owner"] = false,
-                            ChildOf = owner:id(),
-                        })
                     end
                 end)
             end
@@ -501,19 +501,21 @@ app:add_systems(Update, {
                     Query[{ with = { "vault/github/signin", "Request" } }],
                     Commands,
                 }, function(_, owners, own, asks, click_commands)
-                    for _, owner in ipairs(owned(own, owners)) do
-                        for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
-                            local wish = ask:get("vault/github/signin")
-                            if wish.start or wish.sign_out then
-                                click_commands:entity(ask:id()):try_despawn()
+                    for _, n in ipairs(own:iter()) do
+                        for _, owner in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                            for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
+                                local wish = ask:get("vault/github/signin")
+                                if wish.start or wish.sign_out then
+                                    click_commands:entity(ask:id()):try_despawn()
+                                end
                             end
+                            click_commands:spawn({
+                                ["vault/github/signin"] = { start = true },
+                                Request = {},
+                                ["core/script/owner"] = false,
+                                ChildOf = owner:id(),
+                            })
                         end
-                        click_commands:spawn({
-                            ["vault/github/signin"] = { start = true },
-                            Request = {},
-                            ["core/script/owner"] = false,
-                            ChildOf = owner:id(),
-                        })
                     end
                 end)
             elseif github_button ~= nil then
@@ -526,19 +528,21 @@ app:add_systems(Update, {
                     Query[{ with = { "vault/github/signin", "Request" } }],
                     Commands,
                 }, function(_, owners, own, asks, click_commands)
-                    for _, owner in ipairs(owned(own, owners)) do
-                        for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
-                            local wish = ask:get("vault/github/signin")
-                            if wish.start or wish.sign_out then
-                                click_commands:entity(ask:id()):try_despawn()
+                    for _, n in ipairs(own:iter()) do
+                        for _, owner in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                            for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
+                                local wish = ask:get("vault/github/signin")
+                                if wish.start or wish.sign_out then
+                                    click_commands:entity(ask:id()):try_despawn()
+                                end
                             end
+                            click_commands:spawn({
+                                ["vault/github/signin"] = { sign_out = true },
+                                Request = {},
+                                ["core/script/owner"] = false,
+                                ChildOf = owner:id(),
+                            })
                         end
-                        click_commands:spawn({
-                            ["vault/github/signin"] = { sign_out = true },
-                            Request = {},
-                            ["core/script/owner"] = false,
-                            ChildOf = owner:id(),
-                        })
                     end
                 end)
             end

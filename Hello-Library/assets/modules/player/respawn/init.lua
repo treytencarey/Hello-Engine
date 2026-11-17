@@ -12,21 +12,6 @@ local Click = require("bevy::picking::prelude::Click")
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 --- Is the row's owner one of this client's own nets? Its owner column must be named.
 local function mine(own, row)
     local owner = row:get("core/net/owner")
@@ -45,7 +30,11 @@ app:add_systems(Update, {
     Query[{ with = { "player/respawn/item" } }],
     Commands,
 }, function(carriers, own, lists, items, commands)
-    if #owned(own, carriers) > 0 then
+    local carried = false
+    for _, n in ipairs(own:iter()) do
+        carried = carried or carriers:iter_many(n:get("core/net/owns"))[1] ~= nil
+    end
+    if carried then
         for _, list in ipairs(lists:iter()) do
             local children = list:get("Children") or {}
             if items:iter_many(children)[1] == nil then
@@ -67,28 +56,30 @@ app:add_systems(Update, {
                     Query[{ with = { "core/net", "core/net/owns" } }],
                     Query[{ with = { "player/spawner/point", "Name", "GlobalTransform" } }],
                 }, function(_, players, nets, points)
-                    for _, p in ipairs(owned_mut(nets, players)) do
-                        local claim = p:get("player").spawn_point
-                        local collider = p:get("Collider3d")
-                        local capsule = collider.unscaled.Capsule
-                        for _, point in ipairs(points:iter()) do
-                            local name = point:get("Name")
-                            if capsule ~= nil and name.name == claim then
-                                local body = p:get_mut("Transform")
-                                local segment = capsule.segment
-                                local height = ((segment.b[2] - segment.a[2]) / 2 + capsule.radius) * body.scale.y
-                                local place = point.GlobalTransform:compute_transform()
-                                body.translation = Vec3.add(place.translation,
-                                    Quat.mul_vec3(place.rotation, { x = 0, y = height, z = 0 }))
-                                if p:has("Velocity3d") then
-                                    local v = p:get_mut("Velocity3d")
-                                    v.linvel = { x = 0, y = 0, z = 0 }
-                                    v.angvel = { x = 0, y = 0, z = 0 }
+                    for _, n in ipairs(nets:iter()) do
+                        for _, p in ipairs(players:iter_many_mut(n:get("core/net/owns"))) do
+                            local claim = p:get("player").spawn_point
+                            local collider = p:get("Collider3d")
+                            local capsule = collider.unscaled.Capsule
+                            for _, point in ipairs(points:iter()) do
+                                local name = point:get("Name")
+                                if capsule ~= nil and name.name == claim then
+                                    local body = p:get_mut("Transform")
+                                    local segment = capsule.segment
+                                    local height = ((segment.b[2] - segment.a[2]) / 2 + capsule.radius) * body.scale.y
+                                    local place = point.GlobalTransform:compute_transform()
+                                    body.translation = Vec3.add(place.translation,
+                                        Quat.mul_vec3(place.rotation, { x = 0, y = height, z = 0 }))
+                                    if p:has("Velocity3d") then
+                                        local v = p:get_mut("Velocity3d")
+                                        v.linvel = { x = 0, y = 0, z = 0 }
+                                        v.angvel = { x = 0, y = 0, z = 0 }
+                                    end
+                                    if p:has("camera") then
+                                        p:get_mut("camera").yaw = Quat.to_euler(place.rotation, "YXZ")[1]
+                                    end
+                                    break
                                 end
-                                if p:has("camera") then
-                                    p:get_mut("camera").yaw = Quat.to_euler(place.rotation, "YXZ")[1]
-                                end
-                                break
                             end
                         end
                     end

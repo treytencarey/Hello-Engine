@@ -38,14 +38,6 @@ local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 
 -- Writing is a change edge, and most text stays as it was when the rows move.
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 
 local function write_text(line, text)
     if line:get("Text") ~= text then
@@ -87,12 +79,16 @@ app:add_systems(Update, {
     Commands,
 }, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
-        commands:spawn({
-            ["sidebar/button"] = { icon = "icons/files.png", title = "Files", order = 2 },
-            ["sidebar/file_browser/button"] = {},
-            ChildOf = bar:id(),
-        })
+    if bar == nil or not buttons:is_empty() then return end
+    for _, n in ipairs(own:iter()) do
+        for _, _ in ipairs(carriers:iter_many(n:get("core/net/owns"))) do
+            commands:spawn({
+                ["sidebar/button"] = { icon = "icons/files.png", title = "Files", order = 2 },
+                ["sidebar/file_browser/button"] = {},
+                ChildOf = bar:id(),
+            })
+            return
+        end
     end
 end):in_set("sidebar/file_browser/add_button"):run_if({
     Query[{ added = { "sidebar/bar" } }],
@@ -255,7 +251,10 @@ app:add_systems(Update, {
     Commands,
 }, function(views, carriers, own, commands)
     local view = views:iter()[1]
-    local carrier = owned(own, carriers)[1]
+    local carrier = nil
+    for _, n in ipairs(own:iter()) do
+        carrier = carrier or carriers:iter_many(n:get("core/net/owns"))[1]
+    end
     if view ~= nil and carrier ~= nil then
         local sync = carrier:get("core/net/sync")
         if type(sync) == "table" and sync["sidebar/file_browser/request"] ~= nil then

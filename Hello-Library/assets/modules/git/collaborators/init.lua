@@ -18,15 +18,6 @@ local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local Time = require("bevy::time::Time")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 -- On, the player's own row gets "Debug", which makes a local invite card to a fresh branch of this
 -- world's repository, so the accept path can be tried with one account. Off when committed.
 local DEBUG_INVITES = false
@@ -90,12 +81,16 @@ app:add_systems(Update, {
     Commands,
 }, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
-        commands:spawn({
-            ["sidebar/button"] = { icon = "icons/friends.png", title = "Collaborators", order = 4 },
-            ["git/collaborators/button"] = {},
-            ChildOf = bar:id(),
-        })
+    if bar == nil or not buttons:is_empty() then return end
+    for _, n in ipairs(own:iter()) do
+        for _, _ in ipairs(carriers:iter_many(n:get("core/net/owns"))) do
+            commands:spawn({
+                ["sidebar/button"] = { icon = "icons/friends.png", title = "Collaborators", order = 4 },
+                ["git/collaborators/button"] = {},
+                ChildOf = bar:id(),
+            })
+            return
+        end
     end
 end):in_set("git/collaborators"):run_if({
     Query[{ added = { "sidebar/bar" } }],
@@ -508,22 +503,24 @@ app:add_systems(Update, {
                             Commands,
                         }, function(_, owners, own, open_sends, here, click_commands)
                             local world_row = here:iter()[1]
-                            for _, owner in ipairs(owned(own, owners)) do
-                                for _, ask in ipairs(open_sends:iter_many(owner:get("Children") or {})) do
-                                    if plain(ask:get("core/registry/invites/send").invitee) == plain(login) then
-                                        click_commands:entity(ask:id()):try_despawn()
+                            for _, n in ipairs(own:iter()) do
+                                for _, owner in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                                    for _, ask in ipairs(open_sends:iter_many(owner:get("Children") or {})) do
+                                        if plain(ask:get("core/registry/invites/send").invitee) == plain(login) then
+                                            click_commands:entity(ask:id()):try_despawn()
+                                        end
                                     end
-                                end
-                                if world_row ~= nil then
-                                    click_commands:spawn({
-                                        ["core/registry/invites/send"] = {
-                                            scope = world_row:get("core/world/status").scope_key,
-                                            invitee = login,
-                                        },
-                                        Request = {},
-                                        ["core/script/owner"] = false,
-                                        ChildOf = owner:id(),
-                                    })
+                                    if world_row ~= nil then
+                                        click_commands:spawn({
+                                            ["core/registry/invites/send"] = {
+                                                scope = world_row:get("core/world/status").scope_key,
+                                                invitee = login,
+                                            },
+                                            Request = {},
+                                            ["core/script/owner"] = false,
+                                            ChildOf = owner:id(),
+                                        })
+                                    end
                                 end
                             end
                         end)

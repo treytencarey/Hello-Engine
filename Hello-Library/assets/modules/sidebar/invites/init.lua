@@ -30,15 +30,6 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 local function say(commands, carrier, kind, text)
     commands:entity(carrier):entry("sidebar/invites/state"):and_modify(function(state)
         state.feedback, state.feedback_kind = text, kind
@@ -274,7 +265,10 @@ app:add_systems(Update, {
                 }],
                 Commands,
             }, function(event, owners, own, notices, click_commands)
-                local owner = owned(own, owners)[1]
+                local owner = nil
+                for _, n in ipairs(own:iter()) do
+                    owner = owner or owners:iter_many(n:get("core/net/owns"))[1]
+                end
                 local notice = notices:iter_many(notices:iter_ancestors(event.entity))[1]
                 if owner ~= nil and notice ~= nil then
                     local said = notice:get("sidebar/invites/notification")
@@ -544,16 +538,18 @@ app:add_systems(Update, {
 }, function(gone, portals, carriers, loads, own, commands)
     for _, p in ipairs(gone:iter()) do
         local target = (p:get("scope/portal") or {}).target
-        for _, carrier in ipairs(owned(own, carriers)) do
-            local me = carrier:has("core/net/owner") and carrier:get("core/net/owner")
-            local still = false
-            for _, q in ipairs(portals:iter()) do
-                local theirs = me and q:has("core/net/owner") and q:get("core/net/owner") == me
-                still = still or (theirs and q:get("scope/portal").target == target)
-            end
-            for _, load in ipairs(loads:iter_many(carrier:get("Children") or {})) do
-                if not still and target ~= nil and load:get("core/world/load").scope == target then
-                    commands:entity(load:id()):despawn()
+        for _, n in ipairs(own:iter()) do
+            for _, carrier in ipairs(carriers:iter_many(n:get("core/net/owns"))) do
+                local me = carrier:has("core/net/owner") and carrier:get("core/net/owner")
+                local still = false
+                for _, q in ipairs(portals:iter()) do
+                    local theirs = me and q:has("core/net/owner") and q:get("core/net/owner") == me
+                    still = still or (theirs and q:get("scope/portal").target == target)
+                end
+                for _, load in ipairs(loads:iter_many(carrier:get("Children") or {})) do
+                    if not still and target ~= nil and load:get("core/world/load").scope == target then
+                        commands:entity(load:id()):despawn()
+                    end
                 end
             end
         end

@@ -15,21 +15,6 @@ local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
 local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
 local Vec3 = require("bevy::math::Vec3")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 --- The rows of `q` (its owner named) that belong to this client.
 local function mine(own, q)
     local out = {}
@@ -60,20 +45,29 @@ app:add_systems(First, {
     Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
 }, function(started, arrived, placing, players, own, commands)
-    local binding = mine(own, arrived)
-    if #mine(own, started) > 0 then
-        binding = owned(own, players)
+    local placed = false
+    for _, n in ipairs(own:iter()) do
+        placed = placed or placing:iter_many(n:get("core/net/owns"))[1] ~= nil
     end
-    if #owned(own, placing) == 0 then
-        binding = {}
-    end
-    for _, e in ipairs(binding) do
+    if not placed then return end
+    local function bind(e)
         commands:entity(e:id()):entry("input/ui"):or_default():and_modify(function(ui)
             ui.placement = {
                 confirm = { button = "Left" },
                 cancel = { key = "Escape", button = "Right", take = true },
             }
         end)
+    end
+    if #mine(own, started) > 0 then
+        for _, n in ipairs(own:iter()) do
+            for _, e in ipairs(players:iter_many(n:get("core/net/owns"))) do
+                bind(e)
+            end
+        end
+    else
+        for _, e in ipairs(mine(own, arrived)) do
+            bind(e)
+        end
     end
 end):in_set("placement/bind")
 
@@ -87,11 +81,17 @@ app:add_systems(First, {
     Commands,
 }, function(ended, placing, players, own, commands)
     for _, _ in ipairs(ended:iter()) do
-        if #owned(own, placing) == 0 then
-            for _, e in ipairs(owned(own, players)) do
-                commands:entity(e:id()):entry("input/ui"):and_modify(function(ui)
-                    ui.placement = nil
-                end)
+        local placed = false
+        for _, n in ipairs(own:iter()) do
+            placed = placed or placing:iter_many(n:get("core/net/owns"))[1] ~= nil
+        end
+        if not placed then
+            for _, n in ipairs(own:iter()) do
+                for _, e in ipairs(players:iter_many(n:get("core/net/owns"))) do
+                    commands:entity(e:id()):entry("input/ui"):and_modify(function(ui)
+                        ui.placement = nil
+                    end)
+                end
             end
         end
         break
@@ -116,41 +116,46 @@ app:add_systems(Update, {
     Query[{ with = { "Pickable" } }],
     Query[{ with = { "core/net", "core/net/owns" } }],
 }, function(rapier, ray_cast, placing, players, eyes, windows, pickables, own)
-    for _, player in ipairs(owned(own, players)) do
-        local ray = player:get("vr/pointer/ray")
-        local eye = eyes:iter_many(player:get("Children") or {})[1]
-        local window = windows:iter()[1]
-        if ray == nil and eye ~= nil and window ~= nil then
-            local cursor = window.Window:physical_cursor_position()
-            -- It fails while the camera has no target size yet.
-            local ok, seen = pcall(function() return cursor ~= nil and eye.Camera:viewport_to_world(cursor) or nil end)
-            if ok and seen ~= nil then
-                -- A `Dir3` may read back as its one field.
-                local direction = seen.direction[1] or seen.direction
-                ray = { origin = seen.origin, direction = direction }
-            end
-        end
-        if ray ~= nil then
-            local me = player:id()
-            for _, p in ipairs(owned_mut(own, placing)) do
-                local placed = p:id()
-                local function passes(entity)
-                    local root = players:root_ancestor(entity)
-                    local pick = pickables:get(entity)
-                    return root ~= placed and root ~= me
-                        and not (pick ~= nil and pick:get("Pickable").is_hoverable == false)
-                end
-                local hit = rapier:cast_ray(ray.origin, ray.direction, 100, true, { predicate = passes })
-                local far = hit ~= nil and hit.toi or nil
-                local mesh = ray_cast:cast_ray(ray, { visibility = "Visible", filter = passes })[1]
-                local near = mesh ~= nil and mesh.ray_mesh_hit.distance or nil
-                if near ~= nil and (far == nil or near < far) then far = near end
-                if far ~= nil then
-                    p:get_mut("Transform").translation = Vec3.add(ray.origin, Vec3.mul(ray.direction, Vec3.splat(far)))
+    for _, n in ipairs(own:iter()) do
+        for _, player in ipairs(players:iter_many(n:get("core/net/owns"))) do
+            local ray = player:get("vr/pointer/ray")
+            local eye = eyes:iter_many(player:get("Children") or {})[1]
+            local window = windows:iter()[1]
+            if ray == nil and eye ~= nil and window ~= nil then
+                local cursor = window.Window:physical_cursor_position()
+                -- It fails while the camera has no target size yet.
+                local ok, seen = pcall(function() return cursor ~= nil and eye.Camera:viewport_to_world(cursor) or nil end)
+                if ok and seen ~= nil then
+                    -- A `Dir3` may read back as its one field.
+                    local direction = seen.direction[1] or seen.direction
+                    ray = { origin = seen.origin, direction = direction }
                 end
             end
+            if ray ~= nil then
+                local me = player:id()
+                for _, n in ipairs(own:iter()) do
+                    for _, p in ipairs(placing:iter_many_mut(n:get("core/net/owns"))) do
+                        local placed = p:id()
+                        local function passes(entity)
+                            local root = players:root_ancestor(entity)
+                            local pick = pickables:get(entity)
+                            return root ~= placed and root ~= me
+                                and not (pick ~= nil and pick:get("Pickable").is_hoverable == false)
+                        end
+                        local hit = rapier:cast_ray(ray.origin, ray.direction, 100, true, { predicate = passes })
+                        local far = hit ~= nil and hit.toi or nil
+                        local mesh = ray_cast:cast_ray(ray, { visibility = "Visible", filter = passes })[1]
+                        local near = mesh ~= nil and mesh.ray_mesh_hit.distance or nil
+                        if near ~= nil and (far == nil or near < far) then far = near end
+                        if far ~= nil then
+                            p:get_mut("Transform").translation = Vec3.add(ray.origin, Vec3.mul(ray.direction, Vec3.splat(far)))
+                        end
+                    end
+                end
+            end
+            -- the first player only
+            return
         end
-        break
     end
 end):in_set("placement/follow")
 
@@ -164,8 +169,10 @@ app:add_systems(Update, {
     Commands,
 }, function(pressed, placing, own, commands)
     for _, _ in ipairs(mine(own, pressed)) do
-        for _, p in ipairs(owned(own, placing)) do
-            commands:entity(p:id()):remove("placement")
+        for _, n in ipairs(own:iter()) do
+            for _, p in ipairs(placing:iter_many(n:get("core/net/owns"))) do
+                commands:entity(p:id()):remove("placement")
+            end
         end
         break
     end
@@ -182,8 +189,10 @@ app:add_systems(Update, {
     Commands,
 }, function(released, placing, own, commands)
     for _, _ in ipairs(mine(own, released)) do
-        for _, p in ipairs(owned(own, placing)) do
-            commands:entity(p:id()):try_despawn()
+        for _, n in ipairs(own:iter()) do
+            for _, p in ipairs(placing:iter_many(n:get("core/net/owns"))) do
+                commands:entity(p:id()):try_despawn()
+            end
         end
         break
     end

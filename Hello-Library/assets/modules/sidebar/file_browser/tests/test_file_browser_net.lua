@@ -133,14 +133,6 @@ local Instances = require("modules/core/instances.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("FileBrowserNetState", boot.DEFAULTS)
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 local connected, asked = false, false
 app:add_systems(Update, {
     Query[{ with = { "sidebar/file_browser", "core/net/sync" } }],
@@ -155,7 +147,10 @@ app:add_systems(Update, {
             ["core/net/sync"] = false,
         })
     end
-    local me = owned(own, mine)[1]
+    local me = nil
+    for _, n in ipairs(own:iter()) do
+        me = me or mine:iter_many(n:get("core/net/owns"))[1]
+    end
     if me ~= nil and not asked then
         local sync = me:get("core/net/sync")
         if type(sync) == "table" and sync["sidebar/file_browser/request"] ~= nil then
@@ -172,7 +167,10 @@ app:add_systems(Update, {
     Query[{ with = { "player" } }],
     Query[{ with = { "core/net", "core/net/owns" } }],
 }, function(changed, players, own)
-    local mine = owned(own, players)[1]
+    local mine = nil
+    for _, n in ipairs(own:iter()) do
+        mine = mine or players:iter_many(n:get("core/net/owns"))[1]
+    end
     for _, e in ipairs(changed:iter()) do
         if mine ~= nil and e:id() == mine:id() then
             local parts = {}

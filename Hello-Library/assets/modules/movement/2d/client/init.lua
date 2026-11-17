@@ -8,14 +8,6 @@ local Vec2 = require("bevy::math::Vec2")
 local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")
 
---- The rows of `q` this client owns, writable: those in its own nets' `core/net/owns`.
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 --- Is the row's owner one of this client's own nets? Its owner column must be named.
 local function mine(own, row)
     local owner = row:get("core/net/owner")
@@ -97,36 +89,40 @@ app:add_systems(Update, {
     Query[{ with = { "core/net", "core/net/owns" } }],
 }, function(time, walkers, coasters, own)
     local dt = time:delta_secs()
-    for _, e in ipairs(owned_mut(own, walkers)) do
-        local m = e:get("movement/2d")
-        local up = e:get("input/game/movement_2d/up")
-        local down = e:get("input/game/movement_2d/down")
-        local left = e:get("input/game/movement_2d/left")
-        local right = e:get("input/game/movement_2d/right")
-        local x = (right and right.value or 0) - (left and left.value or 0)
-        local y = (up and up.value or 0) - (down and down.value or 0)
-        local along = Vec2.normalize_or_zero({ x = x, y = y })
-        -- analog input moves slower; two keys at once no faster than one
-        local scale = m.speed * math.min(1, math.sqrt(x * x + y * y))
-        -- opposite keys cancel out: that eases to rest like no key at all
-        local rate = (x ~= 0 or y ~= 0) and m.acceleration or m.deceleration
-        local linvel = e:get("Velocity2d").linvel
-        e:patch({
-            Velocity2d = {
-                linvel = Vec2.lerp(linvel, { x = along.x * scale, y = along.y * scale }, math.min(1, rate * dt)),
-            },
-        })
-    end
-    for _, e in ipairs(owned_mut(own, coasters)) do
-        local linvel = e:get("Velocity2d").linvel
-        if linvel.x ~= 0 or linvel.y ~= 0 then
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(walkers:iter_many_mut(n:get("core/net/owns"))) do
             local m = e:get("movement/2d")
-            local eased = Vec2.lerp(linvel, { x = 0, y = 0 }, math.min(1, m.deceleration * dt))
-            -- easing alone never reaches rest
-            if Vec2.length(eased) < 0.1 then
-                eased = { x = 0, y = 0 }
+            local up = e:get("input/game/movement_2d/up")
+            local down = e:get("input/game/movement_2d/down")
+            local left = e:get("input/game/movement_2d/left")
+            local right = e:get("input/game/movement_2d/right")
+            local x = (right and right.value or 0) - (left and left.value or 0)
+            local y = (up and up.value or 0) - (down and down.value or 0)
+            local along = Vec2.normalize_or_zero({ x = x, y = y })
+            -- analog input moves slower; two keys at once no faster than one
+            local scale = m.speed * math.min(1, math.sqrt(x * x + y * y))
+            -- opposite keys cancel out: that eases to rest like no key at all
+            local rate = (x ~= 0 or y ~= 0) and m.acceleration or m.deceleration
+            local linvel = e:get("Velocity2d").linvel
+            e:patch({
+                Velocity2d = {
+                    linvel = Vec2.lerp(linvel, { x = along.x * scale, y = along.y * scale }, math.min(1, rate * dt)),
+                },
+            })
+        end
+    end
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(coasters:iter_many_mut(n:get("core/net/owns"))) do
+            local linvel = e:get("Velocity2d").linvel
+            if linvel.x ~= 0 or linvel.y ~= 0 then
+                local m = e:get("movement/2d")
+                local eased = Vec2.lerp(linvel, { x = 0, y = 0 }, math.min(1, m.deceleration * dt))
+                -- easing alone never reaches rest
+                if Vec2.length(eased) < 0.1 then
+                    eased = { x = 0, y = 0 }
+                end
+                e:patch({ Velocity2d = { linvel = eased } })
             end
-            e:patch({ Velocity2d = { linvel = eased } })
         end
     end
 end):in_set("movement/2d/walk")

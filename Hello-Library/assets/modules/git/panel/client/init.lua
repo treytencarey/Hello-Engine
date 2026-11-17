@@ -31,22 +31,6 @@ local ARM_SECONDS = 5
 local REFUSAL_SECONDS = 10
 
 -- Core's canonical form lowercases the owner and the name, and keeps the branch as it is.
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 local function scope_of(repo, branch)
     return "github:" .. repo:lower() .. ":" .. branch
 end
@@ -587,25 +571,27 @@ app:add_systems(Update, {
     Commands,
 }, function(carriers, repo_asks, signins, bars, buttons, views, own, commands)
     local bar = bars:iter()[1]
-    for _, carrier in ipairs(owned_mut(own, carriers)) do
-        local repos = repo_asks:iter_many(carrier:get("Children") or {})[1]
-        local said = repos and signins:iter_many(repos:get("Children") or {})[1]
-        local login = said and said:get("vault/github/signin/reply").login
-        if said and login ~= nil and bar ~= nil and buttons:is_empty() then
-            commands:spawn({
-                ["sidebar/button"] = { icon = "icons/github.png", title = "GitHub", order = 3 },
-                ["git/panel/button"] = {},
-                ChildOf = bar:id(),
-            })
-        elseif said and login == nil then
-            for _, b in ipairs(buttons:iter()) do
-                commands:entity(b:id()):despawn()
-            end
-            for _, view in ipairs(views:iter()) do
-                commands:entity(view:id()):despawn()
-            end
-            if carrier:get("git/panel/state").open then
-                carrier:get_mut("git/panel/state").open = false
+    for _, n in ipairs(own:iter()) do
+        for _, carrier in ipairs(carriers:iter_many_mut(n:get("core/net/owns"))) do
+            local repos = repo_asks:iter_many(carrier:get("Children") or {})[1]
+            local said = repos and signins:iter_many(repos:get("Children") or {})[1]
+            local login = said and said:get("vault/github/signin/reply").login
+            if said and login ~= nil and bar ~= nil and buttons:is_empty() then
+                commands:spawn({
+                    ["sidebar/button"] = { icon = "icons/github.png", title = "GitHub", order = 3 },
+                    ["git/panel/button"] = {},
+                    ChildOf = bar:id(),
+                })
+            elseif said and login == nil then
+                for _, b in ipairs(buttons:iter()) do
+                    commands:entity(b:id()):despawn()
+                end
+                for _, view in ipairs(views:iter()) do
+                    commands:entity(view:id()):despawn()
+                end
+                if carrier:get("git/panel/state").open then
+                    carrier:get_mut("git/panel/state").open = false
+                end
             end
         end
     end
@@ -937,8 +923,10 @@ app:add_systems(Update, {
         -- The portals this player placed here, each with Close: a despawn of an entity this client
         -- owns asks the server, which despawns it everywhere.
         local mine = {}
-        for _, p in ipairs(owned(own, placed)) do
-            mine[#mine + 1] = { id = p:id(), label = "🌀 " .. short(p:get("scope/portal").target) }
+        for _, n in ipairs(own:iter()) do
+            for _, p in ipairs(placed:iter_many(n:get("core/net/owns"))) do
+                mine[#mine + 1] = { id = p:id(), label = "🌀 " .. short(p:get("scope/portal").target) }
+            end
         end
 
         local wanted = {}
@@ -1041,10 +1029,12 @@ app:add_systems(Update, {
                         Query[{ with = { Mut["Text"] } }],
                         Query[{ with = { "core/net", "core/net/owns" } }],
                     }, function(_, owners, nodes, arrows, own)
-                        for _, o in ipairs(owned_mut(own, owners)) do
-                            local s = o:get_mut("git/panel/state")
-                            s.repo = value
-                            s.branch = nil
+                        for _, n in ipairs(own:iter()) do
+                            for _, o in ipairs(owners:iter_many_mut(n:get("core/net/owns"))) do
+                                local s = o:get_mut("git/panel/state")
+                                s.repo = value
+                                s.branch = nil
+                            end
                         end
                         close(nodes, arrows, pickers[1])
                     end)
@@ -1057,8 +1047,10 @@ app:add_systems(Update, {
                         Query[{ with = { Mut["Text"] } }],
                         Query[{ with = { "core/net", "core/net/owns" } }],
                     }, function(_, owners, nodes, arrows, own)
-                        for _, o in ipairs(owned_mut(own, owners)) do
-                            o:get_mut("git/panel/state").branch = value
+                        for _, n in ipairs(own:iter()) do
+                            for _, o in ipairs(owners:iter_many_mut(n:get("core/net/owns"))) do
+                                o:get_mut("git/panel/state").branch = value
+                            end
                         end
                         close(nodes, arrows, pickers[2])
                     end)
@@ -1091,20 +1083,22 @@ app:add_systems(Update, {
                             Query[{ with = { "core/net", "core/net/owns" } }],
                             Commands,
                         }, function(_, owners, commit_asks, own, click_commands)
-                            for _, o in ipairs(owned(own, owners)) do
-                                local s = o:get("git/panel/state")
-                                local o_owner, o_name = split(s.repo)
-                                if o_owner ~= nil and s.branch ~= nil then
-                                    click_commands:spawn({
-                                        ["core/world/flip"] = { scope = scope_of(s.repo, s.branch) },
-                                        WorldShared = {},
-                                        ["core/net/sync"] = false,
-                                        ["core/script/owner"] = false,
-                                    })
-                                    for _, ask in ipairs(commit_asks:iter_many(o:get("Children") or {})) do
-                                        click_commands:entity(ask:id()):despawn()
+                            for _, n in ipairs(own:iter()) do
+                                for _, o in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                                    local s = o:get("git/panel/state")
+                                    local o_owner, o_name = split(s.repo)
+                                    if o_owner ~= nil and s.branch ~= nil then
+                                        click_commands:spawn({
+                                            ["core/world/flip"] = { scope = scope_of(s.repo, s.branch) },
+                                            WorldShared = {},
+                                            ["core/net/sync"] = false,
+                                            ["core/script/owner"] = false,
+                                        })
+                                        for _, ask in ipairs(commit_asks:iter_many(o:get("Children") or {})) do
+                                            click_commands:entity(ask:id()):despawn()
+                                        end
+                                        ask_commits(click_commands, o:id(), o_owner, o_name, s.branch)
                                     end
-                                    ask_commits(click_commands, o:id(), o_owner, o_name, s.branch)
                                 end
                             end
                         end)
@@ -1134,13 +1128,15 @@ app:add_systems(Update, {
                             Query[{ with = { "core/net", "core/net/owns" } }],
                             Commands,
                         }, function(_, owners, own, click_commands)
-                            for _, o in ipairs(owned(own, owners)) do
-                                local s = o:get("git/panel/state")
-                                local standing = o:has("git/panel/response") and o:get("git/panel/response").op ~= nil
-                                if s.repo ~= nil and s.branch ~= nil and not standing then
-                                    click_commands:entity(o:id()):insert({
-                                        ["git/panel/request"] = { op = "portal", target_sk = scope_of(s.repo, s.branch) },
-                                    })
+                            for _, n in ipairs(own:iter()) do
+                                for _, o in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                                    local s = o:get("git/panel/state")
+                                    local standing = o:has("git/panel/response") and o:get("git/panel/response").op ~= nil
+                                    if s.repo ~= nil and s.branch ~= nil and not standing then
+                                        click_commands:entity(o:id()):insert({
+                                            ["git/panel/request"] = { op = "portal", target_sk = scope_of(s.repo, s.branch) },
+                                        })
+                                    end
                                 end
                             end
                         end)
@@ -1252,23 +1248,25 @@ app:add_systems(Update, {
                                 Commands,
                             }, function(_, time, owners, despawns, own, click_commands)
                                 local now = time:elapsed_secs()
-                                for _, o in ipairs(owned_mut(own, owners)) do
-                                    local s = o:get("git/panel/state")
-                                    if s.armed ~= nil and s.armed.scope == target and now - s.armed.at <= ARM_SECONDS then
-                                        for _, d in ipairs(despawns:iter_many(o:get("Children") or {})) do
-                                            if d:get("core/registry/despawn").scope == target then
-                                                click_commands:entity(d:id()):despawn()
+                                for _, n in ipairs(own:iter()) do
+                                    for _, o in ipairs(owners:iter_many_mut(n:get("core/net/owns"))) do
+                                        local s = o:get("git/panel/state")
+                                        if s.armed ~= nil and s.armed.scope == target and now - s.armed.at <= ARM_SECONDS then
+                                            for _, d in ipairs(despawns:iter_many(o:get("Children") or {})) do
+                                                if d:get("core/registry/despawn").scope == target then
+                                                    click_commands:entity(d:id()):despawn()
+                                                end
                                             end
+                                            click_commands:spawn({
+                                                ["core/registry/despawn"] = { scope = target },
+                                                Request = {},
+                                                ["core/script/owner"] = false,
+                                                ChildOf = o:id(),
+                                            })
+                                            o:get_mut("git/panel/state").armed = nil
+                                        else
+                                            o:get_mut("git/panel/state").armed = { scope = target, at = now }
                                         end
-                                        click_commands:spawn({
-                                            ["core/registry/despawn"] = { scope = target },
-                                            Request = {},
-                                            ["core/script/owner"] = false,
-                                            ChildOf = o:id(),
-                                        })
-                                        o:get_mut("git/panel/state").armed = nil
-                                    else
-                                        o:get_mut("git/panel/state").armed = { scope = target, at = now }
                                     end
                                 end
                             end)
@@ -1288,18 +1286,20 @@ app:add_systems(Update, {
                                 Query[{ with = { "core/net", "core/net/owns" } }],
                                 Commands,
                             }, function(_, owners, unloads, own, click_commands)
-                                for _, o in ipairs(owned(own, owners)) do
-                                    for _, u in ipairs(unloads:iter_many(o:get("Children") or {})) do
-                                        if u:get("core/world/unload").scope == target then
-                                            click_commands:entity(u:id()):despawn()
+                                for _, n in ipairs(own:iter()) do
+                                    for _, o in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                                        for _, u in ipairs(unloads:iter_many(o:get("Children") or {})) do
+                                            if u:get("core/world/unload").scope == target then
+                                                click_commands:entity(u:id()):despawn()
+                                            end
                                         end
+                                        click_commands:spawn({
+                                            ["core/world/unload"] = { scope = target },
+                                            Request = {},
+                                            ["core/script/owner"] = false,
+                                            ChildOf = o:id(),
+                                        })
                                     end
-                                    click_commands:spawn({
-                                        ["core/world/unload"] = { scope = target },
-                                        Request = {},
-                                        ["core/script/owner"] = false,
-                                        ChildOf = o:id(),
-                                    })
                                 end
                             end)
                         end
@@ -1310,18 +1310,20 @@ app:add_systems(Update, {
                                 Query[{ with = { "core/net", "core/net/owns" } }],
                                 Commands,
                             }, function(_, owners, restarts, own, click_commands)
-                                for _, o in ipairs(owned(own, owners)) do
-                                    for _, r in ipairs(restarts:iter_many(o:get("Children") or {})) do
-                                        if r:get("core/world/restart").scope == target then
-                                            click_commands:entity(r:id()):despawn()
+                                for _, n in ipairs(own:iter()) do
+                                    for _, o in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                                        for _, r in ipairs(restarts:iter_many(o:get("Children") or {})) do
+                                            if r:get("core/world/restart").scope == target then
+                                                click_commands:entity(r:id()):despawn()
+                                            end
                                         end
+                                        click_commands:spawn({
+                                            ["core/world/restart"] = { scope = target },
+                                            Request = {},
+                                            ["core/script/owner"] = false,
+                                            ChildOf = o:id(),
+                                        })
                                     end
-                                    click_commands:spawn({
-                                        ["core/world/restart"] = { scope = target },
-                                        Request = {},
-                                        ["core/script/owner"] = false,
-                                        ChildOf = o:id(),
-                                    })
                                 end
                             end)
                         end

@@ -48,15 +48,6 @@ local MouseButtonInput = require("bevy::input::mouse::MouseButtonInput")
 local MouseMotion = require("bevy::input::mouse::MouseMotion")
 local MouseWheel = require("bevy::input::mouse::MouseWheel")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 -- Input that does not come from a device: a key, a mouse button or a scroll written by a mod (a
 -- suite, a replay, an on-screen control), shaped as Bevy's own message of each, and an analog
 -- strength for a held key (`{ key_code = <KeyCode>, value = <0..1> }`).
@@ -79,40 +70,42 @@ app:add_systems(First, {
     for _, m in ipairs(synthetic_buttons:read()) do buttons[#buttons + 1] = m end
     local analog = analog_in:read()
 
-    for _, e in ipairs(owned(own, players)) do
-        local held = e:get("input/held") or {}
-        local before = held.keys or {}
-        local held_keys, held_buttons = {}, {}
-        local released_keys, released_buttons = {}, {}
-        -- a key or button with no name (`KeyCode::Unidentified`, `MouseButton::Other`) binds to nothing
-        for _, ev in ipairs(keys) do
-            if type(ev.key_code) == "string" then
-                held_keys[ev.key_code] = ev.state == "Pressed" and 1 or null
-                released_keys[ev.key_code] = ev.state ~= "Pressed" and null or nil
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(players:iter_many(n:get("core/net/owns"))) do
+            local held = e:get("input/held") or {}
+            local before = held.keys or {}
+            local held_keys, held_buttons = {}, {}
+            local released_keys, released_buttons = {}, {}
+            -- a key or button with no name (`KeyCode::Unidentified`, `MouseButton::Other`) binds to nothing
+            for _, ev in ipairs(keys) do
+                if type(ev.key_code) == "string" then
+                    held_keys[ev.key_code] = ev.state == "Pressed" and 1 or null
+                    released_keys[ev.key_code] = ev.state ~= "Pressed" and null or nil
+                end
             end
-        end
-        for _, ev in ipairs(analog) do
-            if held_keys[ev.key_code] == 1 or (held_keys[ev.key_code] == nil and before[ev.key_code]) then
-                held_keys[ev.key_code] = ev.value
+            for _, ev in ipairs(analog) do
+                if held_keys[ev.key_code] == 1 or (held_keys[ev.key_code] == nil and before[ev.key_code]) then
+                    held_keys[ev.key_code] = ev.value
+                end
             end
-        end
-        for _, ev in ipairs(buttons) do
-            if type(ev.button) == "string" then
-                held_buttons[ev.button] = ev.state == "Pressed" and 1 or null
-                released_buttons[ev.button] = ev.state ~= "Pressed" and null or nil
+            for _, ev in ipairs(buttons) do
+                if type(ev.button) == "string" then
+                    held_buttons[ev.button] = ev.state == "Pressed" and 1 or null
+                    released_buttons[ev.button] = ev.state ~= "Pressed" and null or nil
+                end
             end
-        end
-        if next(held_keys) or next(held_buttons) or not e:has("input/held") then
-            commands:entity(e:id()):patch({
-                ["input/held"] = {
-                    keys = held_keys,
-                    buttons = held_buttons,
-                    through = {
-                        keys = released_keys,
-                        buttons = released_buttons,
+            if next(held_keys) or next(held_buttons) or not e:has("input/held") then
+                commands:entity(e:id()):patch({
+                    ["input/held"] = {
+                        keys = held_keys,
+                        buttons = held_buttons,
+                        through = {
+                            keys = released_keys,
+                            buttons = released_buttons,
+                        },
                     },
-                },
-            })
+                })
+            end
         end
     end
 end):in_set("input/held")
@@ -151,79 +144,84 @@ app:add_systems(PreUpdate, {
     -- The columns this pass reads come from data: each player's mode and the actions
     -- already added.
     local columns = {}
-    for _, e in ipairs(owned(own, players)) do
-        local mode = (e:get("input/mode") or {}).mode
-        local added = e:get("input/actions") or {}
-        columns[#columns + 1] = mode
-        for name in pairs(added) do columns[#columns + 1] = name end
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(players:iter_many(n:get("core/net/owns"))) do
+            local mode = (e:get("input/mode") or {}).mode
+            local added = e:get("input/actions") or {}
+            columns[#columns + 1] = mode
+            for name in pairs(added) do columns[#columns + 1] = name end
+        end
     end
 
-    for _, e in ipairs(owned(own, held_players:with_columns({ optional = columns }))) do
-        local input = e:get("input")
-        local held = e:get("input/held")
-        local mode = (e:get("input/mode") or {}).mode
-        local bindings = mode and e:get(mode) or {}
-        local added = e:get("input/actions") or {}
-        local sensitivity = input.sensitivity or 1.0
-        local held_keys = held.keys or {}
-        local held_buttons = held.buttons or {}
-        local through = held.through or {}
-        local through_keys = through.keys or {}
-        local through_buttons = through.buttons or {}
-        local player = commands:entity(e:id())
-        if held.mode ~= mode then
-            -- The mode changed: what is held now waits for its release.
-            through_keys, through_buttons = held_keys, held_buttons
-            player:patch({
-                ["input/held"] = {
-                    mode = mode,
-                    through = {
-                        keys = held_keys,
-                        buttons = held_buttons,
+    local rows = held_players:with_columns({ optional = columns })
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(rows:iter_many(n:get("core/net/owns"))) do
+            local input = e:get("input")
+            local held = e:get("input/held")
+            local mode = (e:get("input/mode") or {}).mode
+            local bindings = mode and e:get(mode) or {}
+            local added = e:get("input/actions") or {}
+            local sensitivity = input.sensitivity or 1.0
+            local held_keys = held.keys or {}
+            local held_buttons = held.buttons or {}
+            local through = held.through or {}
+            local through_keys = through.keys or {}
+            local through_buttons = through.buttons or {}
+            local player = commands:entity(e:id())
+            if held.mode ~= mode then
+                -- The mode changed: what is held now waits for its release.
+                through_keys, through_buttons = held_keys, held_buttons
+                player:patch({
+                    ["input/held"] = {
+                        mode = mode,
+                        through = {
+                            keys = held_keys,
+                            buttons = held_buttons,
+                        },
                     },
-                },
-            })
-        end
-        local taken_keys, taken_buttons = {}, {}
-        for _, actions in pairs(bindings) do
-            for _, b in pairs(actions) do
-                if b.take and b.key then taken_keys[b.key] = true end
-                if b.take and b.button then taken_buttons[b.button] = true end
+                })
             end
-        end
-        local wanted = {}
-        for group, actions in pairs(bindings) do
-            for action, b in pairs(actions) do
-                local delta = (b.motion and motion) or (b.scroll and scroll)
-                local value = (b.key and not through_keys[b.key] and (b.take or not taken_keys[b.key]) and held_keys[b.key])
-                    or (b.button and not through_buttons[b.button] and (b.take or not taken_buttons[b.button]) and held_buttons[b.button])
-                if delta and (delta.x ~= 0 or delta.y ~= 0) then
-                    wanted[mode .. "/" .. group .. "/" .. action] = { dx = delta.x * sensitivity, dy = delta.y * sensitivity }
-                elseif value then
-                    wanted[mode .. "/" .. group .. "/" .. action] = { value = value }
+            local taken_keys, taken_buttons = {}, {}
+            for _, actions in pairs(bindings) do
+                for _, b in pairs(actions) do
+                    if b.take and b.key then taken_keys[b.key] = true end
+                    if b.take and b.button then taken_buttons[b.button] = true end
                 end
             end
-        end
+            local wanted = {}
+            for group, actions in pairs(bindings) do
+                for action, b in pairs(actions) do
+                    local delta = (b.motion and motion) or (b.scroll and scroll)
+                    local value = (b.key and not through_keys[b.key] and (b.take or not taken_keys[b.key]) and held_keys[b.key])
+                        or (b.button and not through_buttons[b.button] and (b.take or not taken_buttons[b.button]) and held_buttons[b.button])
+                    if delta and (delta.x ~= 0 or delta.y ~= 0) then
+                        wanted[mode .. "/" .. group .. "/" .. action] = { dx = delta.x * sensitivity, dy = delta.y * sensitivity }
+                    elseif value then
+                        wanted[mode .. "/" .. group .. "/" .. action] = { value = value }
+                    end
+                end
+            end
 
-        local patch, actions, gone = {}, {}, {}
-        for name in pairs(added) do
-            if not wanted[name] then
-                gone[#gone + 1] = name
-                actions[name] = null
+            local patch, actions, gone = {}, {}, {}
+            for name in pairs(added) do
+                if not wanted[name] then
+                    gone[#gone + 1] = name
+                    actions[name] = null
+                end
             end
-        end
-        for name, v in pairs(wanted) do
-            local cur = e:get(name)
-            if not cur or cur.value ~= v.value or cur.dx ~= v.dx or cur.dy ~= v.dy then
-                patch[name] = v
+            for name, v in pairs(wanted) do
+                local cur = e:get(name)
+                if not cur or cur.value ~= v.value or cur.dx ~= v.dx or cur.dy ~= v.dy then
+                    patch[name] = v
+                end
+                actions[name] = true
             end
-            actions[name] = true
-        end
-        if next(patch) or #gone > 0 then
-            patch["input/actions"] = actions
-            player:patch(patch)
-            if #gone > 0 then
-                player:remove(gone)
+            if next(patch) or #gone > 0 then
+                patch["input/actions"] = actions
+                player:patch(patch)
+                if #gone > 0 then
+                    player:remove(gone)
+                end
             end
         end
     end

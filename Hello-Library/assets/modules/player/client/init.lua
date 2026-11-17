@@ -4,14 +4,6 @@
 -- changes type here: a body added after its collider never attaches. This client's own player is
 -- one in its own nets' `core/net/owns`: an owner can come after the player, so both edges count.
 
---- The rows of `q` this client owns, writable: those in its own nets' `core/net/owns`.
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 --- Is the row's owner one of this client's own nets? Its owner column must be named.
 local function mine(own, row)
     local owner = row:get("core/net/owner")
@@ -79,10 +71,12 @@ app:add_systems(First, {
         optional = { "collider/status" },
     }],
 }, function(players, own, points, roots)
-    for _, e in ipairs(owned_mut(own, players)) do
-        local player = e:get("player")
-        if player.spawn_point ~= nil and ready_point(points, roots, player.spawn_point) == nil then
-            e:get_mut("RigidBody3d"):set_if_neq("KinematicPositionBased")
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(players:iter_many_mut(n:get("core/net/owns"))) do
+            local player = e:get("player")
+            if player.spawn_point ~= nil and ready_point(points, roots, player.spawn_point) == nil then
+                e:get_mut("RigidBody3d"):set_if_neq("KinematicPositionBased")
+            end
         end
     end
 end):in_set("player/local"):run_if({
@@ -119,13 +113,15 @@ app:add_systems(Update, {
     }],
     Commands,
 }, function(players, own, points, roots, commands)
-    for _, e in ipairs(owned_mut(own, players)) do
-        local player = e:get("player")
-        if player.spawn_point == nil or ready_point(points, roots, player.spawn_point) ~= nil then
-            e:get_mut("RigidBody3d"):set_if_neq("Dynamic")
-        end
-        if not e:has("GravityScale3d") then
-            commands:entity(e:id()):insert({ GravityScale3d = { value = 1 } })
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(players:iter_many_mut(n:get("core/net/owns"))) do
+            local player = e:get("player")
+            if player.spawn_point == nil or ready_point(points, roots, player.spawn_point) ~= nil then
+                e:get_mut("RigidBody3d"):set_if_neq("Dynamic")
+            end
+            if not e:has("GravityScale3d") then
+                commands:entity(e:id()):insert({ GravityScale3d = { value = 1 } })
+            end
         end
     end
 end):in_set("player/local"):after("collider/status"):run_if({

@@ -26,15 +26,6 @@ local Vec3 = require("bevy::math::Vec3")
 local VrInputRaw = require("hello::vr_messages::VrInputRaw")
 local VrPoseInput = require("hello::vr_messages::VrPoseInput")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 local function send(keys, buttons, bound, state)
     if bound.key then
         keys:write({ key_code = bound.key, state = state })
@@ -59,61 +50,63 @@ app:add_systems(First, {
     Commands,
 }, function(raw, keys, buttons, wheel, analog, players, own, commands)
     local messages = raw:read()
-    for _, e in ipairs(owned(own, players)) do
-        local m = e:get("vr/input")
-        local held = {}
-        for name, value in pairs(e:get("vr/input/held") or {}) do
-            held[name] = value
-        end
-        local changed = {}
-        for _, r in ipairs(messages) do
-            for name, level in pairs({
-                a = r.a and 1 or 0,
-                b = r.b and 1 or 0,
-                x = r.x and 1 or 0,
-                y = r.y and 1 or 0,
-                right_trigger = r.right_trigger,
-                left_trigger = r.left_trigger,
-                right_grip = r.right_grip,
-                left_grip = r.left_grip,
-                left_stick_up = r.left_stick_y,
-                left_stick_down = -r.left_stick_y,
-                left_stick_left = -r.left_stick_x,
-                left_stick_right = r.left_stick_x,
-                right_stick_left = -r.right_stick_x,
-                right_stick_right = r.right_stick_x,
-            }) do
-                local bound = m.controls[name]
-                if bound then
-                    local was = held[name]
-                    local value
-                    if bound.analog then
-                        if level > m.deadzone then
-                            value = math.min(1, (level - m.deadzone) / (1 - m.deadzone))
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(players:iter_many(n:get("core/net/owns"))) do
+            local m = e:get("vr/input")
+            local held = {}
+            for name, value in pairs(e:get("vr/input/held") or {}) do
+                held[name] = value
+            end
+            local changed = {}
+            for _, r in ipairs(messages) do
+                for name, level in pairs({
+                    a = r.a and 1 or 0,
+                    b = r.b and 1 or 0,
+                    x = r.x and 1 or 0,
+                    y = r.y and 1 or 0,
+                    right_trigger = r.right_trigger,
+                    left_trigger = r.left_trigger,
+                    right_grip = r.right_grip,
+                    left_grip = r.left_grip,
+                    left_stick_up = r.left_stick_y,
+                    left_stick_down = -r.left_stick_y,
+                    left_stick_left = -r.left_stick_x,
+                    left_stick_right = r.left_stick_x,
+                    right_stick_left = -r.right_stick_x,
+                    right_stick_right = r.right_stick_x,
+                }) do
+                    local bound = m.controls[name]
+                    if bound then
+                        local was = held[name]
+                        local value
+                        if bound.analog then
+                            if level > m.deadzone then
+                                value = math.min(1, (level - m.deadzone) / (1 - m.deadzone))
+                            end
+                        elseif level > (was and m.release or m.press) then
+                            value = 1
                         end
-                    elseif level > (was and m.release or m.press) then
-                        value = 1
-                    end
-                    if value and not was then
-                        send(keys, buttons, bound, "Pressed")
-                    elseif was and not value then
-                        send(keys, buttons, bound, "Released")
-                    end
-                    if value and value ~= was and bound.analog and bound.key then
-                        analog:write({ key_code = bound.key, value = value })
-                    end
-                    if value ~= was then
-                        held[name] = value
-                        changed[name] = value or null
+                        if value and not was then
+                            send(keys, buttons, bound, "Pressed")
+                        elseif was and not value then
+                            send(keys, buttons, bound, "Released")
+                        end
+                        if value and value ~= was and bound.analog and bound.key then
+                            analog:write({ key_code = bound.key, value = value })
+                        end
+                        if value ~= was then
+                            held[name] = value
+                            changed[name] = value or null
+                        end
                     end
                 end
+                if math.abs(r.right_stick_y) > m.deadzone then
+                    wheel:write({ x = 0, y = r.right_stick_y })
+                end
             end
-            if math.abs(r.right_stick_y) > m.deadzone then
-                wheel:write({ x = 0, y = r.right_stick_y })
+            if next(changed) then
+                commands:entity(e:id()):patch({ ["vr/input/held"] = changed })
             end
-        end
-        if next(changed) then
-            commands:entity(e:id()):patch({ ["vr/input/held"] = changed })
         end
     end
 end):in_set("vr/input/raw"):before("input/held")
@@ -131,22 +124,24 @@ app:add_systems(First, {
     local messages = poses:read()
     local p = messages[#messages]
     if p ~= nil then
-        for _, e in ipairs(owned(own, players)) do
-            local rig = e:get("VmXrRig") or { translation = { x = 0, y = 0, z = 0 }, yaw = 0 }
-            local turn = Quat.from_rotation_y(rig.yaw)
-            commands:entity(e:id()):insert({
-                ["vr/input/pose"] = {
-                    hmd_position = Vec3.add(rig.translation, Quat.mul_vec3(turn, p.hmd_position)),
-                    hmd_rotation = Quat.mul_quat(turn, p.hmd_rotation),
-                    hmd_forward = Quat.mul_vec3(turn, p.hmd_forward),
-                    left_position = Vec3.add(rig.translation, Quat.mul_vec3(turn, p.left_position)),
-                    left_rotation = Quat.mul_quat(turn, p.left_rotation),
-                    left_forward = Quat.mul_vec3(turn, p.left_forward),
-                    right_position = Vec3.add(rig.translation, Quat.mul_vec3(turn, p.right_position)),
-                    right_rotation = Quat.mul_quat(turn, p.right_rotation),
-                    right_forward = Quat.mul_vec3(turn, p.right_forward),
-                },
-            })
+        for _, n in ipairs(own:iter()) do
+            for _, e in ipairs(players:iter_many(n:get("core/net/owns"))) do
+                local rig = e:get("VmXrRig") or { translation = { x = 0, y = 0, z = 0 }, yaw = 0 }
+                local turn = Quat.from_rotation_y(rig.yaw)
+                commands:entity(e:id()):insert({
+                    ["vr/input/pose"] = {
+                        hmd_position = Vec3.add(rig.translation, Quat.mul_vec3(turn, p.hmd_position)),
+                        hmd_rotation = Quat.mul_quat(turn, p.hmd_rotation),
+                        hmd_forward = Quat.mul_vec3(turn, p.hmd_forward),
+                        left_position = Vec3.add(rig.translation, Quat.mul_vec3(turn, p.left_position)),
+                        left_rotation = Quat.mul_quat(turn, p.left_rotation),
+                        left_forward = Quat.mul_vec3(turn, p.left_forward),
+                        right_position = Vec3.add(rig.translation, Quat.mul_vec3(turn, p.right_position)),
+                        right_rotation = Quat.mul_quat(turn, p.right_rotation),
+                        right_forward = Quat.mul_vec3(turn, p.right_forward),
+                    },
+                })
+            end
         end
     end
 end):in_set("vr/input/pose")

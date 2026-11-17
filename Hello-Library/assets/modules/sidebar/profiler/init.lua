@@ -85,15 +85,6 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/profiler/init")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 -- The button goes in the bar for an owned carrier of the panel: on a new bar (the sidebar built
 -- or reloaded), and on the panel itself (added, given to this client, or this mod reloaded).
 app:add_systems(Update, {
@@ -104,12 +95,16 @@ app:add_systems(Update, {
     Commands,
 }, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
-        commands:spawn({
-            ["sidebar/button"] = { icon = "icons/profiler.png", title = "Profiler", order = 1 },
-            ["sidebar/profiler/button"] = {},
-            ChildOf = bar:id(),
-        })
+    if bar == nil or not buttons:is_empty() then return end
+    for _, n in ipairs(own:iter()) do
+        for _, _ in ipairs(carriers:iter_many(n:get("core/net/owns"))) do
+            commands:spawn({
+                ["sidebar/button"] = { icon = "icons/profiler.png", title = "Profiler", order = 1 },
+                ["sidebar/profiler/button"] = {},
+                ChildOf = bar:id(),
+            })
+            return
+        end
     end
 end):in_set("sidebar/profiler/add_button"):run_if({
     Query[{ added = { "sidebar/bar" } }],

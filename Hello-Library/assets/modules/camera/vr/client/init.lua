@@ -16,15 +16,6 @@ local Quat = require("bevy::math::Quat")
 local Time = require("bevy::time::Time")
 local Vec3 = require("bevy::math::Vec3")
 
---- The rows of `q` this client owns, to write: those in its own nets' `core/net/owns`.
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 app:add_systems(First, {
     Query[{
         ["or"] = {
@@ -133,25 +124,27 @@ app:add_systems(Update, {
     Commands,
 }, function(time, carriers, own, commands)
     local dt = time:delta_secs()
-    for _, e in ipairs(owned_mut(own, carriers)) do
-        local vr = e:get("camera/vr")
-        local rig = e:get("VmXrRig")
-        local left = e:get("input/game/camera_vr/turn_left")
-        local right = e:get("input/game/camera_vr/turn_right")
-        local stick = (right and right.value or 0) - (left and left.value or 0)
-        local yaw = (rig and rig.yaw or 0) - stick * vr.turn_speed * dt
-        local at = Vec3.add(e:get("Transform").translation, { x = 0, y = vr.height, z = 0 })
-        if rig == nil or rig.yaw ~= yaw or rig.translation.x ~= at.x or rig.translation.y ~= at.y or rig.translation.z ~= at.z then
-            commands:entity(e:id()):patch({ VmXrRig = { translation = at, yaw = yaw } })
-        end
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(carriers:iter_many_mut(n:get("core/net/owns"))) do
+            local vr = e:get("camera/vr")
+            local rig = e:get("VmXrRig")
+            local left = e:get("input/game/camera_vr/turn_left")
+            local right = e:get("input/game/camera_vr/turn_right")
+            local stick = (right and right.value or 0) - (left and left.value or 0)
+            local yaw = (rig and rig.yaw or 0) - stick * vr.turn_speed * dt
+            local at = Vec3.add(e:get("Transform").translation, { x = 0, y = vr.height, z = 0 })
+            if rig == nil or rig.yaw ~= yaw or rig.translation.x ~= at.x or rig.translation.y ~= at.y or rig.translation.z ~= at.z then
+                commands:entity(e:id()):patch({ VmXrRig = { translation = at, yaw = yaw } })
+            end
 
-        local look = yaw
-        local pose = e:get("vr/input/pose")
-        if vr.movement_direction == "head" and pose ~= nil then
-            look = Quat.to_euler(pose.hmd_rotation, "YXZ")[1]
-        end
-        if e:get("camera").yaw ~= look then
-            e:patch({ camera = { yaw = look } })
+            local look = yaw
+            local pose = e:get("vr/input/pose")
+            if vr.movement_direction == "head" and pose ~= nil then
+                look = Quat.to_euler(pose.hmd_rotation, "YXZ")[1]
+            end
+            if e:get("camera").yaw ~= look then
+                e:patch({ camera = { yaw = look } })
+            end
         end
     end
 end):in_set("camera/vr/rig"):before("movement/walk")

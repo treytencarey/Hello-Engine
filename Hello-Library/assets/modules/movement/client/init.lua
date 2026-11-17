@@ -8,21 +8,6 @@ local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")
 local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 --- Is the row's owner one of this client's own nets? Its owner column must be named.
 local function mine(own, row)
     local owner = row:get("core/net/owner")
@@ -142,30 +127,32 @@ app:add_systems(Update, {
         e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
     end
     local dt = time:delta_secs()
-    for _, e in ipairs(owned_mut(own, walkers)) do
-        local m = e:get("movement")
-        local camera = e:get("camera")
-        local rotation = e:get("Transform").rotation
-        local forward = e:get("input/game/movement/forward")
-        local backward = e:get("input/game/movement/backward")
-        local left = e:get("input/game/movement/left")
-        local right = e:get("input/game/movement/right")
-        local x = (right and right.value or 0) - (left and left.value or 0)
-        local z = (backward and backward.value or 0) - (forward and forward.value or 0)
-        local along = Quat.mul_vec3(Quat.from_rotation_y(camera.yaw or 0),
-            Vec3.normalize_or_zero({ x = x, y = 0, z = z }))
-        -- analog input moves slower; two keys at once no faster than one
-        local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
-        e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
-        -- opposite keys cancel out: no direction to face
-        if m.face ~= "look" and (x ~= 0 or z ~= 0) then
-            e:patch({
-                Transform = {
-                    rotation = Quat.slerp(rotation,
-                        Quat.from_rotation_arc({ x = 0, y = 0, z = 1 }, along),
-                        math.min(1, m.turn * dt)),
-                },
-            })
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(walkers:iter_many_mut(n:get("core/net/owns"))) do
+            local m = e:get("movement")
+            local camera = e:get("camera")
+            local rotation = e:get("Transform").rotation
+            local forward = e:get("input/game/movement/forward")
+            local backward = e:get("input/game/movement/backward")
+            local left = e:get("input/game/movement/left")
+            local right = e:get("input/game/movement/right")
+            local x = (right and right.value or 0) - (left and left.value or 0)
+            local z = (backward and backward.value or 0) - (forward and forward.value or 0)
+            local along = Quat.mul_vec3(Quat.from_rotation_y(camera.yaw or 0),
+                Vec3.normalize_or_zero({ x = x, y = 0, z = z }))
+            -- analog input moves slower; two keys at once no faster than one
+            local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
+            e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
+            -- opposite keys cancel out: no direction to face
+            if m.face ~= "look" and (x ~= 0 or z ~= 0) then
+                e:patch({
+                    Transform = {
+                        rotation = Quat.slerp(rotation,
+                            Quat.from_rotation_arc({ x = 0, y = 0, z = 1 }, along),
+                            math.min(1, m.turn * dt)),
+                    },
+                })
+            end
         end
     end
 end):in_set("movement/walk")
@@ -180,18 +167,20 @@ app:add_systems(Update, {
     Query[{ with = { "core/net", "core/net/owns" } }],
 }, function(time, bodies, own)
     local dt = time:delta_secs()
-    for _, e in ipairs(owned_mut(own, bodies)) do
-        local m = e:get("movement")
-        if m.face == "look" then
-            local camera = e:get("camera")
-            local rotation = e:get("Transform").rotation
-            e:patch({
-                Transform = {
-                    rotation = Quat.slerp(rotation,
-                        Quat.from_rotation_y((camera.yaw or 0) + math.pi),
-                        math.min(1, m.turn * dt)),
-                },
-            })
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(bodies:iter_many_mut(n:get("core/net/owns"))) do
+            local m = e:get("movement")
+            if m.face == "look" then
+                local camera = e:get("camera")
+                local rotation = e:get("Transform").rotation
+                e:patch({
+                    Transform = {
+                        rotation = Quat.slerp(rotation,
+                            Quat.from_rotation_y((camera.yaw or 0) + math.pi),
+                            math.min(1, m.turn * dt)),
+                    },
+                })
+            end
         end
     end
 end):in_set("movement/face")
@@ -207,15 +196,17 @@ app:add_systems(Update, {
     ReadRapierContext,
     Commands,
 }, function(walkers, own, rapier, commands)
-    for _, e in ipairs(owned(own, walkers)) do
-        local m = e:get("movement")
-        local at = e:get("Transform").translation
-        local hit = m.ground ~= nil
-            and rapier:cast_ray(at, { x = 0, y = -1, z = 0 }, m.ground, true, { exclude_rigid_body = e:id() }) ~= nil
-        if hit and not e:has("movement/grounded") then
-            commands:entity(e:id()):insert({ ["movement/grounded"] = {} })
-        elseif not hit and e:has("movement/grounded") then
-            commands:entity(e:id()):remove("movement/grounded")
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(walkers:iter_many(n:get("core/net/owns"))) do
+            local m = e:get("movement")
+            local at = e:get("Transform").translation
+            local hit = m.ground ~= nil
+                and rapier:cast_ray(at, { x = 0, y = -1, z = 0 }, m.ground, true, { exclude_rigid_body = e:id() }) ~= nil
+            if hit and not e:has("movement/grounded") then
+                commands:entity(e:id()):insert({ ["movement/grounded"] = {} })
+            elseif not hit and e:has("movement/grounded") then
+                commands:entity(e:id()):remove("movement/grounded")
+            end
         end
     end
 end):in_set("movement/ground")

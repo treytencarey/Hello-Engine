@@ -16,21 +16,6 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-local function owned_mut(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
 --- Is the row's owner one of this client's own nets? Its owner column must be named.
 local function mine(own, row)
     local owner = row:get("core/net/owner")
@@ -150,13 +135,15 @@ app:add_systems(Update, {
     }],
     Query[{ with = { "core/net", "core/net/owns" } }],
 }, function(fliers, own)
-    for _, e in ipairs(owned_mut(own, fliers)) do
-        local fly = e:get("movement/fly")
-        if fly.on then
-            local m = e:get("movement")
-            local up = e:get("input/game/fly/up")
-            local down = e:get("input/game/fly/down")
-            e:get_mut("Velocity3d").linvel.y = m.speed * ((up and up.value or 0) - (down and down.value or 0))
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(fliers:iter_many_mut(n:get("core/net/owns"))) do
+            local fly = e:get("movement/fly")
+            if fly.on then
+                local m = e:get("movement")
+                local up = e:get("input/game/fly/up")
+                local down = e:get("input/game/fly/down")
+                e:get_mut("Velocity3d").linvel.y = m.speed * ((up and up.value or 0) - (down and down.value or 0))
+            end
         end
     end
 end):in_set("movement/fly"):after("movement/walk"):after("movement/jump")
@@ -173,7 +160,10 @@ app:add_systems(Update, {
     Query[{ with = { "movement/fly/item" } }],
     Commands,
 }, function(carriers, own, lists, items, commands)
-    local carrier = owned(own, carriers)[1]
+    local carrier = nil
+    for _, n in ipairs(own:iter()) do
+        carrier = carrier or carriers:iter_many(n:get("core/net/owns"))[1]
+    end
     if carrier ~= nil then
         local fly = carrier:get("movement/fly")
         for _, list in ipairs(lists:iter()) do
@@ -198,8 +188,10 @@ app:add_systems(Update, {
                         local row = clicked:get(event.entity)
                         if row ~= nil then
                             local field = row:get("movement/fly/item").field
-                            for _, e in ipairs(owned_mut(nets, fliers)) do
-                                flip(e:get_mut("movement/fly"), field)
+                            for _, n in ipairs(nets:iter()) do
+                                for _, e in ipairs(fliers:iter_many_mut(n:get("core/net/owns"))) do
+                                    flip(e:get_mut("movement/fly"), field)
+                                end
                             end
                         end
                     end)

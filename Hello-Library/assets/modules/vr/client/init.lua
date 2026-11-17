@@ -5,15 +5,6 @@ local bevy = require("bevy::prelude")
 local Time = require("bevy::time::Time")
 local VrPoseInput = require("hello::vr_messages::VrPoseInput")
 
---- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
-local function owned(own, q)
-    local out = {}
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
-    end
-    return out
-end
-
 -- Polls: poses stopping is the absence of a message. `vr/active` waits for its sync, which comes
 -- from the server after `vr` does: one added before that would never be sent. `vr/tracking` is
 -- apart from it as it changes with every pose, and never crosses.
@@ -29,15 +20,17 @@ app:add_systems(First, {
 }, function(time, poses, players, own, commands)
     local now = time:elapsed_secs()
     local tracking = #poses:read() > 0
-    for _, e in ipairs(owned(own, players)) do
-        local player = commands:entity(e:id())
-        if tracking then
-            player:insert({ ["vr/tracking"] = { at = now } })
-            if not e:has("vr/active") and e:get("core/net/sync")["vr/active"] ~= nil then
-                player:insert({ ["vr/active"] = {} })
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(players:iter_many(n:get("core/net/owns"))) do
+            local player = commands:entity(e:id())
+            if tracking then
+                player:insert({ ["vr/tracking"] = { at = now } })
+                if not e:has("vr/active") and e:get("core/net/sync")["vr/active"] ~= nil then
+                    player:insert({ ["vr/active"] = {} })
+                end
+            elseif e:has("vr/active") and now - e:get("vr/tracking").at > e:get("vr").timeout then
+                player:remove("vr/active")
             end
-        elseif e:has("vr/active") and now - e:get("vr/tracking").at > e:get("vr").timeout then
-            player:remove("vr/active")
         end
     end
 end):in_set("vr/detect")
