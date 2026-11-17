@@ -35,7 +35,7 @@ What a click spawns is the player's, not the panel's, with `["core/script/owner"
 - Switch: core's flip ask, `{ ["core/world/flip"] = { scope = <target> }, WorldShared = {}, ["core/net/sync"] = false }`. It crosses VMs to root, never the wire.
 - Pull: `{ ["git/world/head/pull"] = { sha = <this world's git/world/head.sha> } }`, which the world's server takes (`git/world/head`).
 - "^" on a session row: the same flip ask as Switch, for that row's scope.
-- Close on a portal row: a despawn of that `scope/portal`. The portal is this client's (`core/net/local`), so the despawn asks the world's server, which takes it from its owner only and despawns it everywhere (`core/net`).
+- Close on a portal row: a despawn of that `scope/portal`. The portal is this client's (in its own net's `core/net/owns`), so the despawn asks the world's server, which takes it from its owner only and despawns it everywhere (`core/net`).
 
 Portal writes the slot instead: `git/panel/request = { op = "portal", target_sk = <target> }` on the carrier.
 
@@ -65,7 +65,7 @@ A refused ask is answered `failed` with its reason and opens nothing. An accepte
 }
 ```
 
-The owner's client marks it `core/net/local` and places it (`placement`); confirming hands its `Transform` back to the server.
+The owner's client finds it in its own net's `core/net/owns` and places it (`placement`); confirming hands its `Transform` back to the server.
 
 It starts 3 m ahead, not at the carrier, so it is in view before the pointer moves it, and a portal placed where it started holds nobody who asked for it. For `drop_portal` the server spawns the same portal with no `placement`, already placed, at that same point, 3 m ahead of the carrier on the ground plane (the carrier's translation plus 3 times the x and z of its rotation applied to +Z, Bevy's `back()`, as v0.7.0 did; the height kept), with `Transform` synced from the server (`{ authority = "server" }`) and no `placement` sync.
 
@@ -92,7 +92,7 @@ The slot is a handshake. The client half takes its ask back (`git/panel/request 
   - **A world this PC holds** has a second line: "playing" or "background", then "■ Stop" and "↻ Restart". Which worlds this PC holds, and which it plays, is root's word on the sessions reply (`held = { { scope, playing } }`, `core/registry` manifest): the worlds Stop on this PC doesn't refuse `not-held`, the launch world and a portal's warm world included. Nothing else here, a presence or a world's row, makes a world held. Stop reads "..." until root answers; Restart until it answers other than `restarting`.
   - **A refusal** is a line under the row, in the row's own words, for 10 s, after which its ask goes: "⚠ despawn refused: <reason>"; Stop's "⚠ can't stop the world you are in: switch first" (`playing`), "⚠ can't stop it: a portal looks at it" (`watched`), "⚠ can't stop it: this PC doesn't hold it" (`not-held`), else "⚠ stop refused: <reason>"; Restart's "⚠ can't restart it: this PC doesn't hold it" (`not-held`), else "⚠ restart refused: <reason>".
   - **Done** closes the ask. Root lists the sessions again at once after a despawn; a stopped world's row goes with its client row.
-- **PORTALS:** one row per portal this player placed here (`scope/portal` with `core/net/local`, not being placed), "🌀 " and its target cut as a session row's, with Close.
+- **PORTALS:** one row per portal this player placed here (a `scope/portal` in this client's own nets' `core/net/owns`, not being placed), "🌀 " and its target cut as a session row's, with Close.
 - **RECENT COMMITS:** root answers the latest 10; the panel shows 8, each the short sha in the accent colour and the message's first line, cut to 30 characters (27 and "..."), rows alternating colours.
 
 ## Systems

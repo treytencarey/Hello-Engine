@@ -31,6 +31,22 @@ local ARM_SECONDS = 5
 local REFUSAL_SECONDS = 10
 
 -- Core's canonical form lowercases the owner and the name, and keeps the branch as it is.
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+local function owned_mut(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 local function scope_of(repo, branch)
     return "github:" .. repo:lower() .. ":" .. branch
 end
@@ -330,12 +346,13 @@ end):in_set("git/panel")
 app:add_systems(Update, {
     Query[{
         changed = { "git/panel/response" },
-        with = { "git/panel", "core/net/local" },
+        with = { "git/panel", "core/net/owner" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(answered, commands)
+}, function(answered, own, commands)
     for _, e in ipairs(answered:iter()) do
-        if e:get("git/panel/response").op ~= nil then
+        if own:contains(e:get("core/net/owner")) and e:get("git/panel/response").op ~= nil then
             commands:entity(e:id()):insert({ ["git/panel/request"] = {} })
         end
     end
@@ -563,7 +580,7 @@ end)
 -- panel could not be closed.
 app:add_systems(Update, {
     Query[{
-        with = { "git/panel", "core/net/local", Mut["git/panel/state"] },
+        with = { "git/panel", Mut["git/panel/state"] },
         optional = { "Children" },
     }],
     Query[{
@@ -574,10 +591,11 @@ app:add_systems(Update, {
     Query[{ with = { "sidebar/bar" } }],
     Query[{ with = { "git/panel/button" } }],
     Query[{ with = { "git/panel/view" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, repo_asks, signins, bars, buttons, views, commands)
+}, function(carriers, repo_asks, signins, bars, buttons, views, own, commands)
     local bar = bars:iter()[1]
-    for _, carrier in ipairs(carriers:iter_mut()) do
+    for _, carrier in ipairs(owned_mut(own, carriers)) do
         local repos = repo_asks:iter_many(carrier:get("Children") or {})[1]
         local said = repos and signins:iter_many(repos:get("Children") or {})[1]
         local login = said and said:get("vault/github/signin/reply").login
@@ -603,9 +621,10 @@ end):in_set("git/panel"):run_if({
     Query[{ added = { "sidebar/bar" } }],
     Query[{
         ["or"] = {
-            added = { "git/panel", "core/net/local" },
+            added = { "git/panel", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "git/panel", "core/net/local" },
+        with = { "git/panel", "core/net/owner" },
     }],
     Query[{ changed = { "vault/github/signin/reply" } }],
 }, function(new_bars, new_carriers, signins)
@@ -732,10 +751,11 @@ app:add_systems(Update, {
             "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
         },
     }],
-    Query[{ with = { "scope/portal", "core/net/local" }, without = { "placement" } }],
+    Query[{ with = { "scope/portal" }, without = { "placement" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
 }, function(views, carriers, scrolls, rows, texts, asks, statuses, flips, pulls, locked, standing, row_asks,
-            placed, commands)
+            placed, own, commands)
     local view = views:iter_mut()[1]
     local carrier = carriers:iter()[1]
     local parts = view and scrolls:iter_descendants(view:id()) or {}
@@ -919,7 +939,7 @@ app:add_systems(Update, {
         -- The portals this player placed here, each with Close: a despawn of an entity this client
         -- owns asks the server, which despawns it everywhere.
         local mine = {}
-        for _, p in ipairs(placed:iter()) do
+        for _, p in ipairs(owned(own, placed)) do
             mine[#mine + 1] = { id = p:id(), label = "🌀 " .. short(p:get("scope/portal").target) }
         end
 
@@ -1018,11 +1038,12 @@ app:add_systems(Update, {
                 for _, pick in ipairs(pickers[1].picks) do
                     local value = pick.value
                     commands:entity(pick.button):observe(On[Pointer[Click]], {
-                        Query[{ with = { "git/panel", "core/net/local", Mut["git/panel/state"] } }],
+                        Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
                         Query[{ with = { Mut["Node"] } }],
                         Query[{ with = { Mut["Text"] } }],
-                    }, function(_, owners, nodes, arrows)
-                        for _, o in ipairs(owners:iter_mut()) do
+                        Query[{ with = { "core/net", "core/net/owns" } }],
+                    }, function(_, owners, nodes, arrows, own)
+                        for _, o in ipairs(owned_mut(own, owners)) do
                             local s = o:get_mut("git/panel/state")
                             s.repo = value
                             s.branch = nil
@@ -1033,11 +1054,12 @@ app:add_systems(Update, {
                 for _, pick in ipairs(pickers[2].picks) do
                     local value = pick.value
                     commands:entity(pick.button):observe(On[Pointer[Click]], {
-                        Query[{ with = { "git/panel", "core/net/local", Mut["git/panel/state"] } }],
+                        Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
                         Query[{ with = { Mut["Node"] } }],
                         Query[{ with = { Mut["Text"] } }],
-                    }, function(_, owners, nodes, arrows)
-                        for _, o in ipairs(owners:iter_mut()) do
+                        Query[{ with = { "core/net", "core/net/owns" } }],
+                    }, function(_, owners, nodes, arrows, own)
+                        for _, o in ipairs(owned_mut(own, owners)) do
                             o:get_mut("git/panel/state").branch = value
                         end
                         close(nodes, arrows, pickers[2])
@@ -1064,13 +1086,14 @@ app:add_systems(Update, {
                     if not current then
                         switch_button:observe(On[Pointer[Click]], {
                             Query[{
-                                with = { "git/panel", "core/net/local", "git/panel/state" },
+                                with = { "git/panel", "git/panel/state" },
                                 optional = { "Children" },
                             }],
                             Query[{ with = { "vault/github/commits", "Request" } }],
+                            Query[{ with = { "core/net", "core/net/owns" } }],
                             Commands,
-                        }, function(_, owners, commit_asks, click_commands)
-                            for _, o in ipairs(owners:iter()) do
+                        }, function(_, owners, commit_asks, own, click_commands)
+                            for _, o in ipairs(owned(own, owners)) do
                                 local s = o:get("git/panel/state")
                                 local o_owner, o_name = split(s.repo)
                                 if o_owner ~= nil and s.branch ~= nil then
@@ -1107,12 +1130,13 @@ app:add_systems(Update, {
                     if not current then
                         portal_button:observe(On[Pointer[Click]], {
                             Query[{
-                                with = { "git/panel", "core/net/local", "git/panel/state" },
+                                with = { "git/panel", "git/panel/state" },
                                 optional = { "git/panel/response" },
                             }],
+                            Query[{ with = { "core/net", "core/net/owns" } }],
                             Commands,
-                        }, function(_, owners, click_commands)
-                            for _, o in ipairs(owners:iter()) do
+                        }, function(_, owners, own, click_commands)
+                            for _, o in ipairs(owned(own, owners)) do
                                 local s = o:get("git/panel/state")
                                 local standing = o:has("git/panel/response") and o:get("git/panel/response").op ~= nil
                                 if s.repo ~= nil and s.branch ~= nil and not standing then
@@ -1221,14 +1245,15 @@ app:add_systems(Update, {
                             x:observe(On[Pointer[Click]], {
                                 Res[Time],
                                 Query[{
-                                    with = { "git/panel", "core/net/local", Mut["git/panel/state"] },
+                                    with = { "git/panel", Mut["git/panel/state"] },
                                     optional = { "Children" },
                                 }],
                                 Query[{ with = { "core/registry/despawn", "Request" } }],
+                                Query[{ with = { "core/net", "core/net/owns" } }],
                                 Commands,
-                            }, function(_, time, owners, despawns, click_commands)
+                            }, function(_, time, owners, despawns, own, click_commands)
                                 local now = time:elapsed_secs()
-                                for _, o in ipairs(owners:iter_mut()) do
+                                for _, o in ipairs(owned_mut(own, owners)) do
                                     local s = o:get("git/panel/state")
                                     if s.armed ~= nil and s.armed.scope == target and now - s.armed.at <= ARM_SECONDS then
                                         for _, d in ipairs(despawns:iter_many(o:get("Children") or {})) do
@@ -1259,11 +1284,12 @@ app:add_systems(Update, {
                         -- Each asks root in place of any earlier ask of its kind for the world.
                         if w.stop ~= "..." then
                             stop:observe(On[Pointer[Click]], {
-                                Query[{ with = { "git/panel", "core/net/local" }, optional = { "Children" } }],
+                                Query[{ with = { "git/panel" }, optional = { "Children" } }],
                                 Query[{ with = { "core/world/unload", "Request" } }],
+                                Query[{ with = { "core/net", "core/net/owns" } }],
                                 Commands,
-                            }, function(_, owners, unloads, click_commands)
-                                for _, o in ipairs(owners:iter()) do
+                            }, function(_, owners, unloads, own, click_commands)
+                                for _, o in ipairs(owned(own, owners)) do
                                     for _, u in ipairs(unloads:iter_many(o:get("Children") or {})) do
                                         if u:get("core/world/unload").scope == target then
                                             click_commands:entity(u:id()):despawn()
@@ -1280,11 +1306,12 @@ app:add_systems(Update, {
                         end
                         if w.restart ~= "..." then
                             restart:observe(On[Pointer[Click]], {
-                                Query[{ with = { "git/panel", "core/net/local" }, optional = { "Children" } }],
+                                Query[{ with = { "git/panel" }, optional = { "Children" } }],
                                 Query[{ with = { "core/world/restart", "Request" } }],
+                                Query[{ with = { "core/net", "core/net/owns" } }],
                                 Commands,
-                            }, function(_, owners, restarts, click_commands)
-                                for _, o in ipairs(owners:iter()) do
+                            }, function(_, owners, restarts, own, click_commands)
+                                for _, o in ipairs(owned(own, owners)) do
                                     for _, r in ipairs(restarts:iter_many(o:get("Children") or {})) do
                                         if r:get("core/world/restart").scope == target then
                                             click_commands:entity(r:id()):despawn()
@@ -1426,7 +1453,8 @@ end):in_set("git/panel/render"):after("git/panel"):run_if({
     }],
     Query[{
         ["or"] = {
-            added = { "core/net/local" },
+            added = { "core/net/owner" },
+            changed = { "core/net/owner" },
             removed = { "placement", "scope/portal" },
         },
     }],

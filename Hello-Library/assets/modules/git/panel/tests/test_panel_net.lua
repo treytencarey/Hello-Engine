@@ -120,14 +120,20 @@ app:add_systems(Update, {
     Query[{ with = { "core/net", "core/net/state" } }],
     Query[{
         with = { "player" },
-        optional = { "core/net/local", "git/panel", "git/panel/response", "core/net/sync" },
+        optional = { "core/net/owner", "git/panel", "git/panel/response", "core/net/sync" },
     }],
     Query[{
         with = { "scope/portal" },
-        optional = { "core/net/local", "placement" },
+        optional = { "core/net/owner", "placement" },
     }],
+    -- This client's own nets: what it owns is in their `core/net/owns`.
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(nets, players, portals, commands)
+}, function(nets, players, portals, own, commands)
+    local function held_here(row)
+        local o = row:get("core/net/owner")
+        return o ~= nil and own:contains(o)
+    end
     if ts.srv_ready and not joined then
         joined = true
         commands:spawn({
@@ -141,7 +147,7 @@ app:add_systems(Update, {
     end
     local others = 0
     for _, p in ipairs(players:iter()) do
-        if p:has("core/net/local") then
+        if held_here(p) then
             local sync = p:get("core/net/sync")
             local said = p:has("git/panel/response") and p:get("git/panel/response") or {}
             ts[me .. "_panel"] = p:has("git/panel")
@@ -159,21 +165,21 @@ app:add_systems(Update, {
     local n, mine, placing = 0, 0, 0
     for _, p in ipairs(portals:iter()) do
         n = n + 1
-        if p:has("core/net/local") then mine = mine + 1 end
+        if held_here(p) then mine = mine + 1 end
         if p:has("placement") then placing = placing + 1 end
     end
     ts[me .. "_portals"], ts[me .. "_local"], ts[me .. "_placing"] = n, mine, placing
     -- What confirming a placement does, then this client leaving the world.
     if me == "a" and ts.a_place then
         for _, p in ipairs(portals:iter()) do
-            if p:has("core/net/local") and p:has("placement") then commands:entity(p:id()):remove("placement") end
+            if held_here(p) and p:has("placement") then commands:entity(p:id()):remove("placement") end
         end
     end
     -- A despawn of a replica: the panel's Close on A's own, and B trying the same on A's.
     if ts[me .. "_close"] then
         ts[me .. "_close"] = false
         for _, p in ipairs(portals:iter()) do
-            if (me == "a") == p:has("core/net/local") and not p:has("placement") then
+            if (me == "a") == held_here(p) and not p:has("placement") then
                 commands:entity(p:id()):despawn()
                 break
             end

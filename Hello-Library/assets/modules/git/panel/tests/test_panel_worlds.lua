@@ -39,8 +39,15 @@ local DOOR = "github:zzpanel/world:door"
 
 local camera, player
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local own_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    own_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzpanel" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({
         ["core/world/status"] = { scope_key = HERE, scope_root = "github:zzpanel/world", mode = "client", status = "ready" },
         WorldShared = {},
@@ -191,7 +198,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local shown = panel_texts(world)
 
     if phase == "arrived" and clock > 0.3 then
-        commands:entity(player):insert({ ["core/net/local"] = {}, ["git/panel"] = {} })
+        commands:entity(player):insert({ ["core/net/owner"] = own_net, ["git/panel"] = {} })
         step("asked")
 
     elseif phase == "asked" and asks(world, "vault/github/repos")[1] ~= nil and site_ask(world) ~= nil and clock > 0.3 then
@@ -371,8 +378,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "restarted" and clock > 0.5 then
         T("W9_done_closes_the_ask", #asks(world, "core/world/restart") == 0
             and has_text(row_texts(world, "zzpanel/world:bg", 1), "↻ Restart"))
-        mark.mine = commands:spawn({ ["scope/portal"] = { target = DOOR }, ["core/net/local"] = {}, ["core/net/sync"] = false }):id()
-        commands:spawn({ ["scope/portal"] = { target = "github:zzpanel/world:placing" }, ["core/net/local"] = {},
+        mark.mine = commands:spawn({ ["scope/portal"] = { target = DOOR }, ["core/net/owner"] = own_net, ["core/net/sync"] = false }):id()
+        commands:spawn({ ["scope/portal"] = { target = "github:zzpanel/world:placing" }, ["core/net/owner"] = own_net,
             placement = {}, ["core/net/sync"] = false })
         commands:spawn({ ["scope/portal"] = { target = "github:zzpanel/world:theirs" }, ["core/net/sync"] = false })
         step("portals")
