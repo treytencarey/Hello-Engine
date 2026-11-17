@@ -10,7 +10,7 @@ Flight for the local player, with no-clip beside it. F turns flight on or off. W
 
 ## Components
 
-- `movement/fly = { on, noclip }` on the local player, added by the world's own client half. Never synced.
+- `movement/fly = { on, noclip }` on a player, added by the world on its server. It syncs with the owner's authority: the owner's client flips it, and the server and the other clients see it. It acts only on this client's own player: another's copy keeps its gravity, its collider and its keys, here and on the server.
 
   | Field | Meaning | Default |
   |-------|---------|---------|
@@ -25,9 +25,9 @@ Flight for the local player, with no-clip beside it. F turns flight on or off. W
 | Schedule | Set | Purpose |
 |----------|-------|---------|
 | First | `movement/fly` | For a local carrier with `input`, bind the `fly` group (again when `input` is added back) |
-| First | `movement/fly` | When `movement/fly` is taken off, as its last value says: take off `Sensor3d`, and `GravityScale3d` if it was flying; unbind unless `input` went too |
+| First | `movement/fly` | When `movement/fly` is taken off this client's own player, as its last value says: take off `Sensor3d`, and `GravityScale3d` if it was flying; unbind unless `input` went too |
 | Update | `movement/fly` | F (`input/game/fly/toggle` added) flips `on` |
-| Update | `movement/fly` | On a changed `movement/fly`: `GravityScale3d` 0 while it flies, taken off when it stops (only while it is still 0), and `Sensor3d` while no-clip is on |
+| Update | `movement/fly` | On a changed `movement/fly` on this client's own player: `GravityScale3d` 0 while it flies, taken off when it stops (only while it is still 0), and `Sensor3d` while no-clip is on |
 | Update, after `movement/walk` and `movement/jump` | `movement/fly` | Polls while it flies: set the vertical velocity from `up` and `down` at `movement.speed` |
 | Update | `movement/fly` | On a new menu list or a new local carrier, spawn the two items in each list holding none, with their click observers. A run condition over those edges skips it otherwise |
 | Update | `movement/fly` | On a changed `movement/fly`, write each item's `on` from its field |
@@ -39,7 +39,7 @@ Flight for the local player, with no-clip beside it. F turns flight on or off. W
 ## Use
 
 ```lua
--- a world's player, in its client half, for its local player
+-- a world's player, in its server half: every copy has it, and its owner flies it
 commands:entity(player):insert_if_new({ ["movement/fly"] = {} })
 ```
 
@@ -52,4 +52,4 @@ commands:entity(player):insert_if_new({ ["movement/fly"] = {} })
 - F is game input, so it does nothing while the sidebar is open; the menu's items work then.
 - Rapier reports no sensor-to-sensor contact, so with no-clip on, walking into a portal's trigger (a sensor ball) does not cross.
 - `player/client` turns the body `Dynamic` again on every changed `RigidBody3d`, and flight does not touch the body type. Other clients see the server's copy, kinematic, following the owner's Transform.
-- Suites: `test_fly.lua` runs headless, on a real player standing on a floor under gravity: keys through `input` as a device-less source writes them, real clicks on the menu's items, a reload, and `movement/fly` taken off while it flies and while it does not.
+- Suites: `test_fly.lua` runs headless, on a real player standing on a floor under gravity: keys through `input` as a device-less source writes them, real clicks on the menu's items, a reload, `movement/fly` taken off while it flies and while it does not, and another client's flying copy left alone. `test_fly_net.lua` runs headless over a real connection: flight the owner turns on reaches the server's copy, which keeps its gravity and collider.

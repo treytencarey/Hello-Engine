@@ -16,6 +16,8 @@
 --   F8 `movement/fly` taken off while it flies: no-clip and flight's scale go, the player's 1 comes
 --      back and the body falls to the floor, and its keys are unbound; taken off while it does not
 --      fly, the player's scale stays
+--   F9 another client's player, its `movement/fly` synced on with no-clip: nothing here binds its
+--      keys, takes its gravity or makes it a sensor, and taking it off leaves its own scale
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -36,7 +38,7 @@ local function finish()
     suite.finish("FLY")
 end
 
-local camera, player
+local camera, player, other
 
 -- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
 local world_net
@@ -150,6 +152,21 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     -- adds flight to it.
     if phase == "arrived" and clock > 0.3 then
         commands:entity(player):insert({ ["core/net/owner"] = world_net, ["movement/fly"] = {} })
+        -- Another client's, as its copy arrives: owned by that client's connection, flying as it
+        -- turned flight on, with a scale of its own.
+        other = commands:spawn({
+            ["zz/other"] = {},
+            player = { client_id = 2 },
+            movement = {},
+            input = {},
+            ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
+            ["movement/fly"] = { on = true, noclip = true },
+            ["core/net/sync"] = false,
+            Transform = { translation = { x = 20, y = 0.9, z = 0 } },
+            RigidBody3d = "KinematicPositionBased",
+            Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
+            GravityScale3d = { value = 1 },
+        }):id()
         step("bound")
 
     elseif phase == "bound" and clock > 0.5 then
@@ -338,6 +355,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local game = p:get("input/game") or {}
         T("F8_taken_off_while_it_does_not_fly_the_player_s_scale_stays", scale_of(p) == 1 and game.fly == nil,
             tostring(scale_of(p)))
+        local o = world:query({ with = { "zz/other" }, optional = { "GravityScale3d", "Sensor3d", "input/game" } })[1]
+        T("F9_another_client_s_flying_player_is_left_alone",
+            scale_of(o) == 1 and not o:has("Sensor3d") and ((o:get("input/game") or {}).fly == nil),
+            string.format("scale %s sensor %s", tostring(scale_of(o)), tostring(o:has("Sensor3d"))))
+        commands:entity(other):remove("movement/fly")
+        step("other_removed")
+
+    elseif phase == "other_removed" and clock > 0.5 then
+        local o = world:query({ with = { "zz/other" }, optional = { "GravityScale3d", "Sensor3d" } })[1]
+        T("F9_taking_its_flight_off_leaves_its_own_scale", scale_of(o) == 1, tostring(scale_of(o)))
         phase = "done"
         finish()
     end

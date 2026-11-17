@@ -1,7 +1,9 @@
 -- Flight for the local player, with no-clip beside it: F turns flight on and off, and while it is
 -- on the body has no gravity, Space climbs and ShiftLeft sinks, at movement's speed. No-clip makes
 -- the body's collider a sensor, so walls and floors don't stop it; it needs flight. Both are items
--- in the sidebar's menu too. Only a world that adds it to its player has it.
+-- in the sidebar's menu too. Only a world that adds it to its player has it. It syncs with the
+-- owner's authority, so the server and other clients see it, and acts only on this client's own
+-- player: a copy someone else flies keeps its gravity and its collider here.
 --
 -- movement/fly = {
 --     on = <whether it flies>,
@@ -55,29 +57,32 @@ app:add_systems(First, {
     end
 end):in_set("movement/fly")
 
--- `movement/fly` was taken off: take off what it added, as its last value says, and unbind unless
--- `input` went too, as its bindings go with it. The edge also comes for a player that despawned,
--- which `try_remove` leaves alone and which has no row in `bound`.
+-- `movement/fly` was taken off this client's own player: take off what it added, as its last value
+-- says, and unbind unless `input` went too, as its bindings go with it. The edge also comes for a
+-- player that despawned, which has no owner left and no row in `bound`.
 app:add_systems(First, {
     Query[{
         ["or"] = {
             removed = { "movement/fly" },
         },
-        optional = { "movement/fly" },
+        optional = { "movement/fly", "core/net/owner" },
     }],
     Query[{ with = { "input", "input/game" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(removed, bound, commands)
+}, function(removed, bound, own, commands)
     local gone = {}
     for _, e in ipairs(removed:iter()) do
-        local was = e:get("movement/fly") or {}
-        if was.on then
-            commands:entity(e:id()):try_remove("GravityScale3d")
+        if mine(own, e) then
+            local was = e:get("movement/fly") or {}
+            if was.on then
+                commands:entity(e:id()):try_remove("GravityScale3d")
+            end
+            if was.noclip then
+                commands:entity(e:id()):try_remove("Sensor3d")
+            end
+            gone[#gone + 1] = e:id()
         end
-        if was.noclip then
-            commands:entity(e:id()):try_remove("Sensor3d")
-        end
-        gone[#gone + 1] = e:id()
     end
     for _, e in ipairs(bound:iter_many(gone)) do
         commands:entity(e:id()):entry("input/game"):and_modify(function(game)
@@ -105,23 +110,26 @@ app:add_systems(Update, {
         changed = { "movement/fly" },
         optional = { Mut["GravityScale3d"], "Sensor3d" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(changed, commands)
-    for _, e in ipairs(changed:iter_mut()) do
-        local fly = e:get("movement/fly")
-        local scale = e:get("GravityScale3d")
-        local entity = commands:entity(e:id())
-        if fly.on and e:has("GravityScale3d") then
-            e:get_mut("GravityScale3d"):set_if_neq(0)
-        elseif fly.on then
-            entity:insert({ GravityScale3d = { value = 0 } })
-        elseif scale == 0 then
-            entity:remove("GravityScale3d")
-        end
-        if fly.noclip and not e:has("Sensor3d") then
-            entity:insert({ Sensor3d = {} })
-        elseif not fly.noclip and e:has("Sensor3d") then
-            entity:remove("Sensor3d")
+}, function(changed, own, commands)
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(changed:iter_many_mut(n:get("core/net/owns"))) do
+            local fly = e:get("movement/fly")
+            local scale = e:get("GravityScale3d")
+            local entity = commands:entity(e:id())
+            if fly.on and e:has("GravityScale3d") then
+                e:get_mut("GravityScale3d"):set_if_neq(0)
+            elseif fly.on then
+                entity:insert({ GravityScale3d = { value = 0 } })
+            elseif scale == 0 then
+                entity:remove("GravityScale3d")
+            end
+            if fly.noclip and not e:has("Sensor3d") then
+                entity:insert({ Sensor3d = {} })
+            elseif not fly.noclip and e:has("Sensor3d") then
+                entity:remove("Sensor3d")
+            end
         end
     end
 end):in_set("movement/fly")
@@ -243,5 +251,8 @@ return {
             on = false,
             noclip = false,
         },
+    },
+    ["core/net/sync"] = {
+        authority = "client",
     },
 }
