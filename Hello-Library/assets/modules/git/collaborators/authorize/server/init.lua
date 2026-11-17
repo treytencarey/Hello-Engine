@@ -3,6 +3,8 @@
 -- to the world's repository, and this world's root finds it there. Core holds each write until this
 -- answers it. The proof is kept on the client's `core/net/connection`, where core/player/attest
 -- writes who it is, so it lasts as long as the connection, whichever player that client controls.
+-- It is this world's permission provider (`core/permission`): what the proof says is the connection's
+-- `core/permission/grants`, "writer" while it proves the player a writer.
 --
 -- git/collaborators/authorize = {
 --     proof_wait = <seconds after the first ask that "absent" may still turn into "writer"; 90>,
@@ -223,30 +225,105 @@ end):in_set("git/collaborators/authorize")
         return false
     end)
 
--- A new attestation on a connection is a new join: the proof named the old nonce, so it goes, and its check with it.
+-- A new attestation on a connection is a new join: a proof for another nonce goes, and its check
+-- with it. An attested join asks root for its proof at once, not on its first write, so a
+-- collaborator who never edits is a writer too, and a first write finds the proof ready.
 app:add_systems(Update, {
+    Res[Time],
     Query[{
         changed = { "core/player/attest" },
-        with = { "core/net/connection", "git/collaborators/authorize/proof" },
-        without = { "WorldMirror" },
-        optional = { "Children" },
+        with = { "core/net/connection" },
+        without = { "WorldMirror", "core/net" },
+        optional = { "git/collaborators/authorize/proof", "Children" },
     }],
     Query[{ with = { "vault/git/proof", "Request" } }],
+    Query[{ with = { "git/collaborators/authorize" }, without = { "WorldMirror" } }],
     Commands,
-}, function(connections, checks, commands)
+}, function(time, connections, checks, carriers, commands)
+    local now = time:elapsed_secs()
     for _, connection in ipairs(connections:iter()) do
         local attest = connection:get("core/player/attest")
         local proof = connection:get("git/collaborators/authorize/proof")
-        if attest.state ~= "attested" or attest.nonce ~= proof.nonce or attest.user ~= proof.user then
+        local attested = attest.state == "attested" and attest.user ~= nil and attest.nonce ~= nil
+        local current = proof ~= nil and attested and attest.nonce == proof.nonce and attest.user == proof.user
+        if proof ~= nil and not current then
             commands:entity(connection:id()):try_remove("git/collaborators/authorize/proof")
             for _, check in ipairs(checks:iter_many(connection:get("Children") or {})) do
                 commands:entity(check:id()):despawn()
             end
         end
+        if attested and not current and not carriers:is_empty() then
+            commands:entity(connection:id()):insert({
+                ["git/collaborators/authorize/proof"] = {
+                    user = attest.user, nonce = attest.nonce, state = "checking", asked_at = now,
+                },
+            })
+            ask(commands, connection, attest.nonce)
+            print(string.format("[GIT/COLLABORATORS/AUTHORIZE] '%s' joined: asking root for the proof", attest.user))
+        end
     end
 end):in_set("git/collaborators/authorize"):after("core/player/attest")
 
+-- The connection's grants follow its proof: "writer" while the proof, for its attested user and
+-- nonce, says so, and none otherwise. Each connection gets them as it arrives; a run condition
+-- keeps the edges while no carrier is here. Read through a live row: a removed proof's edge reads
+-- its old value. Written whole, and only when they change: each write is a send to the
+-- connection's client.
+app:add_systems(First, {
+    Query[{
+        ["or"] = {
+            added = { "core/net/connection" },
+            changed = { "git/collaborators/authorize/proof", "core/player/attest" },
+            removed = { "git/collaborators/authorize/proof" },
+        },
+    }],
+    Query[{
+        with = { "core/net/connection" },
+        without = { "WorldMirror", "core/net" },
+        optional = { "git/collaborators/authorize/proof", "core/player/attest", "core/permission/grants" },
+    }],
+    Commands,
+}, function(touched, connections, commands)
+    local ids = {}
+    for _, e in ipairs(touched:iter()) do
+        ids[#ids + 1] = e:id()
+    end
+    for _, connection in ipairs(connections:iter_many(ids)) do
+        local proof = connection:get("git/collaborators/authorize/proof")
+        local attest = connection:get("core/player/attest")
+        local writer = proof ~= nil and attest ~= nil and proof.state == "writer"
+            and attest.state == "attested" and attest.nonce == proof.nonce and attest.user == proof.user
+        local held = connection:get("core/permission/grants")
+        local names = held and held.names or nil
+        if names == nil or (writer and names[1] ~= "writer") or (not writer and #names > 0) then
+            commands:entity(connection:id()):insert({
+                ["core/permission/grants"] = { names = writer and { "writer" } or {} },
+            })
+        end
+    end
+end):in_set("git/collaborators/authorize"):run_if({
+    Query[{ with = { "git/collaborators/authorize" }, without = { "WorldMirror" } }],
+}, function(present)
+    return not present:is_empty()
+end)
+
+-- `git/collaborators/authorize` was taken off its carrier: every connection's grants go with it. The
+-- connection's despawn takes them too.
+app:add_systems(First, {
+    Query[{ removed = { "git/collaborators/authorize" } }],
+    Query[{ with = { "core/net/connection", "core/permission/grants" }, without = { "core/net" } }],
+    Commands,
+}, function(removed, granted, commands)
+    for _, _ in ipairs(removed:iter()) do
+        for _, connection in ipairs(granted:iter()) do
+            commands:entity(connection:id()):try_remove("core/permission/grants")
+        end
+        break
+    end
+end):in_set("git/collaborators/authorize")
+
 return {
+    base = "core/permission",
     defaults = {
         ["git/collaborators/authorize"] = { proof_wait = 90 },
     },
