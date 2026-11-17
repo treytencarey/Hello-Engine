@@ -9,9 +9,15 @@ local Click = require("bevy::picking::prelude::Click")
 local suite = helpers.create_suite("SidebarSuite")
 
 local camera
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local own_net
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    own_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzsidebar" },
+        ["core/net/sync"] = false,
+    }):id()
     camera = commands:spawn({ Camera2d = {}, Camera = { order = 0 } }):id()
 end)
 
@@ -23,11 +29,11 @@ Instances.mark_mod_script(PANEL)
 -- The reload (R14) rewrites the sidebar's own file with the same bytes: an immediate watcher.
 local SOURCE = "assets/modules/sidebar/init.lua"
 
--- The panel stand-in: when a bar appears, a local player with `zz/panel` gets its two
+-- The panel stand-in: when a bar appears, an owned player with `zz/panel` gets its two
 -- buttons in it.
 app:add_systems(Update, { World, Commands }, function(world, commands)
     for _, bar in ipairs(world:query({ added = { "sidebar/bar" } })) do
-        for _, _ in ipairs(world:query({ with = { "zz/panel", "core/net/local" }, limit = 1 })) do
+        for _, _ in ipairs(world:query({ with = { "zz/panel", "core/net/owner" }, limit = 1 })) do
             commands:entity(bar:id())
                 :add_child(commands:spawn({ ["sidebar/button"] = { title = "Alpha", order = 2 }, ["core/script/owner"] = Instances.script_entity(PANEL) }):id())
                 :add_child(commands:spawn({ ["sidebar/button"] = { title = "Beta", order = 1 }, ["core/script/owner"] = Instances.script_entity(PANEL) }):id())
@@ -120,7 +126,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if phase == "spawn" then
         commands:spawn({
             ["zz/player"] = { name = "me" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = own_net,
             ["core/net/sync"] = false,
             input = {},
             ["input/mode"] = { mode = "input/game" },
@@ -264,13 +270,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("open before leaving")
 
     elseif phase == "open before leaving" and clock > 0.4 then
-        commands:entity(me:id()):remove("core/net/local")
+        commands:entity(me:id()):remove("core/net/owner")
         step("left")
 
     elseif phase == "left" and clock > 0.3 then
         suite.assert_test("R11_leaving_the_world_closes_the_sidebar",
             not me:has("sidebar/open") and not shown(container(world)), "")
-        me:patch({ ["core/net/local"] = {} })
+        commands:entity(me:id()):insert({ ["core/net/owner"] = own_net })
         step("returned")
 
     elseif phase == "returned" and clock > 0.3 then

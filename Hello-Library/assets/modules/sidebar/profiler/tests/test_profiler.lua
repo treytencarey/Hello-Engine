@@ -43,8 +43,15 @@ end
 
 local camera, player
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local own_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    own_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzprofiler" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({ ["ui/theme/dark"] = {} })
     commands:spawn({ ["zz/work"] = {} })
     camera = commands:spawn({ ["zz/camera"] = {} }):id()
@@ -317,7 +324,7 @@ app:add_systems(Update, {
     if phase == "arrived" and clock > 0.3 then
         local me = world:query({ with = { "zz/player" }, optional = { "sidebar/profiler" } })[1]
         T("P0_nothing_before_the_player_is_ours", not me:has("sidebar/profiler") and #buttons(world) == 0)
-        commands:entity(player):patch({ ["core/net/local"] = {} })
+        commands:entity(player):insert({ ["core/net/owner"] = own_net })
         step("button")
 
     elseif phase == "button" and #buttons(world) > 0 and clock > 0.2 then
@@ -669,7 +676,7 @@ app:add_systems(Update, {
         T("A2_and_closing_leaves_it_open", state_of(world).open == true and #views(world) == 1
             and world:query({ iter_many = { mark.other }, with = { "sidebar/button/open" } })[1] == nil)
         commands:entity(mark.other):despawn()
-        mark.second = commands:spawn({ ["zz/second"] = {}, ["sidebar/profiler"] = {}, ["core/net/local"] = {}, ["core/net/sync"] = false }):id()
+        mark.second = commands:spawn({ ["zz/second"] = {}, ["sidebar/profiler"] = {}, ["core/net/owner"] = own_net, ["core/net/sync"] = false }):id()
         step("second_carrier")
 
     elseif phase == "second_carrier" and clock > 0.5 then

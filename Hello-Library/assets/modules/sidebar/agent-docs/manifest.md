@@ -12,7 +12,7 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 
 ## Components
 
-- `sidebar = {}` on the local player, added by the client itself (the player's client half). Never synced: the sidebar is local UI.
+- `sidebar = {}` on the local player, added by the client itself (the player's client half). Never synced: the sidebar is local UI. The local player is the one in this client's own nets' `core/net/owns` (`Query[{ with = { "core/net", "core/net/owns" } }]`, joined with `own:contains(row:get("core/net/owner"))`).
 - `sidebar/open = {}` on the player while the sidebar is open. Added and removed by `sidebar`.
 - `sidebar/button = { icon, title, order }`: a button, spawned by a panel mod into the bar. The sidebar gives it `Node`, `Button`, `BorderRadius` and `ui/style` and keeps the bar in `order`. `icon` is an image path (the library's own are in `icons/`), drawn in the icon; a button naming none, or one in a VM that loads no images (a headless one), shows the title's first letter.
 - `sidebar/button/open = { order }` on a button while its panel is open; `order` is one above the highest among the open buttons when it opened, so Escape closes the newest. Added and removed by `sidebar` (a click, Escape, closing the sidebar). A panel mod reacts to its `added` and `removed` edges on its own button.
@@ -22,8 +22,8 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `sidebar/setup` | For the local player with `input`, bind Escape in `input/game` and `input/ui` (again when `input` is added back), and build the container and bar, hidden unless the sidebar is open already (a reload) |
-| First | `sidebar/away` | When the player leaves for another world, close the sidebar |
+| First | `sidebar/setup` | For the local player with `input`, on its `sidebar`, `input` or `core/net/owner` edge, bind Escape in `input/game` and `input/ui` (again when `input` is added back), and build the container and bar, hidden unless the sidebar is open already (a reload) |
+| First | `sidebar/away` | When the player stops being this client's (its `core/net/owner` removed or given to another connection: it left for another world), close the sidebar |
 | First | `sidebar/removed` | When `sidebar` is removed, despawn the container with everything in it, and unbind |
 | Update | `sidebar/toggle` | Escape in game input opens the sidebar; in UI input it closes the newest open panel, or the sidebar |
 | Update, after `sidebar/toggle` | `sidebar/show` | On opening: show the container, UI input with the cursor |
@@ -40,9 +40,11 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 commands:entity(player):patch({ sidebar = {}, ["sidebar/profiler"] = {} })
 
 -- a panel mod: its button in the bar, for a local player with the panel. Both edges: a new
--- bar (the sidebar built or reloaded), and the panel itself (added, or this mod reloaded)
+-- bar (the sidebar built or reloaded), and the panel itself (added, given to this client, or this
+-- mod reloaded); the carrier is found in an own net's list (`carriers:iter_many(net:get("core/net/owns"))`)
 Query[{ added = { "sidebar/bar" } }]
-Query[{ added = { "sidebar/profiler" }, with = { "core/net/local" } }]
+Query[{ ["or"] = { added = { "sidebar/profiler", "core/net/owner" }, changed = { "core/net/owner" } }, with = { "sidebar/profiler", "core/net/owner" } }]
+Query[{ with = { "core/net", "core/net/owns" } }]
 -- local bar = bars:iter()[1]   (bars: a declared Query[{ with = { "sidebar/bar" } }])
 -- commands:spawn({
 --     ["sidebar/button"] = { icon = "icons/profiler.png", title = "Profiler", order = 1 },

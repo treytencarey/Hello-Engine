@@ -58,7 +58,11 @@ local camera, player, own, other
 app:add_systems(Startup, { Commands }, function(commands)
     -- What owns this player's entities here, the client's own net entity (its connection lands
     -- there); and another user's connection, as this client holds it.
-    own = commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false }):id()
+    own = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzinvites" },
+        ["core/net/sync"] = false,
+    }):id()
     other = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id()
     commands:spawn({ ["ui/theme/dark"] = {} })
     camera = commands:spawn({ ["zz/camera"] = {} }):id()
@@ -66,7 +70,6 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["zz/player"] = {},
         ["sidebar/invites"] = {},
         ["git/panel"] = {},
-        ["core/net/local"] = {},
         ["core/net/owner"] = own,
         Transform = {
             translation = { x = 10, y = 0, z = 5 },
@@ -217,7 +220,6 @@ local function server_portal(commands, scope)
     return commands:spawn({
         ["scope/portal"] = { target = scope },
         ["core/net/owner"] = own,
-        ["core/net/local"] = {},
         ["core/net/sync"] = false,
     }):id()
 end

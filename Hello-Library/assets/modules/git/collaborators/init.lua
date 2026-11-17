@@ -18,6 +18,15 @@ local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local Time = require("bevy::time::Time")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 -- On, the player's own row gets "Debug", which makes a local invite card to a fresh branch of this
 -- world's repository, so the accept path can be tried with one account. Off when committed.
 local DEBUG_INVITES = false
@@ -71,16 +80,17 @@ app:add_systems(First, {
     end
 end):in_set("git/collaborators")
 
--- The button goes in the bar for a local player with the panel: on a new bar (the sidebar built
--- or reloaded), and on the panel itself (added, or this mod reloaded).
+-- The button goes in the bar for an owned carrier of the panel: on a new bar (the sidebar built
+-- or reloaded), and on the panel itself (added, given to this client, or this mod reloaded).
 app:add_systems(Update, {
-    Query[{ with = { "git/collaborators", "core/net/local" } }],
+    Query[{ with = { "git/collaborators" } }],
     Query[{ with = { "sidebar/bar" } }],
     Query[{ with = { "git/collaborators/button" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, bars, buttons, commands)
+}, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and not carriers:is_empty() and buttons:is_empty() then
+    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
         commands:spawn({
             ["sidebar/button"] = { icon = "icons/friends.png", title = "Collaborators", order = 4 },
             ["git/collaborators/button"] = {},
@@ -91,9 +101,10 @@ end):in_set("git/collaborators"):run_if({
     Query[{ added = { "sidebar/bar" } }],
     Query[{
         ["or"] = {
-            added = { "git/collaborators", "core/net/local" },
+            added = { "git/collaborators", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "git/collaborators", "core/net/local" },
+        with = { "git/collaborators", "core/net/owner" },
     }],
 }, function(new_bars, new_carriers)
     return not new_bars:is_empty() or not new_carriers:is_empty()
@@ -485,18 +496,19 @@ app:add_systems(Update, {
                     elseif enabled then
                         button:observe(On[Pointer[Click]], {
                             Query[{
-                                with = { "git/collaborators", "core/net/local" },
+                                with = { "git/collaborators" },
                                 optional = { "Children" },
                             }],
+                            Query[{ with = { "core/net", "core/net/owns" } }],
                             Query[{ with = { "core/registry/invites/send", "Request" } }],
                             Query[{
                                 with = { "core/world/status" },
                                 without = { "WorldMirror" },
                             }],
                             Commands,
-                        }, function(_, owners, open_sends, here, click_commands)
+                        }, function(_, owners, own, open_sends, here, click_commands)
                             local world_row = here:iter()[1]
-                            for _, owner in ipairs(owners:iter()) do
+                            for _, owner in ipairs(owned(own, owners)) do
                                 for _, ask in ipairs(open_sends:iter_many(owner:get("Children") or {})) do
                                     if plain(ask:get("core/registry/invites/send").invitee) == plain(login) then
                                         click_commands:entity(ask:id()):try_despawn()

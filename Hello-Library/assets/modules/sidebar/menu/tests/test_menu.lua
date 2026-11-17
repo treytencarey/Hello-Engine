@@ -32,19 +32,37 @@ end
 
 local camera, player
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local own_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    own_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzmenu" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({ ["ui/theme/dark"] = {} })
     camera = commands:spawn({ Camera2d = {}, Camera = { order = 0 } }):id()
     player = commands:spawn({
         ["zz/player"] = {},
-        ["core/net/local"] = {},
         ["core/net/sync"] = false,
         input = {},
         ["input/mode"] = { mode = "input/game" },
         sidebar = {},
         ["sidebar/menu"] = {},
     }):id()
+end)
+
+-- The player becomes this client's once the net has declared ownership: an owner edge that comes
+-- before the pair is declared finds no `core/net/owns` to join, and is spent.
+local given = false
+app:add_systems(Update, { Query[{ with = { "LuaRelationship" } }], Commands }, function(declared, commands)
+    if given then return end
+    for _, d in ipairs(declared:iter()) do
+        if d:get("LuaRelationship").source == "core/net/owner" then given = true end
+    end
+    if not given then return end
+    commands:entity(player):insert({ ["core/net/owner"] = own_net })
 end)
 
 -- The stand-in: what it spawns is linked to its file, as a mod's spawns are. Its toggle's state

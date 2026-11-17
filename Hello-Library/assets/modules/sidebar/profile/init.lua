@@ -19,6 +19,15 @@ local Click = require("bevy::picking::prelude::Click")
 -- What one sign-in's row says. `known`: root has answered the standing ask. `who`: the name root
 -- gave, while signed in. `wish` and `said`: the player's last sign-in or sign-out ask and root's
 -- answer to it, if any.
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 local function account(title, known, who, wish, said)
     local row = { title = title, status = "Not signed in", role = "text_dim" }
     if who ~= nil then
@@ -223,16 +232,17 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/profile/removed")
 
--- The button goes in the bar for a local player with the panel: on a new bar (the sidebar built
--- or reloaded), and on the panel itself (added, or this mod reloaded).
+-- The button goes in the bar for an owned carrier of the panel: on a new bar (the sidebar built
+-- or reloaded), and on the panel itself (added, given to this client, or this mod reloaded).
 app:add_systems(Update, {
-    Query[{ with = { "sidebar/profile", "core/net/local" } }],
+    Query[{ with = { "sidebar/profile" } }],
     Query[{ with = { "sidebar/bar" } }],
     Query[{ with = { "sidebar/profile/button" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, bars, buttons, commands)
+}, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and not carriers:is_empty() and buttons:is_empty() then
+    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
         commands:spawn({
             ["sidebar/button"] = { icon = "icons/account.png", title = "Accounts", order = 0 },
             ["sidebar/profile/button"] = {},
@@ -243,9 +253,10 @@ end):in_set("sidebar/profile/add_button"):run_if({
     Query[{ added = { "sidebar/bar" } }],
     Query[{
         ["or"] = {
-            added = { "sidebar/profile", "core/net/local" },
+            added = { "sidebar/profile", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "sidebar/profile", "core/net/local" },
+        with = { "sidebar/profile", "core/net/owner" },
     }],
 }, function(new_bars, new_carriers)
     return not new_bars:is_empty() or not new_carriers:is_empty()
@@ -430,13 +441,14 @@ app:add_systems(Update, {
             if site_button ~= nil and site.label == "Sign in" then
                 site_button:observe(On[Pointer[Click]], {
                     Query[{
-                        with = { "sidebar/profile", "core/net/local" },
+                        with = { "sidebar/profile" },
                         optional = { "Children" },
                     }],
+                    Query[{ with = { "core/net", "core/net/owns" } }],
                     Query[{ with = { "core/player/session/signin", "Request" } }],
                     Commands,
-                }, function(_, owners, asks, click_commands)
-                    for _, owner in ipairs(owners:iter()) do
+                }, function(_, owners, own, asks, click_commands)
+                    for _, owner in ipairs(owned(own, owners)) do
                         for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
                             local wish = ask:get("core/player/session/signin")
                             if wish.start or wish.sign_out then
@@ -454,13 +466,14 @@ app:add_systems(Update, {
             elseif site_button ~= nil then
                 site_button:observe(On[Pointer[Click]], {
                     Query[{
-                        with = { "sidebar/profile", "core/net/local" },
+                        with = { "sidebar/profile" },
                         optional = { "Children" },
                     }],
+                    Query[{ with = { "core/net", "core/net/owns" } }],
                     Query[{ with = { "core/player/session/signin", "Request" } }],
                     Commands,
-                }, function(_, owners, asks, click_commands)
-                    for _, owner in ipairs(owners:iter()) do
+                }, function(_, owners, own, asks, click_commands)
+                    for _, owner in ipairs(owned(own, owners)) do
                         for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
                             local wish = ask:get("core/player/session/signin")
                             if wish.start or wish.sign_out then
@@ -481,13 +494,14 @@ app:add_systems(Update, {
             if github_button ~= nil and github.label == "Sign in" then
                 github_button:observe(On[Pointer[Click]], {
                     Query[{
-                        with = { "sidebar/profile", "core/net/local" },
+                        with = { "sidebar/profile" },
                         optional = { "Children" },
                     }],
+                    Query[{ with = { "core/net", "core/net/owns" } }],
                     Query[{ with = { "vault/github/signin", "Request" } }],
                     Commands,
-                }, function(_, owners, asks, click_commands)
-                    for _, owner in ipairs(owners:iter()) do
+                }, function(_, owners, own, asks, click_commands)
+                    for _, owner in ipairs(owned(own, owners)) do
                         for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
                             local wish = ask:get("vault/github/signin")
                             if wish.start or wish.sign_out then
@@ -505,13 +519,14 @@ app:add_systems(Update, {
             elseif github_button ~= nil then
                 github_button:observe(On[Pointer[Click]], {
                     Query[{
-                        with = { "sidebar/profile", "core/net/local" },
+                        with = { "sidebar/profile" },
                         optional = { "Children" },
                     }],
+                    Query[{ with = { "core/net", "core/net/owns" } }],
                     Query[{ with = { "vault/github/signin", "Request" } }],
                     Commands,
-                }, function(_, owners, asks, click_commands)
-                    for _, owner in ipairs(owners:iter()) do
+                }, function(_, owners, own, asks, click_commands)
+                    for _, owner in ipairs(owned(own, owners)) do
                         for _, ask in ipairs(asks:iter_many(owner:get("Children") or {})) do
                             local wish = ask:get("vault/github/signin")
                             if wish.start or wish.sign_out then

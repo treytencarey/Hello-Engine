@@ -85,16 +85,26 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/profiler/init")
 
--- The button goes in the bar for a local player with the panel: on a new bar (the sidebar built
--- or reloaded), and on the panel itself (added, or this mod reloaded).
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
+-- The button goes in the bar for an owned carrier of the panel: on a new bar (the sidebar built
+-- or reloaded), and on the panel itself (added, given to this client, or this mod reloaded).
 app:add_systems(Update, {
-    Query[{ with = { "sidebar/profiler", "core/net/local" } }],
+    Query[{ with = { "sidebar/profiler" } }],
     Query[{ with = { "sidebar/bar" } }],
     Query[{ with = { "sidebar/profiler/button" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, bars, buttons, commands)
+}, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and not carriers:is_empty() and buttons:is_empty() then
+    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
         commands:spawn({
             ["sidebar/button"] = { icon = "icons/profiler.png", title = "Profiler", order = 1 },
             ["sidebar/profiler/button"] = {},
@@ -105,9 +115,10 @@ end):in_set("sidebar/profiler/add_button"):run_if({
     Query[{ added = { "sidebar/bar" } }],
     Query[{
         ["or"] = {
-            added = { "sidebar/profiler", "core/net/local" },
+            added = { "sidebar/profiler", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "sidebar/profiler", "core/net/local" },
+        with = { "sidebar/profiler", "core/net/owner" },
     }],
 }, function(new_bars, new_carriers)
     return not new_bars:is_empty() or not new_carriers:is_empty()

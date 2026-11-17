@@ -43,7 +43,7 @@ app:add_systems(First, {
         commands:spawn({
             ["zz/owned"] = {},
             ["zz/field"] = { value = 0 },
-            ["core/net/owner"] = { client_id = c:get("core/net/connection").client_id },
+            ["core/net/owner"] = c:id(),
             ["core/net/sync"] = {
                 ["zz/owned"] = { authority = "server" },
                 ["zz/field"] = { authority = "client", target = "owner" },

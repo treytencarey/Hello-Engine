@@ -133,11 +133,20 @@ local Instances = require("modules/core/instances.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("FileBrowserNetState", boot.DEFAULTS)
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
 local connected, asked = false, false
 app:add_systems(Update, {
-    Query[{ with = { "sidebar/file_browser", "core/net/local", "core/net/sync" } }],
+    Query[{ with = { "sidebar/file_browser", "core/net/sync" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(mine, commands)
+}, function(mine, own, commands)
     if not connected then
         connected = true
         commands:spawn({
@@ -146,7 +155,7 @@ app:add_systems(Update, {
             ["core/net/sync"] = false,
         })
     end
-    local me = mine:iter()[1]
+    local me = owned(own, mine)[1]
     if me ~= nil and not asked then
         local sync = me:get("core/net/sync")
         if type(sync) == "table" and sync["sidebar/file_browser/request"] ~= nil then
@@ -160,9 +169,10 @@ app:add_systems(Update, {
 end):in_set("zz/fb_client2")
 app:add_systems(Update, {
     Query[{ changed = { "sidebar/file_browser/answer" } }],
-    Query[{ with = { "player", "core/net/local" } }],
-}, function(changed, locals)
-    local mine = locals:iter()[1]
+    Query[{ with = { "player" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(changed, players, own)
+    local mine = owned(own, players)[1]
     for _, e in ipairs(changed:iter()) do
         if mine ~= nil and e:id() == mine:id() then
             local parts = {}
@@ -179,11 +189,17 @@ end):in_set("zz/fb_client2_answers")
 app:add_systems(Update, {
     Query[{
         with = { "player" },
-        without = { "core/net/local" },
         any_of = { "sidebar/file_browser", "sidebar/file_browser/request", "sidebar/file_browser/answer" },
+        optional = { "core/net/owner" },
     }],
-}, function(parts)
-    ts.c2_replica_parts = math.max(ts.c2_replica_parts, parts:count())
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(parts, own)
+    local theirs = 0
+    for _, p in ipairs(parts:iter()) do
+        local owner = p:get("core/net/owner")
+        if not (owner ~= nil and own:contains(owner)) then theirs = theirs + 1 end
+    end
+    ts.c2_replica_parts = math.max(ts.c2_replica_parts, theirs)
 end):in_set("zz/fb_client2_replica")
 ]=])
 
@@ -215,18 +231,29 @@ local function finish()
     suite.finish("FILE_BROWSER_NET")
 end
 
+--- Is `owner` one of this client's own nets?
+local function own_by(world, owner)
+    for _, n in ipairs(world:query({ with = { "core/net", "core/net/owns" } })) do
+        if owner ~= nil and n:id() == owner then return true end
+    end
+    return false
+end
+
 -- Every answer this client ever held, by key: the client half takes a key as soon as it reads it.
 local seen = {}
 app:add_systems(Update, {
     Query[{
         changed = { "sidebar/file_browser/answer" },
-        with = { "core/net/local" },
+        with = { "core/net/owner" },
     }],
-}, function(changed)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(changed, own)
     for _, e in ipairs(changed:iter()) do
+        if not own:contains(e:get("core/net/owner")) then goto next_changed end
         for key, answer in pairs(e:get("sidebar/file_browser/answer")) do
             seen[key] = answer
         end
+        ::next_changed::
     end
 end):in_set("zz/fb_seen")
 
@@ -237,14 +264,15 @@ local refresh_at_read = false
 app:add_systems(Update, {
     Query[{
         changed = { "sidebar/file_browser/answer" },
-        with = { "core/net/local" },
+        with = { "core/net/owner" },
     }],
     Query[{ with = { "sidebar/file_browser/refresh" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(changed, refreshes, commands)
+}, function(changed, refreshes, own, commands)
     for _, e in ipairs(changed:iter()) do
         local refresh = refreshes:iter()[1]
-        if refresh_at_read and refresh ~= nil and e:get("sidebar/file_browser/answer")["0:Alpha"] ~= nil then
+        if refresh_at_read and refresh ~= nil and own:contains(e:get("core/net/owner")) and e:get("sidebar/file_browser/answer")["0:Alpha"] ~= nil then
             refresh_at_read = false
             ts.alpha_changed = true
             commands:trigger(Pointer[Click], {
@@ -285,13 +313,18 @@ app:add_systems(Update, {
 end):in_set("zz/fb_first_writes")
 
 local function me(world)
-    return world:query({
-        with = { "player", "core/net/local", "core/net/id" },
-        optional = {
-            "sidebar", "sidebar/file_browser", "sidebar/file_browser/state", "sidebar/file_browser/request",
-            "sidebar/file_browser/answer", "core/net/sync",
-        },
-    })[1]
+    for _, n in ipairs(world:query({ with = { "core/net", "core/net/owns" } })) do
+        local row = world:query({
+            with = { "player", "core/net/id" },
+            optional = {
+                "sidebar", "sidebar/file_browser", "sidebar/file_browser/state", "sidebar/file_browser/request",
+                "sidebar/file_browser/answer", "core/net/sync",
+            },
+            iter_many = n:get("core/net/owns"),
+        })[1]
+        if row ~= nil then return row end
+    end
+    return nil
 end
 
 local function count(world, name)
@@ -624,11 +657,13 @@ app:add_systems(Update, {
     elseif phase == "second_client" and ts.c2_said ~= "" and clock > 0.5 then
         T("S1_a_second_client_gets_its_own_answers", ts.c2_said == "0:config=refused;0:other=not available", ts.c2_said)
         T("S2_the_server_gave_it_its_own_panel", ts.carriers == 2, tostring(ts.carriers))
-        local remote = world:query({
+        local remote
+        for _, p in ipairs(world:query({
             with = { "player" },
-            without = { "core/net/local" },
-            optional = { "sidebar/file_browser", "sidebar/file_browser/request", "sidebar/file_browser/answer" },
-        })[1]
+            optional = { "core/net/owner", "sidebar/file_browser", "sidebar/file_browser/request", "sidebar/file_browser/answer" },
+        })) do
+            if remote == nil and not own_by(world, p:get("core/net/owner")) then remote = p end
+        end
         T("S3_it_arrives_here_as_a_player_with_none_of_the_panel", remote ~= nil and not remote:has("sidebar/file_browser")
             and not remote:has("sidebar/file_browser/request") and not remote:has("sidebar/file_browser/answer"))
         T("S4_the_other_client_saw_none_of_this_ones", ts.c2_answer_rows == 0 and ts.c2_replica_parts == 0,

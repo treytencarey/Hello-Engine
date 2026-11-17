@@ -30,6 +30,15 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 local function say(commands, carrier, kind, text)
     commands:entity(carrier):entry("sidebar/invites/state"):and_modify(function(state)
         state.feedback, state.feedback_kind = text, kind
@@ -257,14 +266,15 @@ app:add_systems(Update, {
             })
             local action = choice.action
             button:observe(On[Pointer[Click]], {
-                Query[{ with = { "sidebar/invites", "core/net/local" } }],
+                Query[{ with = { "sidebar/invites" } }],
+                Query[{ with = { "core/net", "core/net/owns" } }],
                 Query[{
                     with = { "sidebar/invites/notification", "notification" },
                     optional = { "notification/fade" },
                 }],
                 Commands,
-            }, function(event, owners, notices, click_commands)
-                local owner = owners:iter()[1]
+            }, function(event, owners, own, notices, click_commands)
+                local owner = owned(own, owners)[1]
                 local notice = notices:iter_many(notices:iter_ancestors(event.entity))[1]
                 if owner ~= nil and notice ~= nil then
                     local said = notice:get("sidebar/invites/notification")
@@ -408,10 +418,7 @@ app:add_systems(Update, {
         with = { "core/world/status" },
         without = { "WorldMirror" },
     }],
-    Query[{
-        with = { "scope/portal" },
-        any_of = { "core/net/local", "core/net/owner" },
-    }],
+    Query[{ with = { "scope/portal", "core/net/owner" } }],
     Query[{ with = { "core/world/load" } }],
     Query[{ with = { "sidebar/invites/request" } }],
     Commands,
@@ -447,10 +454,11 @@ app:add_systems(Update, {
     local asked = {}
     for _, drop in ipairs(drops) do
         local carrier, scope = drop.carrier, drop.scope
+        -- The carrier's portals: those its owner, a connection, owns.
         local me = carrier:has("core/net/owner") and carrier:get("core/net/owner")
         local mine, open = 0, false
         for _, p in ipairs(portals:iter()) do
-            if p:has("core/net/local") or (me and p:has("core/net/owner") and p:get("core/net/owner") == me) then
+            if me and p:get("core/net/owner") == me then
                 mine = mine + 1
                 open = open or p:get("scope/portal").target == scope
             end
@@ -524,24 +532,24 @@ app:add_systems(Update, {
     }],
     Query[{
         with = { "scope/portal" },
-        optional = { "core/net/local", "core/net/owner" },
+        optional = { "core/net/owner" },
     }],
     Query[{
-        with = { "sidebar/invites", "core/net/local" },
+        with = { "sidebar/invites" },
         optional = { "Children", "core/net/owner" },
     }],
     Query[{ with = { "core/world/load" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(gone, portals, carriers, loads, commands)
+}, function(gone, portals, carriers, loads, own, commands)
     for _, p in ipairs(gone:iter()) do
         local target = (p:get("scope/portal") or {}).target
-        for _, carrier in ipairs(carriers:iter()) do
+        for _, carrier in ipairs(owned(own, carriers)) do
             local me = carrier:has("core/net/owner") and carrier:get("core/net/owner")
             local still = false
             for _, q in ipairs(portals:iter()) do
-                local owned = q:has("core/net/local")
-                    or (me and q:has("core/net/owner") and q:get("core/net/owner") == me)
-                still = still or (owned and q:get("scope/portal").target == target)
+                local theirs = me and q:has("core/net/owner") and q:get("core/net/owner") == me
+                still = still or (theirs and q:get("scope/portal").target == target)
             end
             for _, load in ipairs(loads:iter_many(carrier:get("Children") or {})) do
                 if not still and target ~= nil and load:get("core/world/load").scope == target then

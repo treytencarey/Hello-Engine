@@ -38,6 +38,15 @@ local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 
 -- Writing is a change edge, and most text stays as it was when the rows move.
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 local function write_text(line, text)
     if line:get("Text") ~= text then
         line:patch({ Text = { text = text } })
@@ -68,16 +77,17 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/file_browser/init")
 
--- The button goes in the bar for a local player with the panel: on a new bar (the sidebar built
--- or reloaded), and on the panel itself (added, or this mod reloaded).
+-- The button goes in the bar for an owned carrier of the panel: on a new bar (the sidebar built
+-- or reloaded), and on the panel itself (added, given to this client, or this mod reloaded).
 app:add_systems(Update, {
-    Query[{ with = { "sidebar/file_browser", "core/net/local" } }],
+    Query[{ with = { "sidebar/file_browser" } }],
     Query[{ with = { "sidebar/bar" } }],
     Query[{ with = { "sidebar/file_browser/button" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, bars, buttons, commands)
+}, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and not carriers:is_empty() and buttons:is_empty() then
+    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
         commands:spawn({
             ["sidebar/button"] = { icon = "icons/files.png", title = "Files", order = 2 },
             ["sidebar/file_browser/button"] = {},
@@ -88,9 +98,10 @@ end):in_set("sidebar/file_browser/add_button"):run_if({
     Query[{ added = { "sidebar/bar" } }],
     Query[{
         ["or"] = {
-            added = { "sidebar/file_browser", "core/net/local" },
+            added = { "sidebar/file_browser", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "sidebar/file_browser", "core/net/local" },
+        with = { "sidebar/file_browser", "core/net/owner" },
     }],
 }, function(new_bars, new_carriers)
     return not new_bars:is_empty() or not new_carriers:is_empty()
@@ -237,13 +248,14 @@ end)
 app:add_systems(Update, {
     Query[{ with = { "sidebar/file_browser/view" } }],
     Query[{
-        with = { "sidebar/file_browser", "sidebar/file_browser/state", "core/net/sync", "core/net/local" },
+        with = { "sidebar/file_browser", "sidebar/file_browser/state", "core/net/sync" },
         optional = { "sidebar/file_browser/request", "sidebar/file_browser/answer" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(views, carriers, commands)
+}, function(views, carriers, own, commands)
     local view = views:iter()[1]
-    local carrier = carriers:iter()[1]
+    local carrier = owned(own, carriers)[1]
     if view ~= nil and carrier ~= nil then
         local sync = carrier:get("core/net/sync")
         if type(sync) == "table" and sync["sidebar/file_browser/request"] ~= nil then
@@ -283,7 +295,7 @@ end):in_set("sidebar/file_browser/ask"):after("sidebar/file_browser/receive"):ru
     Query[{ changed = { "sidebar/file_browser/answer" } }],
     Query[{
         changed = { "core/net/sync" },
-        with = { "sidebar/file_browser", "core/net/local" },
+        with = { "sidebar/file_browser", "core/net/owner" },
     }],
 }, function(views, states, requests, answers, syncs)
     return not views:is_empty() or not states:is_empty() or not requests:is_empty() or not answers:is_empty() or not syncs:is_empty()

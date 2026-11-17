@@ -23,7 +23,7 @@ Root's requests carry nothing of this mod's and outlive a reload of it (`core/sc
 - an answer, a child of its hold: `{ ["core/registry/invites/answer"] = { id, action }, Request = {} }`, replied `{ status = "asking" | "ok" | "refused", scope, reason }`.
 - the load of an accepted world, a child of the carrier: `{ ["core/world/load"] = { scope, join_only = true }, WorldShared = {}, ["core/net/sync"] = false }`. Root claims it and writes `status` (`"ready"` or `"failed"` with `reason`) on it.
 
-The portal ask: `git/panel/request = { op = "drop_portal", target_sk = <scope> }` on the carrier, the slot `git/panel` gives the player, and cross-mod input through a sub-component. The server answers on `git/panel/response { op = "drop_portal", scope, status }` and spawns the portal itself, placed, 3 m ahead of the player (`git/panel`); it reaches this client as the player's own (`core/net/local`, `core/net/owner`). The carrier must carry `git/panel`.
+The portal ask: `git/panel/request = { op = "drop_portal", target_sk = <scope> }` on the carrier, the slot `git/panel` gives the player, and cross-mod input through a sub-component. The server answers on `git/panel/response { op = "drop_portal", scope, status }` and spawns the portal itself, placed, 3 m ahead of the player (`git/panel`); it reaches this client as the player's own: its `core/net/owner` is the carrier's. The carrier must carry `git/panel`.
 
 ## Systems
 
@@ -52,7 +52,7 @@ The portal ask: `git/panel/request = { op = "drop_portal", target_sk = <scope> }
 - `ready`: the portal is asked for. Before it is, the client checks what the server will, and says:
   - no row of this world's own (`core/world/status` without `WorldMirror`), or a carrier without `git/panel`: "No active scope to place a portal in";
   - the target is this world's `scope_key`: "You are already in that world";
-  - the player already has 8 portals here (counted over `scope/portal` entities that are `core/net/local` or whose `core/net/owner` is the carrier's, compared as entities): "You have too many portals open".
+  - the player already has 8 portals here (counted over `scope/portal` entities whose `core/net/owner` is the carrier's, compared as entities): "You have too many portals open".
   A refused drop also despawns the carrier's load for that scope. A target the player already has a portal to, or an ask out for, asks nothing more; a second `ready` asks nothing.
 - The server refusing the ask says "You have too many portals open": the other checks passed here.
 - The load stays while a portal of this player's names its world, so the observed world is not let go between the load and the portal's own view.

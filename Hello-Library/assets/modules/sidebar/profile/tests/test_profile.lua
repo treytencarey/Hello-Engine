@@ -42,8 +42,15 @@ end
 
 local camera, player
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local own_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    own_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzprofile" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({ ["ui/theme/dark"] = {} })
     camera = commands:spawn({ ["zz/camera"] = {} }):id()
     player = commands:spawn({
@@ -179,7 +186,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "arrived" and clock > 0.3 then
-        commands:entity(player):insert({ ["core/net/local"] = {} })
+        commands:entity(player):insert({ ["core/net/owner"] = own_net })
         step("button")
 
     elseif phase == "button" and #buttons(world) > 0 and clock > 0.3 then

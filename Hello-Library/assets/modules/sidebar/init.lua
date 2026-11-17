@@ -32,15 +32,20 @@ local AssetServer = require("bevy::asset::AssetServer")
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "sidebar", "core/net/local", "input" },
+            added = { "sidebar", "core/net/owner", "input" },
+            changed = { "core/net/owner" },
         },
-        with = { "sidebar", "core/net/local", "input" },
+        with = { "sidebar", "core/net/owner", "input" },
         optional = { "sidebar/open" },
     }],
     Query[{ with = { "sidebar/container" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(players, containers, commands)
-    local arrived = players:iter()
+}, function(players, containers, own, commands)
+    local arrived = {}
+    for _, e in ipairs(players:iter()) do
+        if own:contains(e:get("core/net/owner")) then arrived[#arrived + 1] = e end
+    end
     for _, e in ipairs(arrived) do
         commands:entity(e:id()):patch({
             ["input/game"] = { sidebar = { toggle = { key = "Escape" } } },
@@ -81,17 +86,24 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/setup")
 
--- The player left this world: its sidebar closes. The edge also comes for a player that
--- despawned, which `try_remove` leaves alone.
+-- The player left this world, or is another connection's now: its sidebar closes. The edge also
+-- comes for a player that despawned, which `try_remove` leaves alone.
 app:add_systems(First, {
     Query[{
-        removed = { "core/net/local" },
+        ["or"] = { removed = { "core/net/owner" }, changed = { "core/net/owner" } },
         with = { "sidebar/open" },
+        optional = { "core/net/owner" },
     }],
+    Query[{ with = { "sidebar/open" }, optional = { "core/net/owner" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(away, commands)
+}, function(away, opened, own, commands)
     for _, e in ipairs(away:iter()) do
-        commands:entity(e:id()):try_remove("sidebar/open")
+        local live = opened:get(e:id())
+        local owner = live and live:get("core/net/owner")
+        if not (owner ~= nil and own:contains(owner)) then
+            commands:entity(e:id()):try_remove("sidebar/open")
+        end
     end
 end):in_set("sidebar/away")
 
@@ -129,19 +141,24 @@ end):in_set("sidebar/removed")
 app:add_systems(Update, {
     Query[{
         added = { "input/game/sidebar/toggle" },
-        with = { "sidebar", "core/net/local" },
+        with = { "sidebar", "core/net/owner" },
     }],
     Query[{
         added = { "input/ui/sidebar/toggle" },
-        with = { "sidebar", "core/net/local" },
+        with = { "sidebar", "core/net/owner" },
     }],
     Query[{ with = { "sidebar/button", "sidebar/button/open" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(opening, closing, open_buttons, commands)
+}, function(opening, closing, open_buttons, own, commands)
     for _, e in ipairs(opening:iter()) do
-        commands:entity(e:id()):insert({ ["sidebar/open"] = {} })
+        if own:contains(e:get("core/net/owner")) then
+            commands:entity(e:id()):insert({ ["sidebar/open"] = {} })
+        end
     end
     for _, e in ipairs(closing:iter()) do
+        if not own:contains(e:get("core/net/owner")) then goto next_closing end
+        do
         local newest, newest_order
         for _, b in ipairs(open_buttons:iter()) do
             local opened = b:get("sidebar/button/open")
@@ -154,6 +171,8 @@ app:add_systems(Update, {
         else
             commands:entity(e:id()):remove("sidebar/open")
         end
+        end
+        ::next_closing::
     end
 end):in_set("sidebar/toggle")
 

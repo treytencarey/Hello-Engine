@@ -18,20 +18,38 @@ local original = read_file_bytes(MOD_FILE)
 
 local camera, player
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local own_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    own_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzfbw" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({ ["ui/theme/dark"] = {} })
     camera = commands:spawn({ Camera2d = {}, Camera = { order = 0 } }):id()
     player = commands:spawn({
         ["zz/player"] = {},
         player = { client_id = 1, spawn_index = 1 },
-        ["core/net/local"] = {},
         ["sidebar/file_browser"] = {},
         ["core/net/sync"] = {
             ["sidebar/file_browser/request"] = { authority = "client", target = "owner" },
             ["sidebar/file_browser/answer"] = { authority = "server", target = "owner" },
         },
     }):id()
+end)
+
+-- The player becomes this client's once the net has declared ownership: an owner edge that comes
+-- before the pair is declared finds no `core/net/owns` to join, and is spent.
+local given = false
+app:add_systems(Update, { Query[{ with = { "LuaRelationship" } }], Commands }, function(declared, commands)
+    if given then return end
+    for _, d in ipairs(declared:iter()) do
+        if d:get("LuaRelationship").source == "core/net/owner" then given = true end
+    end
+    if not given then return end
+    commands:entity(player):insert({ ["core/net/owner"] = own_net })
 end)
 
 -- The server's part, by the mod's own request: a folder at the top, and many files in it.
@@ -103,7 +121,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     if phase == "opening" and clock > 0.3 then
         commands:entity(player):patch({ ["sidebar/open"] = {} })
-        local button = world:query({ with = { "sidebar/file_browser/button" } })[1]
+        -- Once it is an icon, with its click observer: the player is this client's a few frames in.
+        local button = world:query({ with = { "sidebar/file_browser/button", "Button" } })[1]
         if button ~= nil then
             click(commands, button:id())
             step("opened")

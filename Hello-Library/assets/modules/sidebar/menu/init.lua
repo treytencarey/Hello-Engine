@@ -43,16 +43,26 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/menu")
 
--- The button goes in the bar for a local player with the menu: on a new bar (the sidebar built
--- or reloaded), and on the menu itself (added, or this mod reloaded).
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
+-- The button goes in the bar for an owned carrier of the menu: on a new bar (the sidebar built
+-- or reloaded), and on the menu itself (added, given to this client, or this mod reloaded).
 app:add_systems(Update, {
-    Query[{ with = { "sidebar/menu", "core/net/local" } }],
+    Query[{ with = { "sidebar/menu" } }],
     Query[{ with = { "sidebar/bar" } }],
     Query[{ with = { "sidebar/menu/button" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, bars, buttons, commands)
+}, function(carriers, bars, buttons, own, commands)
     local bar = bars:iter()[1]
-    if bar ~= nil and not carriers:is_empty() and buttons:is_empty() then
+    if bar ~= nil and #owned(own, carriers) > 0 and buttons:is_empty() then
         commands:spawn({
             ["sidebar/button"] = { icon = "icons/settings.png", title = "Menu", order = 5 },
             ["sidebar/menu/button"] = {},
@@ -63,9 +73,10 @@ end):in_set("sidebar/menu"):run_if({
     Query[{ added = { "sidebar/bar" } }],
     Query[{
         ["or"] = {
-            added = { "sidebar/menu", "core/net/local" },
+            added = { "sidebar/menu", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "sidebar/menu", "core/net/local" },
+        with = { "sidebar/menu", "core/net/owner" },
     }],
 }, function(new_bars, new_carriers)
     return not new_bars:is_empty() or not new_carriers:is_empty()
