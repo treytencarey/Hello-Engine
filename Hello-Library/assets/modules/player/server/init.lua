@@ -25,7 +25,7 @@ app:add_systems(First, {
     Commands,
 }, function(added, commands)
     for _, e in ipairs(added:iter()) do
-        commands:entity(e:id()):patch({
+        commands:entity(e:id()):insert_if_new({
             ["camera/third_person"] = {},
             movement = {},
             animation = {},
@@ -108,14 +108,11 @@ app:add_systems(Update, {
     local dt = time:delta_secs()
     for _, e in ipairs(players:iter_mut()) do
         local target = e:get("core/net/sync/Transform")
-        local current = e:get("Transform")
-        local t = math.min(1, e:get("player").smoothing * dt)
-        e:patch({
-            Transform = {
-                translation = Vec3.lerp(current.translation, target.translation, t),
-                rotation = Quat.slerp(current.rotation, target.rotation, t),
-            },
-        })
+        local player = e:get("player")
+        local t = math.min(1, player.smoothing * dt)
+        local current = e:get_mut("Transform")
+        current.translation = Vec3.lerp(current.translation, target.translation, t)
+        current.rotation = Quat.slerp(current.rotation, target.rotation, t)
     end
 end):in_set("player/follow")
 
