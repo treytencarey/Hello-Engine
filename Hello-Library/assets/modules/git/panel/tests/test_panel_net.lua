@@ -10,8 +10,11 @@
 --   N3 every client sees the portal: on A it is A's own and being placed; on B it is neither
 --   N4 A hears "opened", and B hears nothing
 --   N5 once A's panel has taken its ask back, the same ask opens a second portal
+--   N7 B despawning one of A's placed portals is refused: the server keeps it and B gets it back
+--   N8 A closing one of its own placed portals, as the panel's Close does, takes it from the server
+--      and from B
 --   N6 A placed its portals, then goes off to another world (only watching here, its player gone):
---      they stay on the server and on B, as the world's
+--      the one left stays on the server and on B, as the world's
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
@@ -27,7 +30,7 @@ local DEFAULTS = {
     a_placing = 0, a_said = "", a_ask = "",
     b_connected = false, b_panel = false, b_slot = false, b_others = 0, b_portals = 0, b_local = 0,
     b_placing = 0, b_said = "", b_ask = "",
-    a_place = false, a_leave = false, srv_placed = 0, srv_players = 0,
+    a_place = false, a_leave = false, srv_placed = 0, srv_players = 0, a_close = false, b_close = false,
 }
 local ts = helpers.shared_state("GitPanelNetState", DEFAULTS)
 
@@ -165,6 +168,16 @@ app:add_systems(Update, {
             if p:has("core/net/local") and p:has("placement") then commands:entity(p:id()):remove("placement") end
         end
     end
+    -- A despawn of a replica: the panel's Close on A's own, and B trying the same on A's.
+    if ts[me .. "_close"] then
+        ts[me .. "_close"] = false
+        for _, p in ipairs(portals:iter()) do
+            if (me == "a") == p:has("core/net/local") and not p:has("placement") then
+                commands:entity(p:id()):despawn()
+                break
+            end
+        end
+    end
 
 end):in_set("zz/panel_net_client")
 ]=])
@@ -210,11 +223,22 @@ step(within(10, function() return ts.srv_portals == 2 and ts.a_portals == 2 and 
     ts.a_place = true
 end)
 step(within(5, function() return ts.srv_placed == 2 end), function()
+    ts.b_close = true
+end)
+step(after(3), function()
+    T("N7_another_client_s_despawn_of_a_portal_is_refused", ts.srv_portals == 2 and ts.a_portals == 2 and ts.b_portals == 2,
+        string.format("server %d a %d b %d", ts.srv_portals, ts.a_portals, ts.b_portals))
+    ts.a_close = true
+end)
+step(within(10, function() return ts.srv_portals == 1 and ts.b_portals == 1 end), function()
+    T("N8_closing_its_own_placed_portal_takes_it_from_the_server_and_every_client",
+        ts.srv_portals == 1 and ts.a_portals == 1 and ts.b_portals == 1,
+        string.format("server %d a %d b %d", ts.srv_portals, ts.a_portals, ts.b_portals))
     ts.a_leave = true
 end)
 step(within(25, function() return ts.srv_players == 1 end), function() end)
 step(after(1), function()
-    T("N6_the_placer_leaving_takes_no_portal", ts.srv_players == 1 and ts.srv_portals == 2 and ts.b_portals == 2,
+    T("N6_the_placer_leaving_takes_no_portal", ts.srv_players == 1 and ts.srv_portals == 1 and ts.b_portals == 1,
         string.format("players %d server %d b %d", ts.srv_players, ts.srv_portals, ts.b_portals))
 end)
 
