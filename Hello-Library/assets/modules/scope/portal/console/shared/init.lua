@@ -1,0 +1,21 @@
+-- A console beside a door, which re-points the door at another branch of this world's repository.
+-- The world's server decides a re-point and keeps a record of it, which reaches every client; each
+-- side sets its own copy of the door from that record, and from the door's authored value when the
+-- record goes.
+--
+-- scope/portal/console = {
+--     door = <the Name of the door it re-points>,
+--     at = <the node a re-pointed door arrives at in the target's map>,
+-- }: a custom property on the console's screen node, on each side's own copy of the scene
+--
+-- scope/portal/console/user = {}: on a player, added by `player/server`, so its request and
+-- response reach the owner alone
+-- scope/portal/console/request = { door, target }: written by the owner's client on its player
+-- scope/portal/console/response = { status = "done" | "refused", reason }: the server's answer, on
+-- the player, to the owner alone
+-- scope/portal/console/target = { door, target, at }: one per re-pointed door, spawned by the
+-- server and synced to every client; it lasts while the server runs
+--
+-- This file has no systems.
+
+return {}

@@ -36,6 +36,7 @@ app:add_systems(First, {
             ["sidebar/file_browser"] = {},
             ["git/panel"] = {},
             ["player/vr"] = {},
+            ["scope/portal/console/user"] = {},
         })
     end
 end):in_set("player/init")
@@ -132,6 +133,7 @@ app:add_systems(First, {
             "sidebar/file_browser",
             "git/panel",
             "player/vr",
+            "scope/portal/console/user",
         },
     }],
     Commands,
@@ -151,7 +153,8 @@ app:add_systems(First, {
             "ai/noisemaker",
             "sidebar/file_browser",
             "git/panel",
-            "player/vr")
+            "player/vr",
+            "scope/portal/console/user")
     end
 end):in_set("player/removed")
 
