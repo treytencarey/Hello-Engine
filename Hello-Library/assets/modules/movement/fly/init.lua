@@ -46,9 +46,8 @@ app:add_systems(First, {
 end):in_set("movement/fly")
 
 -- `movement/fly` was taken off: take off what it added, as its last value says, and unbind unless
--- `input` went too, as its bindings go with it. Taken off while it flies, the scale can only go back
--- to 1: rapier ignores its removal. The edge also comes for a player that despawned, which
--- `try_remove` leaves alone and which has no row in `scaled` or `bound`.
+-- `input` went too, as its bindings go with it. The edge also comes for a player that despawned,
+-- which `try_remove` leaves alone and which has no row in `bound`.
 app:add_systems(First, {
     Query[{
         ["or"] = {
@@ -56,25 +55,19 @@ app:add_systems(First, {
         },
         optional = { "movement/fly" },
     }],
-    Query[{ with = { Mut["GravityScale3d"] } }],
     Query[{ with = { "input", "input/game" } }],
     Commands,
-}, function(removed, scaled, bound, commands)
-    local gone, flying = {}, {}
+}, function(removed, bound, commands)
+    local gone = {}
     for _, e in ipairs(removed:iter()) do
         local was = e:get("movement/fly") or {}
         if was.on then
-            flying[#flying + 1] = e:id()
-        else
             commands:entity(e:id()):try_remove("GravityScale3d")
         end
         if was.noclip then
             commands:entity(e:id()):try_remove("Sensor3d")
         end
         gone[#gone + 1] = e:id()
-    end
-    for _, e in ipairs(scaled:iter_many_mut(flying)) do
-        e:get_mut("GravityScale3d"):set_if_neq(1)
     end
     for _, e in ipairs(bound:iter_many(gone)) do
         commands:entity(e:id()):entry("input/game"):and_modify(function(game)
@@ -94,9 +87,8 @@ app:add_systems(Update, {
     end
 end):in_set("movement/fly")
 
--- No gravity while it flies, and a sensor while it passes through. With flight off the scale goes
--- back to 1 and stays: rapier applies `GravityScale3d` only when it changes and ignores its
--- removal, so a body it is taken from keeps no gravity.
+-- No gravity while it flies, and a sensor while it passes through. Off, the scale comes off only
+-- while it is flight's 0: any other is the body's own.
 app:add_systems(Update, {
     Query[{
         changed = { "movement/fly" },
@@ -106,11 +98,14 @@ app:add_systems(Update, {
 }, function(changed, commands)
     for _, e in ipairs(changed:iter_mut()) do
         local fly = e:get("movement/fly")
+        local scale = e:get("GravityScale3d")
         local entity = commands:entity(e:id())
-        if e:has("GravityScale3d") then
-            e:get_mut("GravityScale3d"):set_if_neq(fly.on and 0 or 1)
+        if fly.on and e:has("GravityScale3d") then
+            e:get_mut("GravityScale3d"):set_if_neq(0)
         elseif fly.on then
             entity:insert({ GravityScale3d = { value = 0 } })
+        elseif scale == 0 then
+            entity:remove("GravityScale3d")
         end
         if fly.noclip and not e:has("Sensor3d") then
             entity:insert({ Sensor3d = {} })

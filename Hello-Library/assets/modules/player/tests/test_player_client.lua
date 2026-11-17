@@ -3,7 +3,8 @@
 -- C2 its own body turns dynamic and falls
 -- C3 a remote player is left as the server sent it
 -- C5 the server's kind written over its own body (a new owner's values, sent again) is put back dynamic
--- C4 removing `player` takes off input and the sidebar
+-- C6 its own body has a gravity scale of 1, and gets it back when the scale is taken off
+-- C4 removing `player` takes off input, the sidebar and the scale
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerClientSuite")
@@ -28,7 +29,7 @@ end
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/name" },
-        optional = { "player", "input", "input/mode", "sidebar", "sidebar/profiler", "RigidBody3d" },
+        optional = { "player", "input", "input/mode", "sidebar", "sidebar/profiler", "RigidBody3d", "GravityScale3d" },
     })) do
         if e:get("zz/name").name == name then
             return e
@@ -77,13 +78,23 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("C5_the_servers_kind_written_over_its_own_body_is_put_back_dynamic",
             me:get("RigidBody3d") == "Dynamic" and other:get("RigidBody3d") == "KinematicPositionBased",
             tostring(me:get("RigidBody3d")))
+        suite.assert_test("C6_its_own_body_has_a_gravity_scale_of_1", me:get("GravityScale3d") == 1
+            and not other:has("GravityScale3d"), tostring(me:get("GravityScale3d")))
+        me:remove("GravityScale3d")
+        step("unscaled")
+
+    elseif phase == "unscaled" and clock > 0.3 then
+        local me = named(world, "me")
+        suite.assert_test("C6_taken_off_the_scale_of_1_comes_back", me:get("GravityScale3d") == 1,
+            tostring(me:get("GravityScale3d")))
         me:remove("player")
         step("removed")
 
     elseif phase == "removed" and clock > 0.3 then
         local me = named(world, "me")
         suite.assert_test("C4_removing_player_takes_off_input_and_sidebar",
-            me ~= nil and not me:has("input") and not me:has("sidebar") and not me:has("sidebar/profiler"), "")
+            me ~= nil and not me:has("input") and not me:has("sidebar") and not me:has("sidebar/profiler")
+                and not me:has("GravityScale3d"), "")
         phase = "done"
         suite.finish("PlayerClientSuite")
     end

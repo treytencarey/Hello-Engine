@@ -5,16 +5,17 @@
 -- as its owner has it, standing on a floor under gravity.
 --
 --   F1 F, Space and ShiftLeft are bound in the `fly` group, and flight starts off
---   F2 F turns flight on: no gravity, so the body hovers; F again turns it off, the scale back at 1,
---      and it falls
+--   F2 F turns flight on: no gravity, so the body hovers; F again turns it off, flight's scale goes,
+--      `player/client` puts its 1 back, and it falls
 --   F3 while it flies, Space climbs and ShiftLeft sinks at movement's speed, and the floor still
 --      stops it
 --   F4 the menu holds Flight and No-clip, showing the state
 --   F5 No-clip turns flight on too and makes the body a sensor: it sinks through the floor
 --   F6 flight off turns no-clip off: no sensor and gravity again, and the floor stops it
 --   F7 a reload of the mod: two new items showing the state, and flight still flying
---   F8 `movement/fly` taken off while it flies: no-clip goes, the scale goes back to 1 and the body
---      falls to the floor, and its keys are unbound; taken off while it does not fly, the scale goes
+--   F8 `movement/fly` taken off while it flies: no-clip and flight's scale go, the player's 1 comes
+--      back and the body falls to the floor, and its keys are unbound; taken off while it does not
+--      fly, the player's scale stays
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -151,8 +152,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("F1_its_keys_are_bound_in_the_fly_group", fly.toggle ~= nil and fly.toggle.key == "KeyF"
             and fly.up ~= nil and fly.up.key == "Space" and fly.down ~= nil and fly.down.key == "ShiftLeft")
         local state = fly_of(world)
-        T("F1_flight_starts_off", state.on == false and state.noclip == false and not p:has("GravityScale3d")
-            and not p:has("Sensor3d"))
+        T("F1_flight_starts_off_with_the_player_s_scale_of_1", state.on == false and state.noclip == false
+            and scale_of(p) == 1 and not p:has("Sensor3d"), tostring(scale_of(p)))
         T("F1_the_body_is_the_owner_s_dynamic_one_standing_on_the_floor",
             p:get("RigidBody3d") == "Dynamic" and math.abs(height(world) - 0.9) < 0.05, tostring(height(world)))
         key("KeyF", "Pressed")
@@ -310,7 +311,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "removed_flying" and clock > 2.5 then
         local p = me(world)
         local game = p:get("input/game") or {}
-        T("F8_taken_off_while_it_flies_no_clip_goes_and_the_scale_goes_back_to_1",
+        T("F8_taken_off_while_it_flies_no_clip_goes_and_the_player_s_scale_comes_back",
             not p:has("movement/fly") and not p:has("Sensor3d") and scale_of(p) == 1, tostring(scale_of(p)))
         T("F8_and_the_body_falls_to_the_floor", mark.from > 1.5 and math.abs(height(world) - 0.9) < 0.05,
             string.format("from %.3f to %.3f", mark.from, height(world)))
@@ -328,7 +329,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "removed_off" and clock > 0.5 then
         local p = me(world)
         local game = p:get("input/game") or {}
-        T("F8_taken_off_while_it_does_not_fly_the_scale_goes", not p:has("GravityScale3d") and game.fly == nil,
+        T("F8_taken_off_while_it_does_not_fly_the_player_s_scale_stays", scale_of(p) == 1 and game.fly == nil,
             tostring(scale_of(p)))
         phase = "done"
         finish()

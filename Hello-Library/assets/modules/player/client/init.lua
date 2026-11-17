@@ -30,7 +30,9 @@ end):in_set("player/local")
 
 -- Its own body, dynamic, and again whenever the server's kind is written over it: a new owner is
 -- sent its values a second time when the player spawns, and that can land after the edges above
--- (measured: a player walked in through a portal stood frozen).
+-- (measured: a player walked in through a portal stood frozen). Beside it, a gravity scale of 1:
+-- rapier applies `GravityScale3d` only when it changes and ignores its removal, so a body whose
+-- scale something took off keeps the last one it had (measured: 0 left it climbing at 6 m/s).
 app:add_systems(First, {
     Query[{
         ["or"] = {
@@ -38,10 +40,35 @@ app:add_systems(First, {
             changed = { "RigidBody3d" },
         },
         with = { "player", "core/net/local", Mut["RigidBody3d"] },
+        optional = { "GravityScale3d" },
     }],
-}, function(owned)
+    Commands,
+}, function(owned, commands)
     for _, e in ipairs(owned:iter_mut()) do
         e:get_mut("RigidBody3d"):set_if_neq("Dynamic")
+        if not e:has("GravityScale3d") then
+            commands:entity(e:id()):insert({ GravityScale3d = { value = 1 } })
+        end
+    end
+end):in_set("player/local")
+
+-- Its body's gravity scale taken off: 1 goes back, which rapier applies as a change. The edge also
+-- comes for a player that despawned or stopped being this client's, which has no row in `owned`,
+-- and neither has one whose scale is back already.
+app:add_systems(First, {
+    Query[{ removed = { "GravityScale3d" } }],
+    Query[{
+        with = { "player", "core/net/local" },
+        without = { "GravityScale3d" },
+    }],
+    Commands,
+}, function(unscaled, owned, commands)
+    local ids = {}
+    for _, e in ipairs(unscaled:iter()) do
+        ids[#ids + 1] = e:id()
+    end
+    for _, e in ipairs(owned:iter_many(ids)) do
+        commands:entity(e:id()):insert({ GravityScale3d = { value = 1 } })
     end
 end):in_set("player/local")
 
@@ -74,7 +101,7 @@ app:add_systems(First, {
     Query[{
         any_of = {
             "input", "sidebar", "sidebar/profiler", "sidebar/profile", "sidebar/invites", "sidebar/menu",
-            "git/collaborators", "player/respawn",
+            "git/collaborators", "player/respawn", "GravityScale3d",
         },
     }],
     Commands,
@@ -85,6 +112,6 @@ app:add_systems(First, {
     end
     for _, e in ipairs(parts:iter_many(gone)) do
         commands:entity(e:id()):remove("input", "input/mode", "sidebar", "sidebar/profiler", "sidebar/profile",
-            "sidebar/invites", "sidebar/menu", "git/collaborators", "player/respawn")
+            "sidebar/invites", "sidebar/menu", "git/collaborators", "player/respawn", "GravityScale3d")
     end
 end):in_set("player/removed")

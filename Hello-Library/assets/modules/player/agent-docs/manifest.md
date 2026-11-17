@@ -23,7 +23,7 @@ The owning client drives its player's Transform, as there is no client predictio
 
 - What each player gets, by side. Names are written in the code:
   - server: `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for), `ai/noisemaker` (for them to hear), `sidebar/file_browser` (the file browser panel, synced to its owner: a panel with server work is the server's to add), `git/panel` (the GitHub panel, synced to its owner, for the same reason: its server half answers the owner's asks and opens the portals they ask for) and `player/vr` (the VR stack, which does nothing until a headset is tracking);
-  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), `sidebar/invites` (the invite cards, which need no open panel), `sidebar/menu` (the menu, which holds other mods' items), `git/collaborators` (the collaborators panel), `player/respawn` (Respawn, an item in the menu), and its `RigidBody3d` switched to `Dynamic`. Each is local UI with no server half, so the client adds it.
+  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), `sidebar/invites` (the invite cards, which need no open panel), `sidebar/menu` (the menu, which holds other mods' items), `git/collaborators` (the collaborators panel), `player/respawn` (Respawn, an item in the menu), its `RigidBody3d` switched to `Dynamic`, and its `GravityScale3d` at 1. Each is local UI with no server half, so the client adds it.
 
   If `player` is removed from an entity that stays, each half removes what it added.
 
@@ -37,9 +37,10 @@ The owning client drives its player's Transform, as there is no client predictio
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`). Not a peer mirror: a player handed to another world stays here as that world's mirror, moved by its peer, and its shadow is stale |
 | First (server) | `player/removed` | When `player` is removed from an entity that stays, remove the camera, movement, the model, the abilities, what agents look for and hear, the file browser and GitHub panels and the VR stack |
 | First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar with its profiler, sign-in and collaborators panels, the invite cards, and the menu with Respawn in it |
-| First (client) | `player/local` | Make this client's own player's body dynamic: when it becomes this client's, and again whenever its `RigidBody3d` changes. Core's server sends a new owner its values a second time when the player spawns, and that copy of the server's kinematic body can land after the switch; once, a player who walked in through a portal stood frozen |
+| First (client) | `player/local` | Make this client's own player's body dynamic: when it becomes this client's, and again whenever its `RigidBody3d` changes. Core's server sends a new owner its values a second time when the player spawns, and that copy of the server's kinematic body can land after the switch; once, a player who walked in through a portal stood frozen. Beside it, give the body a `GravityScale3d` of 1 if it has none |
+| First (client) | `player/local` | When `GravityScale3d` is taken off this client's own player, while it is still a player and this client's, put 1 back |
 | First (client) | `player/local` | When `core/net/local` leaves a player that stays (another world's server took it through a portal), make its body `KinematicPositionBased` again with zero velocity: it is moved by what this world's server sends |
-| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar, its profiler, sign-in and collaborators panels, the invite cards, the menu and respawn |
+| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar, its profiler, sign-in and collaborators panels, the invite cards, the menu and respawn, and the gravity scale |
 
 ## Use
 
@@ -53,6 +54,7 @@ commands:spawn({ ["player/spawner"] = {}, ChildOf = boot:id() })
 ## Notes
 
 - Mirrored players from another world (`WorldMirror`, or a peer mirror, `core/net/peer/mirror`) are not set up here, except that a peer mirror gets the abilities: its press arrives from its source's server with the mirror (the press's sync crosses the peer link), and the ability casts here from the mirror's own place and look (`Transform` and `camera`, which cross too) as this world's own projectile, which flies and explodes on this world's geometry. Nothing cast crosses: the source world casts its own, a few milliseconds apart, and a mirror sends nothing back. Each world runs its own cooldown.
+- Rapier applies `GravityScale3d` only when it changes and ignores its removal, so a body whose scale is taken off keeps the last one it had. Whatever takes the local body's scale off, this mod puts 1 back. Taken off with `player`, the scale stays 1 in Rapier, its default.
 - The body only changes type on the client: it arrives from the server together with its collider, and a body added after its collider never attaches. The server's body is kinematic throughout, and core's peer switch zeroes its velocity when it hands the player over.
 - Crossing between worlds through a portal: `player/spawner` gives every player its `core/net/peer/share`, and places a handed player where it stood, with the timers that crossed with it; `scope/portal` hands it over and sends its 3 s crossing timer (`scope/portal/cooling`) along.
 - Not done yet: the streaming panels and the account providers, whose mods are not in this library yet.
