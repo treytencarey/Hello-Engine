@@ -8,7 +8,7 @@ exposes: [sidebar, sidebar/open, sidebar/button, sidebar/button/open, sidebar/co
 
 An icon bar at the left edge of the screen, one icon per `sidebar/button`, and the panels those buttons open beside it. Escape opens it; while it is open, Escape closes the newest open panel, or the sidebar itself when none is open. Opening gives the player the cursor and UI input; closing gives game input back and closes every panel. Only the local player's sidebar is drawn.
 
-Panel mods extend it without the sidebar naming them: the client adds the panels its player has (`["sidebar/profiler"] = {}` beside `sidebar = {}`; a panel with server work is added and synced by the server, to its owner only), each panel mod spawns its own button into the bar, and the sidebar makes it an icon. The panel mod opens its panel while the button carries `sidebar/button/open`. Everything in the container goes with it: a reload of `sidebar`, or removing it, takes the buttons and panels, and a new bar gets new buttons.
+Panel mods extend it without the sidebar naming them: the client adds the panels its player has (`["sidebar/profiler"] = {}` beside `sidebar = {}`; a panel with server work is added and synced by the server, to its owner only), each panel mod spawns its own button into the bar, and the sidebar makes it an icon. The panel mod opens its panel while the button carries `sidebar/button/open`. Everything in the container goes with it: a reload of `sidebar`, or removing it, takes the buttons and panels, and a new bar gets new buttons. A mod with an action or a toggle rather than a panel of its own puts an item in the menu, `sidebar/menu`.
 
 ## Components
 
