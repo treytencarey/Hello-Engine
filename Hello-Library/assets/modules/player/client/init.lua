@@ -77,8 +77,9 @@ end)
 -- spawns, and that can land after the edges above (measured: a player walked in through a portal
 -- stood frozen). Beside it, a gravity scale of 1: rapier applies `GravityScale3d` only when it
 -- changes and ignores its removal, so a body whose scale something took off keeps the last one it
--- had (measured: 0 left it climbing at 6 m/s). In Update, so a mod that puts a held player back on
--- its point in Update, ordered before this set, still finds it held.
+-- had (measured: 0 left it climbing at 6 m/s). In Update, after `collider` writes its status, so a
+-- mod that puts a held player back on its point, ordered between the two, decides from the same
+-- status and still finds it held.
 app:add_systems(Update, {
     Query[{
         with = { "player", "core/net/local", Mut["RigidBody3d"] },
@@ -100,7 +101,7 @@ app:add_systems(Update, {
             commands:entity(e:id()):insert({ GravityScale3d = { value = 1 } })
         end
     end
-end):in_set("player/local"):run_if({
+end):in_set("player/local"):after("collider/status"):run_if({
     Query[{
         ["or"] = {
             added = { "player", "core/net/local" },
