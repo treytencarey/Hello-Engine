@@ -21,7 +21,9 @@ app:add_systems(First, {
             ["sidebar/profiler"] = {},
             ["sidebar/profile"] = {},
             ["sidebar/invites"] = {},
+            ["sidebar/menu"] = {},
             ["git/collaborators"] = {},
+            ["player/respawn"] = {},
         })
     end
 end):in_set("player/local")
@@ -69,7 +71,12 @@ end):in_set("player/local")
 -- entity has no row in `parts`.
 app:add_systems(First, {
     Query[{ removed = { "player" } }],
-    Query[{ any_of = { "input", "sidebar", "sidebar/profiler", "sidebar/profile", "sidebar/invites", "git/collaborators" } }],
+    Query[{
+        any_of = {
+            "input", "sidebar", "sidebar/profiler", "sidebar/profile", "sidebar/invites", "sidebar/menu",
+            "git/collaborators", "player/respawn",
+        },
+    }],
     Commands,
 }, function(removed, parts, commands)
     local gone = {}
@@ -78,6 +85,6 @@ app:add_systems(First, {
     end
     for _, e in ipairs(parts:iter_many(gone)) do
         commands:entity(e:id()):remove("input", "input/mode", "sidebar", "sidebar/profiler", "sidebar/profile",
-            "sidebar/invites", "git/collaborators")
+            "sidebar/invites", "sidebar/menu", "git/collaborators", "player/respawn")
     end
 end):in_set("player/removed")

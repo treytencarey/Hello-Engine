@@ -1,5 +1,5 @@
 ---
-depends_on: [core/player/attest, core/net, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/profile, sidebar/invites, sidebar/file_browser, git/panel, git/collaborators, player/vr]
+depends_on: [core/player/attest, core/net, camera/third_person, movement, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/profile, sidebar/invites, sidebar/menu, sidebar/file_browser, git/panel, git/collaborators, player/respawn, player/vr]
 conflicts_with: []
 exposes: [player]
 ---
@@ -23,7 +23,7 @@ The owning client drives its player's Transform, as there is no client predictio
 
 - What each player gets, by side. Names are written in the code:
   - server: `camera/third_person`, `movement`, `animation` (the default model), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for), `ai/noisemaker` (for them to hear), `sidebar/file_browser` (the file browser panel, synced to its owner: a panel with server work is the server's to add), `git/panel` (the GitHub panel, synced to its owner, for the same reason: its server half answers the owner's asks and opens the portals they ask for) and `player/vr` (the VR stack, which does nothing until a headset is tracking);
-  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), `sidebar/invites` (the invite cards, which need no open panel), `git/collaborators` (the collaborators panel), and its `RigidBody3d` switched to `Dynamic`. Each is local UI with no server half, so the client adds it.
+  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), `sidebar/invites` (the invite cards, which need no open panel), `sidebar/menu` (the menu, which holds other mods' items), `git/collaborators` (the collaborators panel), `player/respawn` (Respawn, an item in the menu), and its `RigidBody3d` switched to `Dynamic`. Each is local UI with no server half, so the client adds it.
 
   If `player` is removed from an entity that stays, each half removes what it added.
 
@@ -36,10 +36,10 @@ The owning client drives its player's Transform, as there is no client predictio
 | Update (server) | `player/identity` | On a changed `core/player/attest` on a connection, and on an added `player`: set `player.user_id` from the connection with its `client_id`. Who the client is lives on the connection, so a player spawned again for it is who it was |
 | Update (server) | `player/follow` | Polls: ease the server's Transform toward the owner's (`core/net/sync/Transform`). Not a peer mirror: a player handed to another world stays here as that world's mirror, moved by its peer, and its shadow is stale |
 | First (server) | `player/removed` | When `player` is removed from an entity that stays, remove the camera, movement, the model, the abilities, what agents look for and hear, the file browser and GitHub panels and the VR stack |
-| First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar with its profiler, sign-in and collaborators panels and the invite cards |
+| First (client) | `player/local` | When the player is this client's (`core/net/local`, which arrives frames after the player), start game input, the sidebar with its profiler, sign-in and collaborators panels, the invite cards, and the menu with Respawn in it |
 | First (client) | `player/local` | Make this client's own player's body dynamic: when it becomes this client's, and again whenever its `RigidBody3d` changes. Core's server sends a new owner its values a second time when the player spawns, and that copy of the server's kinematic body can land after the switch; once, a player who walked in through a portal stood frozen |
 | First (client) | `player/local` | When `core/net/local` leaves a player that stays (another world's server took it through a portal), make its body `KinematicPositionBased` again with zero velocity: it is moved by what this world's server sends |
-| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar, its profiler, sign-in and collaborators panels and the invite cards |
+| First (client) | `player/removed` | When `player` is removed from an entity that stays, remove input, the sidebar, its profiler, sign-in and collaborators panels, the invite cards, the menu and respawn |
 
 ## Use
 
