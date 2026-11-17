@@ -1,12 +1,12 @@
 ---
-depends_on: [sidebar, sidebar/panel, ui/style, vault/github, core/world/flip, git/world/head, placement, scope/portal, core/net]
+depends_on: [sidebar, sidebar/panel, ui/style, vault/github, core/world/flip, core/world/unload, core/world, core/registry, core/player/session, git/world/head, placement, scope/portal, core/net]
 conflicts_with: []
 exposes: [git/panel, git/panel/state, git/panel/button, git/panel/view, git/panel/row, git/panel/request, git/panel/response]
 ---
 
 # git/panel
 
-A sidebar panel, "GitHub", 280 px wide: the player's GitHub repositories and a repository's branches, with Switch to move to a branch's world, Portal to ask the world's server for a portal to it, Pull on this world's own branch, and the chosen branch's latest commits. Root holds the GitHub token and makes every GitHub call (`vault/github`); the panel asks root and shows only what root answers.
+A sidebar panel, "GitHub", 280 px wide: the player's GitHub repositories and a repository's branches, with Switch to move to a branch's world, Portal to ask the world's server for a portal to it, Pull on this world's own branch, the open worlds (the registry's sessions and the worlds this PC holds, each with Switch, a stop for everyone, and, on a world this PC holds, Stop and Restart here), the portals the player placed in this world with Close, and the chosen branch's latest commits. Root holds the GitHub token and makes every GitHub call (`vault/github`); the panel asks root and shows only what root answers.
 
 Two halves. The client half (`client/init.lua`) is the panel: its UI, its asks of root, and the owner's asks of the world's server, written on a request slot. The server half (`server/init.lua`) builds no UI: it gives the slot its sync, answers the owner's asks, and opens the portals they ask for. The world's server does the deciding for the portal and the pull.
 
@@ -17,21 +17,25 @@ The panel's button is in the bar only while the player is signed in to GitHub (r
 - `git/panel = {}` on the player, on the world's server. `player/server` adds and removes it. It syncs from the server to the owner alone (the server half's return declares `{ authority = "server", target = "owner" }`), so only the owner's client has the panel, and only on its own player.
 - `git/panel/request = { op = "portal" | "drop_portal", target_sk }`: the owner's ask of the world's server, on the carrier. The owner's client writes it and only the owner's connection carries it (`{ authority = "client", target = "owner" }`). `target_sk` is the scope key of the world the portal is to lead to. `{}` is the ask taken back. `portal` is the panel's ask, a portal to place; `drop_portal` is `sidebar/invites`' ask for an accepted invite's portal, which stands 3 m ahead, placed.
 - `git/panel/response = { op, scope, status, message }`: the server's answer, `op` the op it answers, on the carrier, synced to the owner alone (`{ authority = "server", target = "owner" }`). `scope` is the target asked for, `status` is `"opened"` or `"failed"`, and `message` says why it failed: `"not a scope key"`, `"this world's own scope"` or `"8 portals already"`. It stands until the owner takes its ask back, and is then `{}`.
-- `git/panel/state = { open, repo, branch }` on the owner's carrier, client only, added by the client half when the carrier arrives, if it has none. `open`: whether the panel is open, kept through a reload. `repo`: the chosen repository, the string `"<owner>/<name>"` as GitHub spells it (`git/collaborators` reads it). `branch`: the chosen branch. It goes with the carrier, and with `git/panel`.
+- `git/panel/state = { open, repo, branch, armed, refused }` on the owner's carrier, client only, added by the client half when the carrier arrives, if it has none. `open`: whether the panel is open, kept through a reload. `repo`: the chosen repository, the string `"<owner>/<name>"` as GitHub spells it (`git/collaborators` reads it). `branch`: the chosen branch. `armed = { scope, at }`: a session row's "X" clicked once, at `at` in `Time`'s elapsed seconds. `refused = { [<scope>] = <secs> }`: when a session row's despawn, Stop or Restart was last refused. Both are deadlines, kept on the carrier so a rebuild or a reload keeps them. It goes with the carrier, and with `git/panel`.
 - `git/panel/button`: marks the client half's `sidebar/button` (`icon = "icons/github.png"`, `title = "GitHub"`, `order = 3`), in the bar, only while the player is signed in to GitHub.
 - `git/panel/view`: on the panel, a plain `sidebar/panel` in the container, there only while the panel is open.
-- `git/panel/row`: marks each top-level row in the panel's scroll area, in this order: the REPOSITORY picker, the BRANCH picker, the actions (Switch, Pull, Portal), the portal refusal line, the RECENT COMMITS header and one row per commit; or the one signed-out line.
+- `git/panel/row`: marks each top-level row in the panel's scroll area, in this order: the REPOSITORY picker, the BRANCH picker, the actions (Switch, Pull, Portal), the portal refusal line, the SESSIONS header and its lines (the header line, each row, a held world's second line, a refusal line), the PORTALS header and one row per portal, the RECENT COMMITS header and one row per commit; or the one signed-out line.
 
 The client half's asks of root are root's requests, children of the carrier, opened with `["core/script/owner"] = false` so they outlive a reload, and carrying nothing of this mod's:
 
 - standing: `{ ["vault/github/repos"] = {}, Request = {} }`, opened when the carrier arrives, with `{ ["vault/github/signin"] = {}, Request = {} }` as its child. The sign-in ask hangs under the repositories ask, not the carrier, because a standing `vault/github/signin` among the carrier's children is `sidebar/profile`'s;
 - `{ ["vault/github/branches"] = { owner, name }, Request = {} }` for the chosen repository;
-- `{ ["vault/github/commits"] = { owner, name, branch }, Request = {} }` for the chosen branch.
+- `{ ["vault/github/commits"] = { owner, name, branch }, Request = {} }` for the chosen branch;
+- standing: `{ ["core/registry/sessions"] = {}, Request = {} }`, root's list of the registry's sessions, kept up to date while it is open, opened when the carrier arrives if it has none, with `{ ["core/player/session/signin"] = {}, Request = {} }`, root's Site sign-in, as its child: a standing one among the carrier's children is `sidebar/profile`'s;
+- a session row's asks, one of each kind per world at a time: `{ ["core/registry/despawn"] = { scope } }` (stop it for everyone), `{ ["core/world/unload"] = { scope } }` (stop it on this PC) and `{ ["core/world/restart"] = { scope } }` (restart this PC's copy), each with `Request = {}`. A click closes the earlier ask of its kind for the world and opens a new one.
 
 What a click spawns is the player's, not the panel's, with `["core/script/owner"] = false`, and stays when the panel closes or `git/panel` goes:
 
 - Switch: core's flip ask, `{ ["core/world/flip"] = { scope = <target> }, WorldShared = {}, ["core/net/sync"] = false }`. It crosses VMs to root, never the wire.
 - Pull: `{ ["git/world/head/pull"] = { sha = <this world's git/world/head.sha> } }`, which the world's server takes (`git/world/head`).
+- "^" on a session row: the same flip ask as Switch, for that row's scope.
+- Close on a portal row: a despawn of that `scope/portal`. The portal is this client's (`core/net/local`), so the despawn asks the world's server, which takes it from its owner only and despawns it everywhere (`core/net`).
 
 Portal writes the slot instead: `git/panel/request = { op = "portal", target_sk = <target> }` on the carrier.
 
@@ -80,6 +84,15 @@ The slot is a handshake. The client half takes its ask back (`git/panel/request 
 - **Pull** ("⭳ Pull") is offered only on this world's own branch. It reads "⏳ Pulling…", with no click, while a `git/world/head/pull` ask is out in this world.
 - **Portal** ("🌀 Portal") asks the server for a portal to any repository listed. On this world's own scope it is dimmed and has no click.
 - **The portal refusal line:** "⚠ portal refused: <reason>" while a portal in this world naming the target carries `scope/portal/locked { reason }`; it goes when the lock does.
+- **SESSIONS,** between the actions (or the portal refusal line) and the commits:
+  - **The header line:** "Loading sessions…" until root answers the sessions ask; "⚠ sessions unavailable (<error>)" while its reply carries an `error` (`registry-unreachable`, `http-<status>`); "No visible sessions" when there is no row.
+  - **The rows:** one per session in root's list, in its order, then one per world this PC holds that the list leaves out, by scope. A row reads its scope without `github:`, cut to 24 characters (21 and "..."), "● " before it on this world's own scope (`core/world/status.scope_key` of this world's own row), and, for a session, its counts "<active>▸ <background>◌". Rows alternate colours.
+  - **"^"** on every row but this world's own.
+  - **"X"** while root's Site sign-in reply names a `user`, and only on a session of this world's repository (the session's `scope_root` is this world's row's): root takes a despawn only for such a world. A first click arms it, "sure?" in the accent colour; a second within 5 s asks root's despawn, and the arm lapses after 5 s. It reads "..." while the despawn is unanswered, `asking` or `requested`.
+  - **A world this PC holds** has a second line: "playing" or "background", then "■ Stop" and "↻ Restart". This PC holds a world while root's own `core/world/presence` for its scope (a mirror from root, `WorldMirror.world_id == 0`) says `observer`, `false` for playing, and a client `core/world/status` row for that scope is here: any world can share a presence, and root's stays after its world stops. A world held but never flipped to (the launch world before any switch, a portal's warm world) has no presence and no second line. Stop reads "..." until root answers; Restart until it answers other than `restarting`.
+  - **A refusal** is a line under the row, in the row's own words, for 10 s, after which its ask goes: "⚠ despawn refused: <reason>"; Stop's "⚠ can't stop the world you are in: switch first" (`playing`), "⚠ can't stop it: a portal looks at it" (`watched`), "⚠ can't stop it: this PC doesn't hold it" (`not-held`), else "⚠ stop refused: <reason>"; Restart's "⚠ can't restart it: this PC doesn't hold it" (`not-held`), else "⚠ restart refused: <reason>".
+  - **Done** closes the ask. Root lists the sessions again at once after a despawn; a stopped world's row goes with its client row.
+- **PORTALS:** one row per portal this player placed here (`scope/portal` with `core/net/local`, not being placed), "🌀 " and its target cut as a session row's, with Close.
 - **RECENT COMMITS:** root answers the latest 10; the panel shows 8, each the short sha in the accent colour and the message's first line, cut to 30 characters (27 and "..."), rows alternating colours.
 
 ## Systems
@@ -98,7 +111,9 @@ The slot is a handshake. The client half takes its ask back (`git/panel/request 
 | Update (client) | `git/panel` | When the sidebar has made a new button an icon, open it if the state says the panel was open |
 | Update (client) | `git/panel` | When the button is opened, spawn the panel in the container and save it open |
 | Update (client) | `git/panel` | When a button still here is closed, despawn the panel and save it closed |
-| Update (client), after `git/panel` | `git/panel/render` | Build the rows, again only when what they say changes. A run condition skips it while the panel is closed, and runs it on a new scroll area, the state, an ask or a reply, a flip ask, this world's status row, a pull ask or a portal lock changing |
+| Update (client) | `git/panel` | On a session row's despawn, Stop or Restart reply: `done` closes the ask; `refused` stamps `git/panel/state.refused[<scope>]` |
+| Update (client) | `git/panel` | The deadlines, run while one is set: an arm older than 5 s goes; a refusal older than 10 s closes its refused asks and goes |
+| Update (client), after `git/panel` | `git/panel/render` | Build the rows, again only when what they say changes. A run condition skips it while the panel is closed, and runs it on a new scroll area, the state, an ask or a reply, a flip ask, this world's status row, a pull ask or a portal lock changing, a session reply, a row's ask or reply, root's presence, any world's row, or a portal of this client's coming, being placed or going |
 
 Clicks are `On[Pointer[Click]]` observers on the rows' buttons. A picker's open state lives on its list (`Node.display`) and its arrow, so a click opens or closes it without a rebuild, and a rebuild reads the arrow back and keeps it as it was.
 
@@ -118,7 +133,7 @@ commands:entity(player):insert({ ["git/panel/request"] = { op = "drop_portal", t
 - The asks outlive a reload of the client half, and a reload opens no second standing ask. A reload keeps the panel open with its choices, as `sidebar/profile` does; the button and the panel are this mod's spawns and come back. An open picker closes on a reload.
 - The server, not the panel, checks a portal: its target, this world's own scope, and how many portals the player holds. The panel needs no parser.
 - A pull's outcome is not shown: `git/world/head/pull` is answered only by the world's commit moving, and the server's pull reply reaches no client.
-- The old panel's sessions list and its despawn button are not in this build. Their rows would go between the actions and the commits.
+- Restarting a world for everyone is "X", then "^": the X stops it on its Gateway, and the Switch starts it again.
 - A value written on the slot before its sync entry reaches the client is never sent. The server adds the entry as the player is set up, long before a click.
 - Two mods writing the slot in one frame keep only the last ask.
-- Suites: `tests/test_panel.lua`, the client half, headless, posing as a client world (`world_id = 7`) on `github:zzpanel/world:main`, with root's replies, the flip ask's statuses and the server's answers stubbed, driven by real clicks, and a wheel step on an open picker's list with its layout stood in (a headless trigger does not bubble from an option row, and the stop of propagation needs a window, so neither is checked); `tests/test_panel_server.lua`, the server half, headless, with the owner's asks written as the net delivers them; `tests/test_panel_net.lua`, over a real connection with two clients and real players.
+- Suites: `tests/test_panel.lua`, the client half, headless, posing as a client world (`world_id = 7`) on `github:zzpanel/world:main`, with root's replies, the flip ask's statuses and the server's answers stubbed, driven by real clicks, and a wheel step on an open picker's list with its layout stood in (a headless trigger does not bubble from an option row, and the stop of propagation needs a window, so neither is checked); `tests/test_panel_server.lua`, the server half, headless, with the owner's asks written as the net delivers them; `tests/test_panel_net.lua`, over a real connection with two clients and real players; `tests/test_panel_worlds.lua`, the SESSIONS and PORTALS rows, headless, as `test_panel.lua`, with root's replies and presences stood in.

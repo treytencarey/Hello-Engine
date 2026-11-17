@@ -24,6 +24,11 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local Scroll = require("bevy::picking::prelude::Scroll")
+local Time = require("bevy::time::Time")
+
+-- How long an armed despawn waits for its second click, and how long a refusal stays on its row.
+local ARM_SECONDS = 5
+local REFUSAL_SECONDS = 10
 
 -- Core's canonical form lowercases the owner and the name, and keeps the branch as it is.
 local function scope_of(repo, branch)
@@ -63,6 +68,50 @@ local function ask_repos(commands, carrier)
         ["core/script/owner"] = false,
         ChildOf = repos,
     })
+end
+
+-- The standing sessions ask, with the Site sign-in ask under it: a standing
+-- `core/player/session/signin` among the carrier's children is `sidebar/profile`'s.
+local function ask_sessions(commands, carrier)
+    local sessions = commands:spawn({
+        ["core/registry/sessions"] = {},
+        Request = {},
+        ["core/script/owner"] = false,
+        ChildOf = carrier,
+    }):id()
+    commands:spawn({
+        ["core/player/session/signin"] = {},
+        Request = {},
+        ["core/script/owner"] = false,
+        ChildOf = sessions,
+    })
+end
+
+-- A row's scope as it reads: without `github:`, cut to 24 characters.
+local function short(scope)
+    local label = (tostring(scope):gsub("^github:", ""))
+    if #label > 24 then label = label:sub(1, 21) .. "..." end
+    return label
+end
+
+-- A row's component, or nil when the query names it optional and the row has none.
+local function opt(e, name)
+    return e:has(name) and e:get(name) or nil
+end
+
+-- Each refusal in the row's own words.
+local function despawn_refused(reason)
+    return "⚠ despawn refused: " .. tostring(reason)
+end
+local function stop_refused(reason)
+    if reason == "playing" then return "⚠ can't stop the world you are in: switch first" end
+    if reason == "watched" then return "⚠ can't stop it: a portal looks at it" end
+    if reason == "not-held" then return "⚠ can't stop it: this PC doesn't hold it" end
+    return "⚠ stop refused: " .. tostring(reason)
+end
+local function restart_refused(reason)
+    if reason == "not-held" then return "⚠ can't restart it: this PC doesn't hold it" end
+    return "⚠ restart refused: " .. tostring(reason)
 end
 
 local function ask_branches(commands, carrier, owner, name)
@@ -237,14 +286,18 @@ app:add_systems(First, {
         optional = { "git/panel/state", "Children" },
     }],
     Query[{ with = { "vault/github/repos", "Request" } }],
+    Query[{ with = { "core/registry/sessions", "Request" } }],
     Commands,
-}, function(carriers, asks, commands)
+}, function(carriers, asks, sessions, commands)
     for _, e in ipairs(carriers:iter()) do
         if not e:has("git/panel/state") then
             commands:entity(e:id()):insert({ ["git/panel/state"] = { open = false } })
         end
         if asks:iter_many(e:get("Children") or {})[1] == nil then
             ask_repos(commands, e:id())
+        end
+        if sessions:iter_many(e:get("Children") or {})[1] == nil then
+            ask_sessions(commands, e:id())
         end
     end
 end):in_set("git/panel")
@@ -257,7 +310,10 @@ app:add_systems(First, {
         optional = { "Children" },
     }],
     Query[{
-        any_of = { "vault/github/repos", "vault/github/branches", "vault/github/commits" },
+        any_of = {
+            "vault/github/repos", "vault/github/branches", "vault/github/commits",
+            "core/registry/sessions", "core/registry/despawn", "core/world/unload", "core/world/restart",
+        },
         with = { "Request" },
     }],
     Commands,
@@ -284,6 +340,94 @@ app:add_systems(Update, {
         end
     end
 end):in_set("git/panel")
+
+-- A row's ask answered: `done` closes it (root lists the sessions again at once after a despawn),
+-- and a refusal stays on its row for REFUSAL_SECONDS from here.
+app:add_systems(Update, {
+    Res[Time],
+    Query[{
+        ["or"] = {
+            added = { "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply" },
+            changed = { "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply" },
+        },
+        with = { "Request", "ChildOf" },
+        optional = {
+            "core/registry/despawn", "core/world/unload", "core/world/restart",
+            "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
+        },
+    }],
+    Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
+    Commands,
+}, function(time, answered, carriers, commands)
+    for _, ask in ipairs(answered:iter()) do
+        local carrier = carriers:iter_many_mut({ ask:get("ChildOf") })[1]
+        local wish = opt(ask, "core/registry/despawn") or opt(ask, "core/world/unload") or opt(ask, "core/world/restart")
+        local said = opt(ask, "core/registry/despawn/reply") or opt(ask, "core/world/unload/reply")
+            or opt(ask, "core/world/restart/reply")
+        if carrier ~= nil and wish ~= nil and said ~= nil then
+            if said.status == "done" then
+                commands:entity(ask:id()):despawn()
+            elseif said.status == "refused" then
+                local refused = {}
+                for scope, at in pairs(carrier:get("git/panel/state").refused or {}) do refused[scope] = at end
+                refused[wish.scope] = time:elapsed_secs()
+                carrier:get_mut("git/panel/state").refused = refused
+            end
+        end
+    end
+end):in_set("git/panel")
+
+-- The two deadlines on the state: an arm lapses after ARM_SECONDS, and a refusal's ask goes after
+-- REFUSAL_SECONDS, taking its row's line with it.
+app:add_systems(Update, {
+    Res[Time],
+    Query[{ with = { "git/panel", Mut["git/panel/state"] }, optional = { "Children" } }],
+    Query[{
+        any_of = { "core/registry/despawn", "core/world/unload", "core/world/restart" },
+        with = { "Request" },
+        optional = {
+            "core/registry/despawn", "core/world/unload", "core/world/restart",
+            "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
+        },
+    }],
+    Commands,
+}, function(time, carriers, asks, commands)
+    local now = time:elapsed_secs()
+    for _, carrier in ipairs(carriers:iter_mut()) do
+        local s = carrier:get("git/panel/state")
+        if s.armed ~= nil and now - s.armed.at > ARM_SECONDS then
+            carrier:get_mut("git/panel/state").armed = nil
+        end
+        local kept, gone = {}, nil
+        for scope, at in pairs(s.refused or {}) do
+            if now - at >= REFUSAL_SECONDS then
+                gone = gone or {}
+                gone[scope] = true
+            else
+                kept[scope] = at
+            end
+        end
+        if gone ~= nil then
+            for _, ask in ipairs(asks:iter_many(carrier:get("Children") or {})) do
+                local wish = opt(ask, "core/registry/despawn") or opt(ask, "core/world/unload") or opt(ask, "core/world/restart")
+                local said = opt(ask, "core/registry/despawn/reply") or opt(ask, "core/world/unload/reply")
+                    or opt(ask, "core/world/restart/reply")
+                if gone[wish.scope] and said ~= nil and said.status == "refused" then
+                    commands:entity(ask:id()):despawn()
+                end
+            end
+            carrier:get_mut("git/panel/state").refused = kept
+        end
+    end
+end):in_set("git/panel"):run_if({
+    Query[{ with = { "git/panel/state" } }],
+}, function(states)
+    for _, row in ipairs(states:iter()) do
+        local s = row:get("git/panel/state")
+        if s.armed ~= nil or next(s.refused or {}) ~= nil then return true end
+    end
+    return false
+end)
 
 -- An ask for a choice moved on from is closed, which stops root's call for it.
 app:add_systems(Update, {
@@ -575,8 +719,25 @@ app:add_systems(Update, {
     Query[{ with = { "core/world/flip" } }],
     Query[{ with = { "git/world/head/pull" } }],
     Query[{ with = { "scope/portal", "scope/portal/locked" } }],
+    Query[{
+        any_of = { "core/registry/sessions", "core/player/session/signin" },
+        with = { "Request" },
+        optional = { "core/registry/sessions/reply", "core/player/session/signin/reply", "Children" },
+    }],
+    Query[{
+        any_of = { "core/registry/despawn", "core/world/unload", "core/world/restart" },
+        with = { "Request" },
+        optional = {
+            "core/registry/despawn", "core/world/unload", "core/world/restart",
+            "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
+        },
+    }],
+    Query[{ with = { "core/world/presence", "WorldMirror" } }],
+    Query[{ with = { "core/world/status", "WorldMirror" } }],
+    Query[{ with = { "scope/portal", "core/net/local" }, without = { "placement" } }],
     Commands,
-}, function(views, carriers, scrolls, rows, texts, asks, statuses, flips, pulls, locked, commands)
+}, function(views, carriers, scrolls, rows, texts, asks, statuses, flips, pulls, locked, standing, row_asks, presences,
+            others, placed, commands)
     local view = views:iter_mut()[1]
     local carrier = carriers:iter()[1]
     local parts = view and scrolls:iter_descendants(view:id()) or {}
@@ -667,6 +828,108 @@ app:add_systems(Update, {
             lines[i] = { sha = tostring(commits[i].sha or ""), line = line }
         end
 
+        -- SESSIONS: root's list of the registry's sessions, and the worlds root holds for this player.
+        local my_root = me and me:get("core/world/status").scope_root
+        local sessions, list_error, site_user = nil, nil, nil
+        for _, ask in ipairs(standing:iter_many(carrier:get("Children") or {})) do
+            if ask:has("core/registry/sessions") then
+                local said = opt(ask, "core/registry/sessions/reply")
+                if said ~= nil then sessions, list_error = said.sessions or {}, said.error end
+                for _, s in ipairs(standing:iter_many(ask:get("Children") or {})) do
+                    local who = opt(s, "core/player/session/signin/reply")
+                    if who ~= nil and who.user ~= nil then site_user = who.user end
+                end
+            end
+        end
+        -- Root holds a world while its own presence for the scope says play or watch and the world's
+        -- client row is up: a presence stays after its world stops. Any world can share a presence.
+        local up = {}
+        if scope ~= nil then up[scope] = true end
+        for _, r in ipairs(others:iter()) do
+            local row = r:get("core/world/status")
+            if (row.mode or "client") == "client" and row.scope_key ~= nil then up[row.scope_key] = true end
+        end
+        local holds = {}
+        for _, p in ipairs(presences:iter()) do
+            local pr = p:get("core/world/presence")
+            if p:get("WorldMirror").world_id == 0 and pr.observer ~= nil and up[pr.scope_key] then
+                holds[pr.scope_key] = pr.observer and "background" or "playing"
+            end
+        end
+        local world_rows, listed_scope = {}, {}
+        for _, s in ipairs(sessions or {}) do
+            if type(s) == "table" and s.scope ~= nil and not listed_scope[s.scope] then
+                listed_scope[s.scope] = true
+                world_rows[#world_rows + 1] = { scope = s.scope, scope_root = s.scope_root,
+                    counts = string.format("%d▸ %d◌", tonumber(s.active) or 0, tonumber(s.background) or 0) }
+            end
+        end
+        local extra = {}
+        for k in pairs(holds) do
+            if not listed_scope[k] then extra[#extra + 1] = k end
+        end
+        table.sort(extra)
+        for _, k in ipairs(extra) do world_rows[#world_rows + 1] = { scope = k } end
+        -- Each row's own asks, by scope: what its buttons say and its refusal line.
+        local by_scope = {}
+        for _, ask in ipairs(row_asks:iter_many(carrier:get("Children") or {})) do
+            local b
+            if ask:has("core/registry/despawn") then
+                b = by_scope[opt(ask, "core/registry/despawn").scope] or {}
+                b.despawn = { said = opt(ask, "core/registry/despawn/reply") }
+                by_scope[opt(ask, "core/registry/despawn").scope] = b
+            elseif ask:has("core/world/unload") then
+                b = by_scope[opt(ask, "core/world/unload").scope] or {}
+                b.unload = { said = opt(ask, "core/world/unload/reply") }
+                by_scope[opt(ask, "core/world/unload").scope] = b
+            else
+                b = by_scope[opt(ask, "core/world/restart").scope] or {}
+                b.restart = { said = opt(ask, "core/world/restart/reply") }
+                by_scope[opt(ask, "core/world/restart").scope] = b
+            end
+        end
+        for _, w in ipairs(world_rows) do
+            local b = by_scope[w.scope] or {}
+            local d = b.despawn and b.despawn.said
+            local u = b.unload and b.unload.said
+            local r = b.restart and b.restart.said
+            w.current = scope ~= nil and w.scope == scope
+            w.label = (w.current and "● " or "") .. short(w.scope)
+            -- Root takes a despawn only for a world of this world's repository.
+            w.can_x = site_user ~= nil and w.scope_root ~= nil and w.scope_root == my_root
+            if b.despawn and (d == nil or d.status == "asking" or d.status == "requested") then
+                w.x = "..."
+            elseif state.armed ~= nil and state.armed.scope == w.scope then
+                w.x = "sure?"
+            else
+                w.x = "X"
+            end
+            w.held = holds[w.scope]
+            w.stop = (b.unload and u == nil) and "..." or "■ Stop"
+            w.restart = (b.restart and (r == nil or r.status == "restarting")) and "..." or "↻ Restart"
+            if d and d.status == "refused" then
+                w.refused = despawn_refused(d.reason)
+            elseif u and u.status == "refused" then
+                w.refused = stop_refused(u.reason)
+            elseif r and r.status == "refused" then
+                w.refused = restart_refused(r.reason)
+            end
+        end
+        local header_line = nil
+        if sessions == nil then
+            header_line = "Loading sessions…"
+        elseif list_error ~= nil then
+            header_line = "⚠ sessions unavailable (" .. tostring(list_error) .. ")"
+        elseif world_rows[1] == nil then
+            header_line = "No visible sessions"
+        end
+        -- The portals this player placed here, each with Close: a despawn of an entity this client
+        -- owns asks the server, which despawns it everywhere.
+        local mine = {}
+        for _, p in ipairs(placed:iter()) do
+            mine[#mine + 1] = { id = p:id(), label = "🌀 " .. short(p:get("scope/portal").target) }
+        end
+
         local wanted = {}
         if signed_out then
             wanted[1] = "Sign in to GitHub in Accounts"
@@ -686,6 +949,25 @@ app:add_systems(Update, {
                 wanted[#wanted + 1] = "🌀 Portal"
             end
             if refused ~= nil then wanted[#wanted + 1] = refused end
+            wanted[#wanted + 1] = "SESSIONS"
+            if header_line ~= nil then wanted[#wanted + 1] = header_line end
+            for _, w in ipairs(world_rows) do
+                wanted[#wanted + 1] = w.label
+                if w.counts ~= nil then wanted[#wanted + 1] = w.counts end
+                if not w.current then wanted[#wanted + 1] = "^" end
+                if w.can_x then wanted[#wanted + 1] = w.x end
+                if w.held ~= nil then
+                    wanted[#wanted + 1] = w.held
+                    wanted[#wanted + 1] = w.stop
+                    wanted[#wanted + 1] = w.restart
+                end
+                if w.refused ~= nil then wanted[#wanted + 1] = w.refused end
+            end
+            if mine[1] ~= nil then wanted[#wanted + 1] = "PORTALS" end
+            for _, m in ipairs(mine) do
+                wanted[#wanted + 1] = m.label
+                wanted[#wanted + 1] = "Close"
+            end
             if lines[1] ~= nil then wanted[#wanted + 1] = "RECENT COMMITS" end
             for _, c in ipairs(lines) do
                 wanted[#wanted + 1] = c.sha
@@ -864,6 +1146,191 @@ app:add_systems(Update, {
                     })
                 end
 
+                local function line_row(height, background)
+                    return commands:spawn({
+                        ["git/panel/row"] = {},
+                        Node = {
+                            width = { Percent = 100 },
+                            height = { Px = height },
+                            flex_shrink = 0,
+                            flex_direction = "Row",
+                            align_items = "Center",
+                            column_gap = { Px = 6 },
+                            padding = { left = { Px = 8 }, right = { Px = 8 } },
+                        },
+                        ["ui/style"] = background ~= nil and { background = background } or nil,
+                        ChildOf = scroll:id(),
+                    }):id()
+                end
+                local function text_in(row, text, size, style)
+                    commands:spawn({
+                        Text = { text = text },
+                        TextFont = { font_size = size },
+                        ["ui/style"] = { text = style },
+                        ChildOf = row,
+                    })
+                end
+                local function spacer(row)
+                    commands:spawn({ Node = { flex_grow = 1 }, ChildOf = row })
+                end
+                local function small(row, text, live, width, armed)
+                    local button = commands:spawn({
+                        Button = {},
+                        Node = {
+                            width = { Px = width },
+                            height = { Px = 20 },
+                            flex_shrink = 0,
+                            justify_content = "Center",
+                            align_items = "Center",
+                        },
+                        BorderRadius = {
+                            top_left = { Px = 3 }, top_right = { Px = 3 },
+                            bottom_left = { Px = 3 }, bottom_right = { Px = 3 },
+                        },
+                        ["ui/style"] = armed and { background = "accent" }
+                            or (live and { background = "icon_bg", hover = "icon_hover" } or { background = "row_alt" }),
+                        ChildOf = row,
+                    })
+                    text_in(button:id(), text, 10, "text")
+                    return button
+                end
+
+                local sessions_header = commands:spawn({
+                    ["git/panel/row"] = {},
+                    Node = { width = { Percent = 100 }, flex_shrink = 0, margin = { top = { Px = 8 }, bottom = { Px = 4 } } },
+                    ChildOf = scroll:id(),
+                }):id()
+                text_in(sessions_header, "SESSIONS", 10, "text_dim")
+                if header_line ~= nil then text_in(line_row(22), header_line, 10, "text_dim") end
+                for i, w in ipairs(world_rows) do
+                    local background = i % 2 == 0 and "row_alt" or "row_bg"
+                    local row = line_row(24, background)
+                    local target = w.scope
+                    text_in(row, w.label, 10, w.current and "text_dim" or "text")
+                    spacer(row)
+                    if w.counts ~= nil then text_in(row, w.counts, 9, "text_dim") end
+                    if not w.current then
+                        -- Switch's ask.
+                        small(row, "^", true, 24, false):observe(On[Pointer[Click]], { Commands }, function(_, click_commands)
+                            click_commands:spawn({
+                                ["core/world/flip"] = { scope = target },
+                                WorldShared = {},
+                                ["core/net/sync"] = false,
+                                ["core/script/owner"] = false,
+                            })
+                        end)
+                    end
+                    if w.can_x then
+                        local x = small(row, w.x, w.x ~= "...", w.x == "sure?" and 40 or 24, w.x == "sure?")
+                        if w.x ~= "..." then
+                            -- The first click arms it; a second within ARM_SECONDS asks root, in place of
+                            -- any earlier ask for the world.
+                            x:observe(On[Pointer[Click]], {
+                                Res[Time],
+                                Query[{
+                                    with = { "git/panel", "core/net/local", Mut["git/panel/state"] },
+                                    optional = { "Children" },
+                                }],
+                                Query[{ with = { "core/registry/despawn", "Request" } }],
+                                Commands,
+                            }, function(_, time, owners, despawns, click_commands)
+                                local now = time:elapsed_secs()
+                                for _, o in ipairs(owners:iter_mut()) do
+                                    local s = o:get("git/panel/state")
+                                    if s.armed ~= nil and s.armed.scope == target and now - s.armed.at <= ARM_SECONDS then
+                                        for _, d in ipairs(despawns:iter_many(o:get("Children") or {})) do
+                                            if d:get("core/registry/despawn").scope == target then
+                                                click_commands:entity(d:id()):despawn()
+                                            end
+                                        end
+                                        click_commands:spawn({
+                                            ["core/registry/despawn"] = { scope = target },
+                                            Request = {},
+                                            ["core/script/owner"] = false,
+                                            ChildOf = o:id(),
+                                        })
+                                        o:get_mut("git/panel/state").armed = nil
+                                    else
+                                        o:get_mut("git/panel/state").armed = { scope = target, at = now }
+                                    end
+                                end
+                            end)
+                        end
+                    end
+                    if w.held ~= nil then
+                        local line = line_row(22, background)
+                        text_in(line, w.held, 9, "text_dim")
+                        spacer(line)
+                        local stop = small(line, w.stop, w.stop ~= "...", 64, false)
+                        local restart = small(line, w.restart, w.restart ~= "...", 72, false)
+                        -- Each asks root in place of any earlier ask of its kind for the world.
+                        if w.stop ~= "..." then
+                            stop:observe(On[Pointer[Click]], {
+                                Query[{ with = { "git/panel", "core/net/local" }, optional = { "Children" } }],
+                                Query[{ with = { "core/world/unload", "Request" } }],
+                                Commands,
+                            }, function(_, owners, unloads, click_commands)
+                                for _, o in ipairs(owners:iter()) do
+                                    for _, u in ipairs(unloads:iter_many(o:get("Children") or {})) do
+                                        if u:get("core/world/unload").scope == target then
+                                            click_commands:entity(u:id()):despawn()
+                                        end
+                                    end
+                                    click_commands:spawn({
+                                        ["core/world/unload"] = { scope = target },
+                                        Request = {},
+                                        ["core/script/owner"] = false,
+                                        ChildOf = o:id(),
+                                    })
+                                end
+                            end)
+                        end
+                        if w.restart ~= "..." then
+                            restart:observe(On[Pointer[Click]], {
+                                Query[{ with = { "git/panel", "core/net/local" }, optional = { "Children" } }],
+                                Query[{ with = { "core/world/restart", "Request" } }],
+                                Commands,
+                            }, function(_, owners, restarts, click_commands)
+                                for _, o in ipairs(owners:iter()) do
+                                    for _, r in ipairs(restarts:iter_many(o:get("Children") or {})) do
+                                        if r:get("core/world/restart").scope == target then
+                                            click_commands:entity(r:id()):despawn()
+                                        end
+                                    end
+                                    click_commands:spawn({
+                                        ["core/world/restart"] = { scope = target },
+                                        Request = {},
+                                        ["core/script/owner"] = false,
+                                        ChildOf = o:id(),
+                                    })
+                                end
+                            end)
+                        end
+                    end
+                    if w.refused ~= nil then
+                        local line = line_row(16, nil)
+                        text_in(line, w.refused, 9, "text_dim")
+                    end
+                end
+
+                if mine[1] ~= nil then
+                    local portals_header = commands:spawn({
+                        ["git/panel/row"] = {},
+                        Node = { width = { Percent = 100 }, flex_shrink = 0, margin = { top = { Px = 8 }, bottom = { Px = 4 } } },
+                        ChildOf = scroll:id(),
+                    }):id()
+                    text_in(portals_header, "PORTALS", 10, "text_dim")
+                end
+                for i, m in ipairs(mine) do
+                    local row = line_row(24, i % 2 == 0 and "row_alt" or "row_bg")
+                    local portal = m.id
+                    text_in(row, m.label, 10, "text")
+                    spacer(row)
+                    small(row, "Close", true, 52, false):observe(On[Pointer[Click]], { Commands }, function(_, click_commands)
+                        click_commands:entity(portal):try_despawn()
+                    end)
+                end
+
                 if lines[1] ~= nil then
                     local header = commands:spawn({
                         ["git/panel/row"] = {},
@@ -950,11 +1417,34 @@ end):in_set("git/panel/render"):after("git/panel"):run_if({
             removed = { "scope/portal/locked" },
         },
     }],
-}, function(views, scrolls, asks, flips, statuses, pulls, locks)
-    -- Root's replies and the flip asks cross from root's VM, and a mirrored edge arrives as surely as
-    -- a local one, so their edges are all this waits on.
+    Query[{
+        ["or"] = {
+            added = {
+                "core/registry/sessions/reply", "core/player/session/signin/reply",
+                "core/registry/despawn", "core/world/unload", "core/world/restart",
+                "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
+                "core/world/presence", "core/world/status",
+            },
+            changed = {
+                "core/registry/sessions/reply", "core/player/session/signin/reply",
+                "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
+                "core/world/presence",
+            },
+            removed = { "core/registry/despawn", "core/world/unload", "core/world/restart", "core/world/status" },
+        },
+    }],
+    Query[{
+        ["or"] = {
+            added = { "core/net/local" },
+            removed = { "placement", "scope/portal" },
+        },
+    }],
+}, function(views, scrolls, asks, flips, statuses, pulls, locks, sessions, portals)
+    -- Root's replies, its presences, the flip asks and the worlds' rows cross from other VMs, and a
+    -- mirrored edge arrives as surely as a local one, so their edges are all this waits on.
     return not views:is_empty() and (not scrolls:is_empty() or not asks:is_empty() or not flips:is_empty()
-        or not statuses:is_empty() or not pulls:is_empty() or not locks:is_empty())
+        or not statuses:is_empty() or not pulls:is_empty() or not locks:is_empty() or not sessions:is_empty()
+        or not portals:is_empty())
 end)
 
 return {}
