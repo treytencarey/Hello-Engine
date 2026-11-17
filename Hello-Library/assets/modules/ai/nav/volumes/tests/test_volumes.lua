@@ -134,7 +134,7 @@ app:add_systems(Startup, { Commands, Res[AssetServer] }, function(commands, asse
         Transform = { translation = { x = 2200, y = -0.5, z = 0 } },
         RigidBody3d = "Fixed",
         Collider3d = { cuboid = { hx = 20, hy = 0.5, hz = 20 } },
-        SceneRoot = assets:load("Placeholder-Character/Model.glb#Scene0"),
+        SceneRoot = assets:load("modules/ai/nav/volumes/tests/fixtures/scene.glb#Scene0"),
     })
     carrier(commands, "reexported", 11, 2, {})
 end)
@@ -290,7 +290,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Res["ai/nav/graph"
         suite.assert_test("V14b_with_its_last_volume_gone_its_regions_go", #regions_of(world, "emptied") == 0, "")
         suite.assert_test("V14c_a_carrier_arriving_over_an_old_volume_bakes_it", #regions_of(world, "came later") == 1,
             "regions " .. #regions_of(world, "came later"))
-        commands:spawn({ Transform = {}, SceneRoot = assets:load("Placeholder-Character/Model.glb#Scene0") })
+        commands:spawn({ Transform = {}, SceneRoot = assets:load("modules/ai/nav/volumes/tests/fixtures/scene.glb#Scene0") })
         step("scene arrived")
 
     elseif phase == "scene arrived" and #regions_of(world, "late") == 1 then
@@ -303,7 +303,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Res["ai/nav/graph"
     elseif phase == "refloor gone" and clock > 0.5 then
         suite.assert_test("V16_a_collider_going_rebakes_nothing", #regions_of(world, "reexported") == 1,
             "regions " .. #regions_of(world, "reexported"))
-        local glb = "assets/Placeholder-Character/Model.glb"
+        local glb = "assets/modules/ai/nav/volumes/tests/fixtures/scene.glb"
         write_file_bytes(glb, read_file_bytes(glb))
         step("reexported")
 

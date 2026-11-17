@@ -78,7 +78,7 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
         suite.assert_test("SP4b_its_size_comes_from_the_spawner", math.abs(tall.y - 1.4) < 0.05, "y " .. tall.y)
         suite.assert_test("SP5_with_its_model_and_movement_and_no_player",
             b:get("animation").model == "zz/model" and b:get("movement").speed ~= nil and not b:has("player"), "")
-        suite.assert_test("SP5b_an_unset_model_is_animations_default", bodies(world, "plain")[1]:get("animation").model == "Placeholder-Character/Model", "")
+        suite.assert_test("SP5b_an_unset_model_is_animations_default", bodies(world, "plain")[1]:get("animation").model == nil, "")
         local sync = b:get("core/net/sync")
         suite.assert_test("SP6_body_collider_and_place_sync_from_the_server",
             sync.RigidBody3d.authority == "server" and sync.Collider3d.authority == "server" and sync.Transform.authority == "server", "")

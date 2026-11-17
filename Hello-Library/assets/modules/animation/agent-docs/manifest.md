@@ -6,7 +6,7 @@ exposes: [animation, animation/action, animation/model, animation/graph, animati
 
 # animation
 
-A character's skeletal animation: its model, and the clip it plays for what it is doing. The server states the model; each client draws it and picks the clip from what it sees its own copy doing. `player` gives every player one; an agent can be given one with its own model.
+A character's skeletal animation: its model, and the clip it plays for what it is doing. The server states the model; each client draws it and picks the clip from what it sees its own copy doing. `player` gives every player one; an agent can be given one with its own model. With no `model` set, a character has no mesh: nothing is drawn or played.
 
 ## Components
 
@@ -14,13 +14,13 @@ A character's skeletal animation: its model, and the clip it plays for what it i
 
   | Field | Meaning | Default |
   |-------|---------|---------|
-  | `model` | path prefix of the model's files | `"Placeholder-Character/Model"` |
+  | `model` | path prefix of the model's files | none: no model is drawn and no clip plays |
   | `scene` | suffix of the file and label of the scene drawn | `"-Idle.glb#Scene0"` |
   | `clips` | `{ <state> = <suffix> }`, a clip per state | `idle`, `walk`, `jump`, `fall` from `-Idle.glb`, `-Walk.glb`, `-Jump.glb` |
   | `walk_speed` | metres per second at which `walk` plays at its own speed | 6 |
   | `offset` | `{ x, y, z }`, where the model sits under the character | `{ 0, -0.9, 0 }` |
 
-  The default `model`'s files are not in this repository, so set `model` to your own until a default character is added.
+  A world gives its characters a model through carrier defaults on its player mod (`defaults = { animation = { model = "modules/<mod>/assets/Model" } }`), with `Model-Idle.glb`, `Model-Walk.glb` and `Model-Jump.glb` beside that prefix.
 
 - `animation/action = { state, speed }`: written by another mod that plays something on purpose (a cast, an emote). While it is there, it is played instead of the motion's state. It syncs as the mod that writes it declares.
 - On each client, never synced:
@@ -45,8 +45,8 @@ A character's skeletal animation: its model, and the clip it plays for what it i
 ## Use
 
 ```lua
--- on the server: a character drawn with the default model
-commands:spawn({ animation = {}, Transform = { translation = at } })
+-- on the server: a character drawn with a model the world ships
+commands:spawn({ animation = { model = "modules/my_world/assets/Model" }, Transform = { translation = at } })
 
 -- a cast, on whichever side decides it (synced as the writing mod declares)
 commands:entity(character):patch({ ["animation/action"] = { state = "cast", speed = 1 } })
@@ -61,7 +61,7 @@ commands:entity(character):patch({ ["animation/action"] = null })
 - The scene and clips are asset handles (`asset_server:load`). Bevy refills them in place when a file changes or arrives, so a changed model or clip file respawns the scene and changes the clip on every character using it, and nothing here runs again.
 - A change to `animation` replaces only what it names anew: a new scene replaces the model child, a changed or removed clip rebuilds the graph, and a change to anything else (`walk_speed`) touches neither.
 - `animation/playing` is written whenever the speed changes, which for a character followed by its Transform is most frames; its clip is never restarted for it.
-- A headless run has no AnimationPlugin, so no clip advances there: `test_animation_client.lua` runs windowed. `test_animation_state.lua`, the state picked for bodies whose velocity reads still, runs headless.
+- A headless run has no AnimationPlugin, so no clip advances there: `test_animation_client.lua` runs windowed. `test_animation_state.lua`, the state picked for bodies whose velocity reads still and a character with no model, runs headless. Both draw a fixture model in `tests/fixtures`: an animated node under an `Armature`, with no mesh.
 - A file still downloading gives a handle that fills in when it lands (core), so a character draws and plays once its files arrive, without a rebuild.
 - `animation/graph` is written with `set`: a patch would merge into the old `nodes` and `clips`, and a clip taken out would stay listed.
 - `animation/graph` builds the graph as Bevy does: `AnimationGraph.new()`, `graph:add_clip(clip, 1.0, graph.root)` for each clip (loaded with `asset_server:load`), then `graphs:add(graph)` on a `ResMut[Assets[AnimationGraph]]` parameter.

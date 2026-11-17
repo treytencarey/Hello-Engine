@@ -5,7 +5,7 @@
 -- syncs as that mod declares. Missing fields get defaults when it is added.
 --
 -- animation = {
---     model = <path prefix of the model's files>,
+--     model = <path prefix of the model's files; absent, nothing is drawn or played>,
 --     scene = <suffix of the file and label of its scene>,
 --     clips = { idle = <suffix>, walk = <suffix>, jump = <suffix>, fall = <suffix>, ... },
 --     walk_speed = <m/s at which the walk clip plays at its own speed>,
@@ -18,7 +18,6 @@
 return {
     defaults = {
         animation = {
-            model = "Placeholder-Character/Model",
             scene = "-Idle.glb#Scene0",
             clips = {
                 idle = "-Idle.glb#Animation0",

@@ -1,5 +1,5 @@
 -- --host (windowed: a headless run has no AnimationPlugin, so no AnimationGraph)
--- `animation` on a client, with the Placeholder-Character model.
+-- `animation` on a client, with a fixture model: an animated node under an `Armature`.
 --
 --   AN1 each character gets its own model, a child holding its scene (`animation/model`)
 --   AN2 each gets its own graph, with a node per clip and the clip each node plays
@@ -30,6 +30,8 @@ local AssetServer = require("bevy::asset::AssetServer")
 local Time = require("bevy::time::Time")
 
 local suite = helpers.create_suite("AnimationClientSuite")
+
+local MODEL = "modules/animation/tests/fixtures/Model"
 
 -- An immediate watcher, for AN9's edit.
 local fw = define_resource("_FileWatcherState", {})
@@ -87,8 +89,8 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
     end
 
     if phase == "spawn" then
-        commands:spawn({ ["zz/char"] = { name = "a" }, animation = {}, Transform = { translation = { x = 0, y = 1, z = 0 } } })
-        commands:spawn({ ["zz/char"] = { name = "b" }, animation = {}, Transform = { translation = { x = 5, y = 1, z = 0 } } })
+        commands:spawn({ ["zz/char"] = { name = "a" }, animation = { model = MODEL }, Transform = { translation = { x = 0, y = 1, z = 0 } } })
+        commands:spawn({ ["zz/char"] = { name = "b" }, animation = { model = MODEL }, Transform = { translation = { x = 5, y = 1, z = 0 } } })
         step("loaded")
 
     elseif phase == "loaded" then
@@ -99,7 +101,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         for _, c in ipairs({ a, b }) do
             local models = parts(world, c:id(), "animation/model")
             ok1 = ok1 and #models == 1
-                and models[1]:get("animation/model").scene == "Placeholder-Character/Model-Idle.glb#Scene0"
+                and models[1]:get("animation/model").scene == MODEL .. "-Idle.glb#Scene0"
         end
         suite.assert_test("AN1_each_character_gets_its_own_model", ok1,
             string.format("a: models=%d", #parts(world, a:id(), "animation/model")))
@@ -108,7 +110,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         for _ in pairs(ga.nodes or {}) do count = count + 1 end
         suite.assert_test("AN2_each_gets_its_own_graph_with_a_node_per_clip",
             count == 4 and ga.nodes.walk ~= nil and gb.handle ~= nil and ga.handle ~= gb.handle
-                and (ga.clips or {}).walk == "Placeholder-Character/Model-Walk.glb#Animation0",
+                and (ga.clips or {}).walk == MODEL .. "-Walk.glb#Animation0",
             "nodes=" .. count .. " walk=" .. tostring((ga.clips or {}).walk))
         local player = parts(world, a:id(), "animation/player")[1]
         local full = player and world:get_entity(player:id())
@@ -172,7 +174,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         moving = nil
         -- As a player moves: a dynamic body, its velocity stepped by physics.
         commands:spawn({
-            ["zz/char"] = { name = "c" }, animation = {},
+            ["zz/char"] = { name = "c" }, animation = { model = MODEL },
             Transform = { translation = { x = -5, y = 1, z = 0 } },
             RigidBody3d = "Dynamic",
             Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
@@ -261,9 +263,9 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         local linked = player and world:get_entity(player:id()):get("AnimationGraphHandle")
         local scene = models[1] and models[1]:get("animation/model").scene
         suite.assert_test("AN11_a_new_scene_replaces_the_model_and_a_new_clip_rebuilds_the_graph",
-            #models == 1 and models[1]:id() ~= before.b_model and scene == "Placeholder-Character/Model-Walk.glb#Scene0"
-                and graph.handle ~= before.b_graph and clips.walk == "Placeholder-Character/Model-Jump.glb#Animation0"
-                and clips.idle == "Placeholder-Character/Model-Idle.glb#Animation0" and linked ~= nil,
+            #models == 1 and models[1]:id() ~= before.b_model and scene == MODEL .. "-Walk.glb#Scene0"
+                and graph.handle ~= before.b_graph and clips.walk == MODEL .. "-Jump.glb#Animation0"
+                and clips.idle == MODEL .. "-Idle.glb#Animation0" and linked ~= nil,
             string.format("models=%d scene=%s walk=%s idle=%s linked=%s", #models, tostring(scene), tostring(clips.walk),
                 tostring(clips.idle), tostring(linked ~= nil)))
         before.b_graph = graph.handle

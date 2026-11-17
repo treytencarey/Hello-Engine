@@ -38,7 +38,7 @@ app:add_systems(Startup, { Commands, Res[AssetServer] }, function(commands, asse
         ["ai/nav/volumes/scene"] = { include = "Armature" },
         ["ai/nav/volumes"] = { sample = false },
         Transform = { translation = { x = 500, y = 0, z = 0 } },
-        SceneRoot = assets:load("Placeholder-Character/Model.glb#Scene0"),
+        SceneRoot = assets:load("modules/ai/nav/volumes/scene/tests/fixtures/scene.glb#Scene0"),
     })
     -- Nodes with no source above them, and a source whose nodes are here before it.
     commands:spawn({ ["zz/node"] = { tag = "outside" }, Name = "stray_nav", Transform = {} })

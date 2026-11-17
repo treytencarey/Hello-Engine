@@ -21,7 +21,7 @@ Makes plain bodies for a scene to populate itself with, and links each to itself
   | `y` | metres up they start | 1.5 |
   | `body_radius` | metres | 0.4 |
   | `body_half_height` | metres | 0.5 |
-  | `model` | the `animation` model | absent, its default |
+  | `model` | the `animation` model | absent: no model, so the body is not drawn |
 
 - `ai/spawner/agent = { entity = <its spawner> }`, on a body: a relationship with target `ai/spawner/agents`, `linked_spawn = true`, so bodies go with their spawner.
 - `ai/spawner/agents`: a spawner's bodies, kept by the engine.

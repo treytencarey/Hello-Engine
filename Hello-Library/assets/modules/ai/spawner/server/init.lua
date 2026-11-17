@@ -11,7 +11,7 @@
 --     y = <metres up they start>,
 --     body_radius = <metres>,
 --     body_half_height = <metres>,
---     model = <the `animation` model; absent, its default>,
+--     model = <the `animation` model; absent, none, and the body is not drawn>,
 -- }
 --
 -- ai/spawner/agent = { entity = <its spawner> }: on a body
