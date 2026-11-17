@@ -6,8 +6,15 @@ local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("ThirdPersonSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zztp" },
+        ["core/net/sync"] = false,
+    }):id()
 end)
 
 local function carrier(world, name)
@@ -107,7 +114,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         -- the camera mod binds into `input/game` whatever the mode.
         commands:spawn({
             ["zz/carrier"] = { name = "me" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["core/net/sync"] = false,
             Transform = { translation = AT },
@@ -115,6 +122,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         commands:spawn({
             ["zz/carrier"] = { name = "other" },
+            -- Another client's, as its replica names that client's connection.
+            ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
             ["core/net/sync"] = false,
             Transform = {},
             ["camera/third_person"] = {},
@@ -245,7 +254,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("T12_look_and_zoom_move_the_eye_in_the_same_frame", exact.ok, exact.got)
         commands:spawn({
             ["zz/carrier"] = { name = "late" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = -5, y = 0, z = 0 } },

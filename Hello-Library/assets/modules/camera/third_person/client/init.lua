@@ -18,21 +18,25 @@ local Vec3 = require("bevy::math::Vec3")
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "camera/third_person", "core/net/local", "input" },
+            added = { "camera/third_person", "core/net/owner", "input" },
+            changed = { "core/net/owner" },
         },
-        with = { "camera/third_person", "core/net/local", "input" },
+        with = { "camera/third_person", "core/net/owner", "input" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, commands)
+}, function(carriers, own, commands)
     for _, e in ipairs(carriers:iter()) do
-        commands:entity(e:id()):patch({
-            ["input/game"] = {
-                third_person = {
-                    look = { motion = true },
-                    zoom = { scroll = true },
+        if own:contains(e:get("core/net/owner")) then
+            commands:entity(e:id()):patch({
+                ["input/game"] = {
+                    third_person = {
+                        look = { motion = true },
+                        zoom = { scroll = true },
+                    },
                 },
-            },
-        })
+            })
+        end
     end
 end):in_set("camera/third_person/bind")
 

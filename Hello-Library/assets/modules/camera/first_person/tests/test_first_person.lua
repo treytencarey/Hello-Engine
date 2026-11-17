@@ -6,8 +6,15 @@ local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("FirstPersonSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzfp" },
+        ["core/net/sync"] = false,
+    }):id()
 end)
 
 local QUARTER = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 }
@@ -15,7 +22,7 @@ local QUARTER = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 }
 local function carrier(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/carrier" },
-        optional = { "camera", "camera/first_person", "input/game", "core/net/local" },
+        optional = { "camera", "camera/first_person", "input/game", "core/net/owner" },
     })) do
         if e:get("zz/carrier").name == name then
             return e
@@ -79,7 +86,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         -- into `input/game` whatever the mode.
         commands:spawn({
             ["zz/carrier"] = { name = "me" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = 2, y = 0, z = 3 } },
@@ -87,6 +94,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         commands:spawn({
             ["zz/carrier"] = { name = "other" },
+            -- Another client's, as its replica names that client's connection.
+            ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
             ["core/net/sync"] = false,
             Transform = {},
             ["camera/first_person"] = {},
@@ -130,14 +139,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             near(cam.yaw, -0.25) and near(cam.pitch, -1.4)
                 and near(t.rotation.x, want.x) and near(t.rotation.y, want.y) and near(t.rotation.w, want.w),
             string.format("yaw=%s pitch=%s", tostring(cam.yaw), tostring(cam.pitch)))
-        commands:entity(me:id()):remove("core/net/local")
+        commands:entity(me:id()):remove("core/net/owner")
         step("away")
 
     elseif phase == "away" and clock > 0.2 then
         local eye = eye_of(world, me)
         suite.assert_test("F6_leaving_the_world_turns_the_eye_off",
             eye ~= nil and eye:get("Camera").is_active == false, "")
-        me:patch({ ["core/net/local"] = {} })
+        commands:entity(me:id()):insert({ ["core/net/owner"] = world_net })
         step("back")
 
     elseif phase == "back" and clock > 0.2 then
@@ -178,7 +187,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("F11_a_look_turns_the_eye_in_the_same_frame", exact.ok, exact.got)
         commands:spawn({
             ["zz/carrier"] = { name = "late" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = -5, y = 0, z = 0 } },

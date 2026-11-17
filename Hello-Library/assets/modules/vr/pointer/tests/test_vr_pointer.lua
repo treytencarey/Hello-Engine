@@ -19,8 +19,15 @@ local VrPoseInput = require("hello::vr_messages::VrPoseInput")
 local suite = helpers.create_suite("VrPointerSuite")
 local T = suite.assert_test
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzvrp" },
+        ["core/net/sync"] = false,
+    }):id()
     for _, name in ipairs({ "me", "together" }) do
         commands:spawn({
             ["zz/carrier"] = { name = name },
@@ -29,7 +36,7 @@ app:add_systems(Startup, { Commands }, function(commands)
             ["vr/input"] = {},
             input = {},
             ["input/mode"] = { mode = "input/ui" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             ["core/net/sync"] = false,
             Transform = { translation = { x = 2, y = 0, z = 1 } },
         })

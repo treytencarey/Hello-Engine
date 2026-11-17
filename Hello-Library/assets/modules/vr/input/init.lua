@@ -26,6 +26,15 @@ local Vec3 = require("bevy::math::Vec3")
 local VrInputRaw = require("hello::vr_messages::VrInputRaw")
 local VrPoseInput = require("hello::vr_messages::VrPoseInput")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 local function send(keys, buttons, bound, state)
     if bound.key then
         keys:write({ key_code = bound.key, state = state })
@@ -43,13 +52,14 @@ app:add_systems(First, {
     bevy.MessageWriter["input/synthetic_mouse_wheel"],
     bevy.MessageWriter["input/analog"],
     Query[{
-        with = { "vr/input", "core/net/local" },
+        with = { "vr/input" },
         optional = { "vr/input/held" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(raw, keys, buttons, wheel, analog, players, commands)
+}, function(raw, keys, buttons, wheel, analog, players, own, commands)
     local messages = raw:read()
-    for _, e in ipairs(players:iter()) do
+    for _, e in ipairs(owned(own, players)) do
         local m = e:get("vr/input")
         local held = {}
         for name, value in pairs(e:get("vr/input/held") or {}) do
@@ -112,15 +122,16 @@ end):in_set("vr/input/raw"):before("input/held")
 app:add_systems(First, {
     bevy.MessageReader[VrPoseInput],
     Query[{
-        with = { "vr/input", "core/net/local" },
+        with = { "vr/input" },
         optional = { "VmXrRig" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(poses, players, commands)
+}, function(poses, players, own, commands)
     local messages = poses:read()
     local p = messages[#messages]
     if p ~= nil then
-        for _, e in ipairs(players:iter()) do
+        for _, e in ipairs(owned(own, players)) do
             local rig = e:get("VmXrRig") or { translation = { x = 0, y = 0, z = 0 }, yaw = 0 }
             local turn = Quat.from_rotation_y(rig.yaw)
             commands:entity(e:id()):insert({

@@ -16,24 +16,37 @@ local Quat = require("bevy::math::Quat")
 local Time = require("bevy::time::Time")
 local Vec3 = require("bevy::math::Vec3")
 
+--- The rows of `q` this client owns, to write: those in its own nets' `core/net/owns`.
+local function owned_mut(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "camera/vr", "core/net/local", "input" },
+            added = { "camera/vr", "core/net/owner", "input" },
+            changed = { "core/net/owner" },
         },
-        with = { "camera/vr", "core/net/local", "input" },
+        with = { "camera/vr", "core/net/owner", "input" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, commands)
+}, function(carriers, own, commands)
     for _, e in ipairs(carriers:iter()) do
-        commands:entity(e:id()):patch({
-            ["input/game"] = {
-                camera_vr = {
-                    turn_left = { key = "ArrowLeft" },
-                    turn_right = { key = "ArrowRight" },
+        if own:contains(e:get("core/net/owner")) then
+            commands:entity(e:id()):patch({
+                ["input/game"] = {
+                    camera_vr = {
+                        turn_left = { key = "ArrowLeft" },
+                        turn_right = { key = "ArrowRight" },
+                    },
                 },
-            },
-        })
+            })
+        end
     end
 end):in_set("camera/vr/bind")
 
@@ -41,17 +54,20 @@ end):in_set("camera/vr/bind")
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "camera/vr", "core/net/local" },
+            added = { "camera/vr", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "camera/vr", "core/net/local" },
+        with = { "camera/vr", "core/net/owner" },
         optional = { "Children" },
     }],
     Query[{
         with = { "camera/vr/mirror", Mut["Camera"] },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, all_mirrors, commands)
+}, function(carriers, all_mirrors, own, commands)
     for _, e in ipairs(carriers:iter()) do
+        if not own:contains(e:get("core/net/owner")) then goto next_carrier end
         local mirrors = all_mirrors:iter_many_mut(e:get("Children") or {})
         for _, mirror in ipairs(mirrors) do
             mirror:patch({ Camera = { is_active = true } })
@@ -67,27 +83,35 @@ app:add_systems(First, {
             }):id()
             commands:entity(e:id()):add_child(mirror)
         end
+        ::next_carrier::
     end
 end):in_set("camera/vr/spawn")
 
 -- The player left for another world: its window camera stops, and the eyes have no rig to draw from.
+-- A carrier still this client's keeps them.
 app:add_systems(First, {
     Query[{
-        removed = { "core/net/local" },
+        ["or"] = { removed = { "core/net/owner" }, changed = { "core/net/owner" } },
         with = { "camera/vr" },
-        optional = { "Children", "VmXrRig" },
+        optional = { "Children", "VmXrRig", "core/net/owner" },
     }],
     Query[{
         with = { "camera/vr/mirror", Mut["Camera"] },
     }],
+    Query[{ with = { "camera/vr" }, optional = { "core/net/owner" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, all_mirrors, commands)
+}, function(carriers, all_mirrors, live, own, commands)
     for _, e in ipairs(carriers:iter()) do
-        for _, mirror in ipairs(all_mirrors:iter_many_mut(e:get("Children") or {})) do
-            mirror:patch({ Camera = { is_active = false } })
-        end
-        if e:has("VmXrRig") then
-            commands:entity(e:id()):remove("VmXrRig")
+        local now = live:get(e:id())
+        local owner = now and now:get("core/net/owner")
+        if owner == nil or not own:contains(owner) then
+            for _, mirror in ipairs(all_mirrors:iter_many_mut(e:get("Children") or {})) do
+                mirror:patch({ Camera = { is_active = false } })
+            end
+            if e:has("VmXrRig") then
+                commands:entity(e:id()):remove("VmXrRig")
+            end
         end
     end
 end):in_set("camera/vr/teardown")
@@ -97,7 +121,7 @@ end):in_set("camera/vr/teardown")
 app:add_systems(Update, {
     Res[Time],
     Query[{
-        with = { "camera/vr", "core/net/local", "Transform", Mut["camera"] },
+        with = { "camera/vr", "Transform", Mut["camera"] },
         optional = {
             "VmXrRig",
             "vr/input/pose",
@@ -105,10 +129,11 @@ app:add_systems(Update, {
             "input/game/camera_vr/turn_right",
         },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(time, carriers, commands)
+}, function(time, carriers, own, commands)
     local dt = time:delta_secs()
-    for _, e in ipairs(carriers:iter_mut()) do
+    for _, e in ipairs(owned_mut(own, carriers)) do
         local vr = e:get("camera/vr")
         local rig = e:get("VmXrRig")
         local left = e:get("input/game/camera_vr/turn_left")
@@ -135,14 +160,16 @@ end):in_set("camera/vr/rig"):before("movement/walk")
 app:add_systems(Update, {
     Query[{
         changed = { "vr/input/pose" },
-        with = { "camera/vr", "core/net/local", "Transform" },
+        with = { "camera/vr", "core/net/owner", "Transform" },
         optional = { "Children" },
     }],
     Query[{
         with = { "camera/vr/mirror", Mut["transform/follow"] },
     }],
-}, function(carriers, all_mirrors)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(carriers, all_mirrors, own)
     for _, e in ipairs(carriers:iter()) do
+        if not own:contains(e:get("core/net/owner")) then goto next_carrier end
         local pose = e:get("vr/input/pose")
         local at = e:get("Transform").translation
         for _, mirror in ipairs(all_mirrors:iter_many_mut(e:get("Children") or {})) do
@@ -153,6 +180,7 @@ app:add_systems(Update, {
                 },
             })
         end
+        ::next_carrier::
     end
 end):in_set("camera/vr/mirror")
 

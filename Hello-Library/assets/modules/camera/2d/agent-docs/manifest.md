@@ -6,7 +6,7 @@ exposes: [camera/2d, camera/2d/eye]
 
 # camera/2d
 
-A top-down 2D camera. Extends `camera` (`base = "camera"`). The local player's carrier gets an eye: a Camera2d child kept `z` above the carrier and scaled by the carrier's `camera.distance` (1 is 1:1), which the scroll wheel changes. The eye moves with the carrier but does not turn with it (`transform/follow`). Remote carriers get no eye.
+A top-down 2D camera. Extends `camera` (`base = "camera"`). The local player's carrier gets an eye: a Camera2d child kept `z` above the carrier and scaled by the carrier's `camera.distance` (1 is 1:1), which the scroll wheel changes. The eye moves with the carrier but does not turn with it (`transform/follow`). Remote carriers get no eye. The local carrier is one in this client's own nets' `core/net/owns`, found on its `core/net/owner` edges.
 
 ## Components
 
@@ -27,7 +27,7 @@ A top-down 2D camera. Extends `camera` (`base = "camera"`). The local player's c
 |----------|-------|---------|
 | First | `camera/2d/spawn` | On the local carrier, spawn the eye already placed and scaled, or turn the existing eye back on |
 | First | `camera/2d/bind` | On the local carrier, bind the scroll wheel (again when `input` is added back) |
-| First | `camera/2d/teardown` | When the player leaves for another world (`core/net/local` removed), turn the eye off |
+| First | `camera/2d/teardown` | When the player leaves for another world (its `core/net/owner` removed, or no longer one of this client's own nets), turn the eye off |
 | First | `camera/2d/remove` | When `camera/2d` is removed, unbind; the eye, marked `camera/2d/eye`, goes by `mod_registry` |
 | Update | `camera/2d/zoom` | Change `camera.distance` by scroll times `zoom_step`, clamped to `min_distance`..`max_distance` |
 | Update, after `camera/2d/zoom` | `camera/2d/aim` | When `camera` or `camera/2d` changes, set the eye's scale and height |

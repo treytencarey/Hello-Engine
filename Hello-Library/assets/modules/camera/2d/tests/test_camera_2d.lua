@@ -5,8 +5,15 @@ local helpers = require("modules/core/test_helpers.lua")
 
 local suite = helpers.create_suite("Camera2dSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzc2d" },
+        ["core/net/sync"] = false,
+    }):id()
 end)
 
 local QUARTER_Z = { x = 0, y = 0, z = 0.70710678, w = 0.70710678 }
@@ -81,7 +88,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         -- mods bind into `input/game` whatever the mode.
         commands:spawn({
             ["zz/carrier"] = { name = "me" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["core/net/sync"] = false,
             Transform = { translation = AT },
@@ -90,6 +97,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         commands:spawn({
             ["zz/carrier"] = { name = "other" },
+            -- Another client's, as its replica names that client's connection.
+            ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
             ["core/net/sync"] = false,
             Transform = {},
             ["camera/2d"] = {},
@@ -138,14 +147,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("reset")
 
     elseif phase == "reset" and clock > 0.3 then
-        commands:entity(me:id()):remove("core/net/local")
+        commands:entity(me:id()):remove("core/net/owner")
         step("away")
 
     elseif phase == "away" and clock > 0.2 then
         local eyes = eyes_of(world, me)
         suite.assert_test("C7_leaving_the_world_turns_the_eye_off",
             #eyes == 1 and eyes[1]:get("Camera").is_active == false, "eyes=" .. #eyes)
-        me:patch({ ["core/net/local"] = {} })
+        commands:entity(me:id()):insert({ ["core/net/owner"] = world_net })
         step("back")
 
     elseif phase == "back" and clock > 0.2 then
@@ -163,7 +172,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("other zoomed")
 
     elseif phase == "other zoomed" and clock > 0.3 then
-        other:patch({ ["core/net/local"] = {}, input = {} })
+        commands:entity(other:id()):insert({ ["core/net/owner"] = world_net, input = {} })
         step("other local")
 
     elseif phase == "other local" and #eyes_of(world, other) > 0 and clock > 0.3 then
@@ -205,7 +214,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and #eyes_3d == 1, "3d eyes=" .. #eyes_3d)
         commands:spawn({
             ["zz/carrier"] = { name = "late" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = -5, y = 0, z = 0 } },
@@ -213,7 +222,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         commands:spawn({
             ["zz/carrier"] = { name = "plain" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["core/net/sync"] = false,
             Transform = { translation = { x = 0, y = 7, z = 0 } },

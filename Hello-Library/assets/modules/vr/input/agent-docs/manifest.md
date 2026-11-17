@@ -6,7 +6,7 @@ exposes: [vr/input, vr/input/pose]
 
 # vr/input
 
-VR controllers as ordinary input. Each control presses the key or mouse button it is mapped to, through the messages `input` takes from anything that is not a device, so a mod binds its actions into `input/game` or `input/ui` as usual, and walking on the left stick needs no VR code in `movement`. The mod also puts the headset's and controllers' poses on the player, in world space. `player/vr` adds it on the owning client while the player is in VR. It works only on this client's own player (`core/net/local`), and never crosses.
+VR controllers as ordinary input. Each control presses the key or mouse button it is mapped to, through the messages `input` takes from anything that is not a device, so a mod binds its actions into `input/game` or `input/ui` as usual, and walking on the left stick needs no VR code in `movement`. The mod also puts the headset's and controllers' poses on the player, in world space. `player/vr` adds it on the owning client while the player is in VR. It works only on this client's own player (an entity in its own nets' `core/net/owns`), and never crosses.
 
 ## Components
 
@@ -44,10 +44,10 @@ VR controllers as ordinary input. Each control presses the key or mouse button i
 ## Use
 
 ```lua
--- read where the right hand points, in a mod's system
+-- read where the right hand points, in a mod's system: only this client's own player has a pose
 app:add_systems(Update, {
     Query[{
-        with = { "vr/input/pose", "core/net/local" },
+        with = { "vr/input/pose" },
     }],
 }, function(players)
     for _, e in ipairs(players:iter()) do

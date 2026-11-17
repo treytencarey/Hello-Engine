@@ -6,8 +6,15 @@ local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
 
 local suite = helpers.create_suite("InputSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzin" },
+        ["core/net/sync"] = false,
+    }):id()
 end)
 
 local function player(world)
@@ -52,7 +59,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if phase == "spawn" then
         commands:spawn({
             ["zz/player"] = {},
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             ["core/net/sync"] = false,
             input = { sensitivity = 2.0 }, ["input/mode"] = { mode = "input/game" },
             ["input/game"] = {

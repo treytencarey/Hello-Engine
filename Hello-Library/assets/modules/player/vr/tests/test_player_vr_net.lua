@@ -76,7 +76,9 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["camera/vr"] = {},
         ["vr/active"] = {},
         Transform = { translation = { x = 30, y = 1, z = 0 } },
-        ["core/net/owner"] = { client_id = 999 },
+        -- Owned by another client's connection; not a `core/net/connection` here, or the spawner
+        -- would make that client a player too.
+        ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
         ["core/net/sync"] = {
             Transform = { authority = "server", reliable = false },
             ["zz/other"] = { authority = "server" },
@@ -159,6 +161,13 @@ local ts = helpers.shared_state("PlayerVrNetState", boot.DEFAULTS)
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn(boot.GROUND)
+    -- This client's copy of the map's point: the player's body waits for the point it claims here.
+    commands:spawn({
+        Name = "zz_start",
+        Transform = { translation = { x = 3, y = 0, z = 0 } },
+        ["player/spawner/point"] = {},
+        ["core/net/sync"] = false,
+    })
 end)
 
 local joined, reloaded = false, false
@@ -174,8 +183,12 @@ app:add_systems(Update, {
             ["core/net/sync"] = false,
         })
     end
-    local me = world:query({
-        with = { "player", "core/net/local" },
+    -- This client's player: the one in its own nets' `core/net/owns`.
+    local own = {}
+    for _, n in ipairs(world:query({ with = { "core/net", "core/net/owns" } })) do own[n:id()] = true end
+    local me
+    for _, p in ipairs(world:query({
+        with = { "player", "core/net/owner" },
         optional = {
             "vr",
             "vr/active",
@@ -196,7 +209,9 @@ app:add_systems(Update, {
             "Velocity3d",
             "Transform",
         },
-    })[1]
+    })) do
+        if own[p:get("core/net/owner")] then me = p end
+    end
     ts.c_player = me ~= nil
     ts.c_eyes = #world:query({ with = { "camera/3d/eye" } })
     ts.c_mirrors = #world:query({ with = { "camera/vr/mirror" } })
@@ -232,7 +247,7 @@ app:add_systems(Update, {
     end
     local other = world:query({
         with = { "zz/other" },
-        optional = { "camera/vr", "VmXrRig", "vr/input", "vr/pointer", "input/game", "vr/active", "core/net/local" },
+        optional = { "camera/vr", "VmXrRig", "vr/input", "vr/pointer", "input/game", "vr/active", "core/net/owner" },
     })[1]
     ts.o_seen = other ~= nil
     if other ~= nil then
@@ -241,7 +256,7 @@ app:add_systems(Update, {
         ts.o_rig = other:has("VmXrRig")
         ts.o_vr_input = other:has("vr/input") or other:has("vr/pointer")
         ts.o_bound = other:has("input/game")
-        ts.o_local = other:has("core/net/local")
+        ts.o_local = own[other:get("core/net/owner") or false] == true
     end
     if ts.reload_client and not reloaded then
         reloaded = true

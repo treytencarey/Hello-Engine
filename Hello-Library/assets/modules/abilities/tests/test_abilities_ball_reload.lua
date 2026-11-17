@@ -32,13 +32,15 @@ local KINDS = {
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    -- Their owner, the connection of client 7, as the server holds it.
+    local connection = commands:spawn({ ["core/net/connection"] = { client_id = 7, observer = false }, ["core/net/sync"] = false }):id()
     for _, kind in ipairs(KINDS) do
         commands:spawn({
             ["zz/player"] = { name = kind.name },
             [kind.ability] = {},
             Transform = { translation = { x = kind.x, y = 1000, z = 0 } },
             camera = { yaw = 0, pitch = 0 },
-            ["core/net/owner"] = { client_id = 7 },
+            ["core/net/owner"] = connection,
             ["core/net/sync"] = { Transform = { authority = "client" } },
         })
     end

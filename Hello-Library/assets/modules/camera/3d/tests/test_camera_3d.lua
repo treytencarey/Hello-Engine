@@ -6,8 +6,15 @@ local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("Camera3dSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzc3d" },
+        ["core/net/sync"] = false,
+    }):id()
 end)
 
 local QUARTER = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 }
@@ -15,7 +22,7 @@ local QUARTER = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 }
 local function carrier(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/carrier" },
-        optional = { "camera", "camera/3d", "core/net/local", "camera/3d/viewed_by" },
+        optional = { "camera", "camera/3d", "core/net/owner", "camera/3d/viewed_by" },
     })) do
         if e:get("zz/carrier").name == name then
             return e
@@ -89,7 +96,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if phase == "spawn" then
         commands:spawn({
             ["zz/carrier"] = { name = "me" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             input = {},
             ["input/mode"] = { mode = "input/game" },
             ["core/net/sync"] = false,
@@ -99,6 +106,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         commands:spawn({
             ["zz/carrier"] = { name = "other" },
+            -- Another client's, as its replica names that client's connection.
+            ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
             ["core/net/sync"] = false,
             Transform = {},
             ["camera/3d"] = {},
@@ -130,14 +139,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "moved" and clock > 0.3 then
         local ok, got = placed(world, first_eye, { x = 2, y = 1, z = 1 }, -1, 0.4)
         suite.assert_test("D5_changing_the_offset_moves_the_eye", ok, got)
-        commands:entity(me:id()):remove("core/net/local")
+        commands:entity(me:id()):remove("core/net/owner")
         step("away")
 
     elseif phase == "away" and clock > 0.2 then
         local eyes = eyes_of(world, me)
         suite.assert_test("D6_leaving_the_world_turns_the_eye_off",
             #eyes == 1 and eyes[1]:get("Camera").is_active == false, "eyes=" .. #eyes)
-        me:patch({ ["core/net/local"] = {} })
+        commands:entity(me:id()):insert({ ["core/net/owner"] = world_net })
         step("back")
 
     elseif phase == "back" and clock > 0.2 then
@@ -195,7 +204,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("other aimed")
 
     elseif phase == "other aimed" and clock > 0.3 then
-        other:patch({ ["core/net/local"] = {}, input = {}, ["input/mode"] = { mode = "input/game" } })
+        commands:entity(other:id()):insert({ ["core/net/owner"] = world_net, input = {}, ["input/mode"] = { mode = "input/game" } })
         step("other local")
 
     elseif phase == "other local" and #eyes_of(world, other) > 0 and clock > 0.3 then

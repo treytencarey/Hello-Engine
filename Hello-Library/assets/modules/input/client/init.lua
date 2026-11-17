@@ -48,6 +48,15 @@ local MouseButtonInput = require("bevy::input::mouse::MouseButtonInput")
 local MouseMotion = require("bevy::input::mouse::MouseMotion")
 local MouseWheel = require("bevy::input::mouse::MouseWheel")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+
 -- Input that does not come from a device: a key, a mouse button or a scroll written by a mod (a
 -- suite, a replay, an on-screen control), shaped as Bevy's own message of each, and an analog
 -- strength for a held key (`{ key_code = <KeyCode>, value = <0..1> }`).
@@ -58,18 +67,19 @@ app:add_systems(First, {
     bevy.MessageReader["input/synthetic_mouse_button"],
     bevy.MessageReader["input/analog"],
     Query[{
-        with = { "input", "core/net/local" },
+        with = { "input" },
         optional = { "input/held" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(keyboard, mouse_buttons, synthetic_keys, synthetic_buttons, analog_in, players, commands)
+}, function(keyboard, mouse_buttons, synthetic_keys, synthetic_buttons, analog_in, players, own, commands)
     local keys = keyboard:read()
     local buttons = mouse_buttons:read()
     for _, m in ipairs(synthetic_keys:read()) do keys[#keys + 1] = m end
     for _, m in ipairs(synthetic_buttons:read()) do buttons[#buttons + 1] = m end
     local analog = analog_in:read()
 
-    for _, e in ipairs(players:iter()) do
+    for _, e in ipairs(owned(own, players)) do
         local held = e:get("input/held") or {}
         local before = held.keys or {}
         local held_keys, held_buttons = {}, {}
@@ -114,15 +124,16 @@ app:add_systems(PreUpdate, {
     bevy.MessageReader[MouseWheel],
     bevy.MessageReader["input/synthetic_mouse_wheel"],
     Query[{
-        with = { "input", "core/net/local" },
+        with = { "input" },
         optional = { "input/mode", "input/actions" },
     }],
     Query[{
-        with = { "input", "input/held", "core/net/local" },
+        with = { "input", "input/held" },
         optional = { "input/mode", "input/actions" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(mouse_motion, mouse_wheel, synthetic_wheel, players, held_players, commands)
+}, function(mouse_motion, mouse_wheel, synthetic_wheel, players, held_players, own, commands)
     local motion, scroll = { x = 0, y = 0 }, { x = 0, y = 0 }
     for _, ev in ipairs(mouse_motion:read()) do
         motion.x = motion.x + (ev.delta and ev.delta.x or 0)
@@ -140,14 +151,14 @@ app:add_systems(PreUpdate, {
     -- The columns this pass reads come from data: each player's mode and the actions
     -- already added.
     local columns = {}
-    for _, e in ipairs(players:iter()) do
+    for _, e in ipairs(owned(own, players)) do
         local mode = (e:get("input/mode") or {}).mode
         local added = e:get("input/actions") or {}
         columns[#columns + 1] = mode
         for name in pairs(added) do columns[#columns + 1] = name end
     end
 
-    for _, e in ipairs(held_players:with_columns({ optional = columns }):iter()) do
+    for _, e in ipairs(owned(own, held_players:with_columns({ optional = columns }))) do
         local input = e:get("input")
         local held = e:get("input/held")
         local mode = (e:get("input/mode") or {}).mode
@@ -221,11 +232,13 @@ end):in_set("input")
 app:add_systems(PreUpdate, {
     Query[{
         changed = { "input/mode" },
-        with = { "core/net/local" },
+        with = { "core/net/owner" },
     }],
     Query[{ with = { "Window", Mut["CursorOptions"] } }],
-}, function(players, windows)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(players, windows, own)
     for _, e in ipairs(players:iter()) do
+        if not own:contains(e:get("core/net/owner")) then goto next_player end
         local shown = e:get("input/mode").show_cursor == true
         for _, w in ipairs(windows:iter_mut()) do
             w:set({
@@ -233,5 +246,6 @@ app:add_systems(PreUpdate, {
                     or { visible = false, grab_mode = { Confined = true } },
             })
         end
+        ::next_player::
     end
 end):in_set("input/cursor")

@@ -12,8 +12,15 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesClientSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzabc" },
+        ["core/net/sync"] = false,
+    }):id()
 end)
 
 local function the_player(world)
@@ -38,7 +45,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if phase == "spawn" then
         player_id = commands:spawn({
             ["zz/player"] = {},
-            ["core/net/local"] = {},
+            ["core/net/owner"] = world_net,
             ["core/net/sync"] = false,
             input = {},
             ["input/mode"] = { mode = "input/game" },
@@ -50,6 +57,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         -- Another player's copy, here only as a replica.
         commands:spawn({
             ["zz/other"] = {},
+            -- Another client's, as its replica names that client's connection.
+            ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
             ["core/net/sync"] = false,
             input = {},
             ["input/mode"] = { mode = "input/game" },

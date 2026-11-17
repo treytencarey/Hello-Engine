@@ -49,8 +49,15 @@ local unhovered = 0
 local seen = "no cast yet"
 local wall_at = nil
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { ResMut[Assets[Mesh]], ResMut[Assets[StandardMaterial]], Commands }, function(meshes, materials, commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzvruiw" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({ ["ui/theme/dark"] = {} })
     commands:spawn({
         ["zz/eye"] = {},
@@ -59,6 +66,20 @@ app:add_systems(Startup, { ResMut[Assets[Mesh]], ResMut[Assets[StandardMaterial]
         IsDefaultUiCamera = true,
         Transform = { translation = { x = 0, y = 1.5, z = 0.5 } },
     })
+end)
+
+-- The player comes once the net client has declared ownership: an owner stored before that is
+-- linked when it is declared, with no edge of its own for the sidebar to open on.
+local spawned = false
+app:add_systems(Update, {
+    Query[{ with = { "LuaRelationship" } }],
+    ResMut[Assets[Mesh]], ResMut[Assets[StandardMaterial]], Commands,
+}, function(declared, meshes, materials, commands)
+    if spawned then return end
+    local ready = false
+    for _, d in ipairs(declared:iter()) do ready = ready or d:get("LuaRelationship").source == "core/net/owner" end
+    if not ready then return end
+    spawned = true
     local me = commands:spawn({
         ["zz/me"] = {},
         sidebar = {},
@@ -68,7 +89,7 @@ app:add_systems(Startup, { ResMut[Assets[Mesh]], ResMut[Assets[StandardMaterial]
         ["vr/ui_panels"] = {},
         input = {},
         ["input/mode"] = { mode = "input/game" },
-        ["core/net/local"] = {},
+        ["core/net/owner"] = world_net,
         ["core/net/sync"] = false,
         Transform = {},
         Visibility = "Visible",

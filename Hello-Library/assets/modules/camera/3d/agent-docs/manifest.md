@@ -6,7 +6,7 @@ exposes: [camera/3d, camera/3d/eye, camera/3d/view_of, camera/3d/viewed_by]
 
 # camera/3d
 
-The eye of a 3D camera. Extends `camera` (`base = "camera"`). The local player's carrier gets an eye: a Camera3d child turned to the carrier's `camera` yaw and pitch and placed at `camera/3d.offset` from the carrier. The eye moves with the carrier but does not turn with it (`transform/follow`). Remote carriers get no eye.
+The eye of a 3D camera. Extends `camera` (`base = "camera"`). The local player's carrier gets an eye: a Camera3d child turned to the carrier's `camera` yaw and pitch and placed at `camera/3d.offset` from the carrier. The eye moves with the carrier but does not turn with it (`transform/follow`). Remote carriers get no eye. The local carrier is one in this client's own nets' `core/net/owns`, found on its `core/net/owner` edges.
 
 Another mod can show the carrier's view from somewhere else, such as a fixed camera in the map, by putting `camera/3d/view_of` on that entity. While any such view exists the carrier has no eye; when the last one goes, a fresh eye is spawned. The screen shows the camera added last, so only a new eye takes the screen back.
 
@@ -26,7 +26,7 @@ Camera mods that look through a 3D eye (`camera/first_person`, `camera/third_per
 | First | `camera/3d/spawn` | On the local carrier, spawn the eye already aimed, or turn the existing eye back on. Nothing while the carrier has `camera/3d/viewed_by`, so a reload during a view spawns no eye |
 | First | `camera/3d/yield` | When `camera/3d/viewed_by` is added, despawn the carrier's eye |
 | First | `camera/3d/resume` | When `camera/3d/viewed_by` is removed, spawn a fresh eye, already aimed |
-| First | `camera/3d/teardown` | When the player leaves for another world (`core/net/local` removed), turn the eye off |
+| First | `camera/3d/teardown` | When the player leaves for another world (its `core/net/owner` removed, or no longer one of this client's own nets), turn the eye off |
 | Update | `camera/3d/aim` | When `camera` or `camera/3d` changes, set the eye's `transform/follow` rotation (yaw, then pitch) and offset. The camera mods extending this one order their writers `:before` it |
 
 ## Use

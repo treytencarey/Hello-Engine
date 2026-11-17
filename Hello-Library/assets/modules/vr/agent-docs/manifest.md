@@ -43,5 +43,5 @@ end)
 ## Notes
 
 - A pose is the signal, not the host's VR mode, which this mod never reads: a player with no headset gets no `vr/active`, and a host with VR on and tracking off keeps the desktop camera.
-- The engine forwards `VrInputRaw` and `VrPoseInput` from the host to every world. Only the world holding this client's own player (`core/net/local`) states anything.
+- The engine forwards `VrInputRaw` and `VrPoseInput` from the host to every world. Only the world holding this client's own player (in one of its own nets' `core/net/owns`) states anything.
 - Suites: `vr/tests/test_vr.lua` for the wait on its sync, and `player/vr`'s over a real connection. No headset is involved: they write the messages the engine's VR plugin writes.

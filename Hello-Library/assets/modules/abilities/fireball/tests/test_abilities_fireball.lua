@@ -46,13 +46,15 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
 
     if phase == "spawn" then
         -- High above the ground, facing -Z, with a wall 10 m ahead.
+        -- Its owner, the connection of client 7, as the server holds it.
+        local connection = commands:spawn({ ["core/net/connection"] = { client_id = 7, observer = false }, ["core/net/sync"] = false }):id()
         player_id = commands:spawn({
             ["zz/player"] = {},
             ["abilities/fireball"] = {},
             abilities = { zzother = { key = "KeyE" } },
             Transform = { translation = { x = 0, y = 100, z = 0 } },
             camera = { yaw = 0, pitch = 0 },
-            ["core/net/owner"] = { client_id = 7 },
+            ["core/net/owner"] = connection,
             ["core/net/sync"] = { Transform = { authority = "client" } },
         }):id()
         commands:spawn({

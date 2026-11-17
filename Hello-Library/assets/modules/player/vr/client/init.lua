@@ -4,19 +4,23 @@
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "vr/active", "player/vr", "core/net/local" },
+            added = { "vr/active", "player/vr", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "vr/active", "player/vr", "core/net/local" },
+        with = { "vr/active", "player/vr", "core/net/owner" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(entered, commands)
+}, function(entered, own, commands)
     for _, e in ipairs(entered:iter()) do
-        commands:entity(e:id()):insert_if_new({
-            ["vr/input"] = {},
-            ["vr/pointer"] = {},
-            ["vr/grabbable"] = {},
-            ["vr/ui_panels"] = {},
-        })
+        if own:contains(e:get("core/net/owner")) then
+            commands:entity(e:id()):insert_if_new({
+                ["vr/input"] = {},
+                ["vr/pointer"] = {},
+                ["vr/grabbable"] = {},
+                ["vr/ui_panels"] = {},
+            })
+        end
     end
 end):in_set("player/vr/local")
 

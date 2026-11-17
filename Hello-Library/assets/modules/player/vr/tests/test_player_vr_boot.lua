@@ -71,10 +71,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             ["core/net/sync"] = false,
         })
     end
-    local me = world:query({
-        with = { "player", "core/net/local" },
+    -- This client's player: the one in its own nets' `core/net/owns`.
+    local own = {}
+    for _, n in ipairs(world:query({ with = { "core/net", "core/net/owns" } })) do own[n:id()] = true end
+    local me
+    for _, p in ipairs(world:query({
+        with = { "player", "core/net/owner" },
         optional = { "vr/active", "camera/vr", "camera/third_person" },
-    })[1]
+    })) do
+        if own[p:get("core/net/owner")] then me = p end
+    end
     if me ~= nil then
         ts.c_active = me:has("vr/active")
         ts.c_camera_vr = me:has("camera/vr")

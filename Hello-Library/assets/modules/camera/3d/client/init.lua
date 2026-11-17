@@ -48,24 +48,28 @@ end
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "camera/3d", "camera", "core/net/local" },
+            added = { "camera/3d", "camera", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "camera/3d", "camera", "core/net/local" },
+        with = { "camera/3d", "camera", "core/net/owner" },
         without = { "camera/3d/viewed_by" },
         optional = { "Children" },
     }],
     Query[{
         with = { "camera/3d/eye", Mut["Camera"] },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(carriers, all_eyes, commands)
+}, function(carriers, all_eyes, own, commands)
     for _, e in ipairs(carriers:iter()) do
-        local eyes = all_eyes:iter_many_mut(e:get("Children") or {})
-        for _, old in ipairs(eyes) do
-            old:patch({ Camera = { is_active = true } })
-        end
-        if #eyes == 0 then
-            commands:entity(e:id()):add_child(commands:spawn(eye(e:get("camera"), e:get("camera/3d"))):id())
+        if own:contains(e:get("core/net/owner")) then
+            local eyes = all_eyes:iter_many_mut(e:get("Children") or {})
+            for _, old in ipairs(eyes) do
+                old:patch({ Camera = { is_active = true } })
+            end
+            if #eyes == 0 then
+                commands:entity(e:id()):add_child(commands:spawn(eye(e:get("camera"), e:get("camera/3d"))):id())
+            end
         end
     end
 end):in_set("camera/3d/spawn")
@@ -91,34 +95,42 @@ end):in_set("camera/3d/yield")
 app:add_systems(First, {
     Query[{
         removed = { "camera/3d/viewed_by" },
-        with = { "camera/3d", "camera", "core/net/local" },
+        with = { "camera/3d", "camera", "core/net/owner" },
         without = { "camera/3d/viewed_by" },
         optional = { "Children" },
     }],
     Query[{ with = { "camera/3d/eye" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(released, all_eyes, commands)
+}, function(released, all_eyes, own, commands)
     for _, e in ipairs(released:iter()) do
-        if #all_eyes:iter_many(e:get("Children") or {}) == 0 then
+        if own:contains(e:get("core/net/owner")) and #all_eyes:iter_many(e:get("Children") or {}) == 0 then
             commands:entity(e:id()):add_child(commands:spawn(eye(e:get("camera"), e:get("camera/3d"))):id())
         end
     end
 end):in_set("camera/3d/resume")
 
--- The player left for another world: its eye stops rendering this one.
+-- The player left for another world: its eye stops rendering this one. A carrier still this
+-- client's keeps it.
 app:add_systems(First, {
     Query[{
-        removed = { "core/net/local" },
+        ["or"] = { removed = { "core/net/owner" }, changed = { "core/net/owner" } },
         with = { "camera/3d" },
-        optional = { "Children" },
+        optional = { "Children", "core/net/owner" },
     }],
     Query[{
         with = { "camera/3d/eye", Mut["Camera"] },
     }],
-}, function(carriers, all_eyes)
+    Query[{ with = { "camera/3d" }, optional = { "core/net/owner" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(carriers, all_eyes, live, own)
     for _, e in ipairs(carriers:iter()) do
-        for _, eye in ipairs(all_eyes:iter_many_mut(e:get("Children") or {})) do
-            eye:patch({ Camera = { is_active = false } })
+        local now = live:get(e:id())
+        local owner = now and now:get("core/net/owner")
+        if owner == nil or not own:contains(owner) then
+            for _, eye in ipairs(all_eyes:iter_many_mut(e:get("Children") or {})) do
+                eye:patch({ Camera = { is_active = false } })
+            end
         end
     end
 end):in_set("camera/3d/teardown")

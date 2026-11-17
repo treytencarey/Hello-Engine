@@ -43,11 +43,13 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ Transform = { translation = { x = 0, y = 1, z = -12 } }, RigidBody3d = "Fixed",
         Collider3d = { cuboid = { hx = 30, hy = 5, hz = 0.5 } }, ["core/net/sync"] = false })
     for _, p in ipairs({ { 41, 3, true }, { 42, 10, false } }) do
+        -- Its owner, the client's connection, as the server holds it.
+        local connection = commands:spawn({ ["core/net/connection"] = { client_id = p[1], observer = false }, ["core/net/sync"] = false }):id()
         commands:spawn({
             player = { client_id = p[1], spawn_index = 0 },
             Transform = { translation = { x = p[2], y = 0, z = 0 } },
             camera = { yaw = 0, pitch = 0 },
-            ["core/net/owner"] = { client_id = p[1] },
+            ["core/net/owner"] = connection,
             ["core/net/peer/share"] = p[3] and { stable_id = "player_" .. p[1] } or nil,
             ["core/net/sync"] = {
                 Transform = { authority = "server", reliable = false },

@@ -24,8 +24,15 @@ local VrPoseInput = require("hello::vr_messages::VrPoseInput")
 
 local suite = helpers.create_suite("VrInputSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzvri" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({
         ["zz/player"] = {},
         ["vr/input"] = {},
@@ -41,12 +48,14 @@ app:add_systems(Startup, { Commands }, function(commands)
                 other = { key = "KeyE" },
             },
         },
-        ["core/net/local"] = {},
+        ["core/net/owner"] = world_net,
         ["core/net/sync"] = false,
         Transform = {},
     })
     commands:spawn({
         ["zz/copy"] = {},
+        -- Another client's, as its replica names that client's connection.
+        ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
         ["vr/input"] = {},
         ["core/net/sync"] = false,
         Transform = {},
@@ -190,8 +199,10 @@ step(after(0.3), function(world)
     raw = { a = true, left_stick_y = 1 }
     jump_adds = 0
 end)
--- A real reload, once it is held, and a release after it.
-step(function(world) return me(world):has("input/game/zz/jump") end, function()
+-- A real reload, once it is held, and a release after it. The press's own `added` edge can reach
+-- the counter a frame after the hold is seen, so the count starts once it has.
+step(function(world) return me(world):has("input/game/zz/jump") end, function() end)
+step(after(0.2), function()
     jump_adds = 0
     write_file_bytes("assets/modules/vr/input/init.lua", read_file_bytes("assets/modules/vr/input/init.lua"))
 end)

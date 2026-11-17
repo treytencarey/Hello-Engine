@@ -5,23 +5,26 @@
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "abilities", "core/net/local", "input" },
-            changed = { "abilities" },
+            added = { "abilities", "core/net/owner", "input" },
+            changed = { "abilities", "core/net/owner" },
         },
         -- An ability going changes `abilities`, perhaps as `input` goes too: its bindings go with `input`.
-        with = { "abilities", "core/net/local", "input" },
+        with = { "abilities", "core/net/owner", "input" },
         optional = { "input/game" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(players, commands)
+}, function(players, own, commands)
     for _, e in ipairs(players:iter()) do
-        local bound = (e:get("input/game") or {}).abilities or {}
-        local group = {}
-        for name in pairs(bound) do group[name] = null end
-        for name, a in pairs(e:get("abilities")) do
-            if a.key then group[name] = { key = a.key } end
+        if own:contains(e:get("core/net/owner")) then
+            local bound = (e:get("input/game") or {}).abilities or {}
+            local group = {}
+            for name in pairs(bound) do group[name] = null end
+            for name, a in pairs(e:get("abilities")) do
+                if a.key then group[name] = { key = a.key } end
+            end
+            commands:entity(e:id()):patch({ ["input/game"] = { abilities = group } })
         end
-        commands:entity(e:id()):patch({ ["input/game"] = { abilities = group } })
     end
 end):in_set("abilities/bind")
 
@@ -31,14 +34,15 @@ end):in_set("abilities/bind")
 app:add_systems(First, {
     Query[{
         ["or"] = { removed = { "abilities" } },
-        with = { "core/net/local" },
+        with = { "core/net/owner" },
         optional = { "input" },
     }],
     Query[{ with = { "input/game" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(removed, bound, commands)
+}, function(removed, bound, own, commands)
     for _, e in ipairs(removed:iter()) do
-        if e:has("input") and bound:contains(e:id()) then
+        if e:has("input") and bound:contains(e:id()) and own:contains(e:get("core/net/owner")) then
             commands:entity(e:id()):patch({ ["input/game"] = { abilities = null } })
         end
     end

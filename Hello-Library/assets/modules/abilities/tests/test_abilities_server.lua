@@ -43,13 +43,15 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     local function press(patch) world:get_entity(player_id):patch(patch) end
 
     if phase == "spawn" then
+        -- Its owner, the connection of client 7, as the server holds it.
+        local connection = commands:spawn({ ["core/net/connection"] = { client_id = 7, observer = false }, ["core/net/sync"] = false }):id()
         player_id = commands:spawn({
             ["zz/player"] = {},
             abilities = {
                 zzball = { key = "KeyQ", cooldown = 0.5 },
                 zzslow = { key = "KeyE" },
             },
-            ["core/net/owner"] = { client_id = 7 },
+            ["core/net/owner"] = connection,
             ["core/net/sync"] = { Transform = { authority = "client" } },
         }):id()
         step("declared")

@@ -25,20 +25,40 @@ local VrPoseInput = require("hello::vr_messages::VrPoseInput")
 
 local suite = helpers.create_suite("CameraVrSuite")
 
+-- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzcvr" },
+        ["core/net/sync"] = false,
+    }):id()
+end)
+
+-- The carriers come once the net client has declared ownership: an owner stored before that is
+-- linked when it is declared, with no edge of its own for the camera to see.
+local spawned = false
+app:add_systems(Update, { Query[{ with = { "LuaRelationship" } }], Commands }, function(declared, commands)
+    if spawned then return end
+    local ready = false
+    for _, d in ipairs(declared:iter()) do ready = ready or d:get("LuaRelationship").source == "core/net/owner" end
+    if not ready then return end
+    spawned = true
     commands:spawn({
         ["zz/carrier"] = { name = "me" },
         ["camera/vr"] = {},
         ["vr/input"] = {},
         input = {},
         ["input/mode"] = { mode = "input/game" },
-        ["core/net/local"] = {},
+        ["core/net/owner"] = world_net,
         ["core/net/sync"] = false,
         Transform = { translation = { x = 4, y = 1, z = 2 } },
     })
     commands:spawn({
         ["zz/carrier"] = { name = "copy" },
+        -- Another client's, as its replica names that client's connection.
+        ["core/net/owner"] = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id(),
         ["camera/vr"] = {},
         input = {},
         ["core/net/sync"] = false,
@@ -48,7 +68,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["zz/carrier"] = { name = "together" },
         ["camera/vr"] = {},
         input = {},
-        ["core/net/local"] = {},
+        ["core/net/owner"] = world_net,
         ["core/net/sync"] = false,
         Transform = { translation = { x = 80, y = 1, z = 2 } },
     })
@@ -57,7 +77,7 @@ end)
 local function carrier(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/carrier" },
-        optional = { "camera", "camera/vr", "VmXrRig", "input/game", "Children", "core/net/local", "Transform" },
+        optional = { "camera", "camera/vr", "VmXrRig", "input/game", "Children", "core/net/owner", "Transform" },
     })) do
         if e:get("zz/carrier").name == name then
             return e
@@ -160,13 +180,13 @@ end)
 step(after(0.3), function(world, commands)
     local me = carrier(world, "me")
     suite.assert_test("CV7_and_it_still_follows", close(me:get("VmXrRig").translation.x, 7), tostring(me:get("VmXrRig").translation.x))
-    commands:entity(me:id()):remove("core/net/local")
+    commands:entity(me:id()):remove("core/net/owner")
 end)
 step(after(0.3), function(world, commands)
     local me = carrier(world, "me")
     suite.assert_test("CV8_a_player_gone_elsewhere_has_no_rig", not me:has("VmXrRig"), "")
     suite.assert_test("CV8_and_its_mirror_stops", mirrors_of(world, me)[1]:get("Camera").is_active == false, "")
-    commands:entity(me:id()):insert({ ["core/net/local"] = {} })
+    commands:entity(me:id()):insert({ ["core/net/owner"] = world_net })
 end)
 step(after(0.3), function(world, commands)
     local me = carrier(world, "me")
