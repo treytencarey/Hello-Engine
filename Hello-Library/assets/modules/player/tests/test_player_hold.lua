@@ -14,12 +14,15 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local AssetServer = require("bevy::asset::AssetServer")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerHoldSuite")
+local Net = require("modules/core/net/shared/net.lua")
 local T = suite.assert_test
 
 -- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
 local world_net
 
-app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, commands)
+app:add_systems(Startup, { World, Res[AssetServer], Commands }, function(world, asset_server, commands)
+    -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+    Net.declare_ownership(world, commands)
     world_net = commands:spawn({
         ["core/world/net"] = { mode = "client" },
         ["core/net"] = { mode = "client", name = "zzhold" },

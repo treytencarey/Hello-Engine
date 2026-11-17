@@ -11,6 +11,7 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("AbilitiesClientSuite")
+local Net = require("modules/core/net/shared/net.lua")
 
 -- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
 local world_net
@@ -43,6 +44,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local p = player_id and the_player(world)
 
     if phase == "spawn" then
+        -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+        Net.declare_ownership(world, commands)
         player_id = commands:spawn({
             ["zz/player"] = {},
             ["core/net/owner"] = world_net,

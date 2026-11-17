@@ -2,6 +2,7 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
+local Net = require("modules/core/net/shared/net.lua")
 
 local suite = helpers.create_suite("Camera2dSuite")
 
@@ -83,6 +84,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
+        -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+        Net.declare_ownership(world, commands)
         -- `input` with no mode: no binding is active, so a mouse moved or scrolled while the test
         -- window has focus does not move the camera. The suite writes the zoom itself; the camera
         -- mods bind into `input/game` whatever the mode.

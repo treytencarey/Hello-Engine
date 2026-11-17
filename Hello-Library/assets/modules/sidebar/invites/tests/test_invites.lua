@@ -30,6 +30,7 @@ local helpers = require("modules/core/test_helpers.lua")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local MessageReader = require("bevy::prelude").MessageReader
+local Net = require("modules/core/net/shared/net.lua")
 
 world_id = 7
 
@@ -55,7 +56,9 @@ end
 
 local camera, player, own, other
 
-app:add_systems(Startup, { Commands }, function(commands)
+app:add_systems(Startup, { World, Commands }, function(world, commands)
+    -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+    Net.declare_ownership(world, commands)
     -- What owns this player's entities here, the client's own net entity (its connection lands
     -- there); and another user's connection, as this client holds it.
     own = commands:spawn({

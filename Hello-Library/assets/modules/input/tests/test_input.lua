@@ -3,6 +3,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
+local Net = require("modules/core/net/shared/net.lua")
 
 local suite = helpers.create_suite("InputSuite")
 
@@ -57,6 +58,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local function key(code, state) events[#events + 1] = { "input/synthetic_key", { key_code = code, state = state } } end
 
     if phase == "spawn" then
+        -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+        Net.declare_ownership(world, commands)
         commands:spawn({
             ["zz/player"] = {},
             ["core/net/owner"] = world_net,

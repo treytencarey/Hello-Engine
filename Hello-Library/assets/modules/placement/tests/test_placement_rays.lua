@@ -13,6 +13,7 @@ local Assets = require("bevy::asset::Assets")
 local Mesh = require("bevy::mesh::Mesh")
 local Cuboid = require("bevy::math::primitives::Cuboid")
 local Vec3 = require("bevy::math::Vec3")
+local Net = require("modules/core/net/shared/net.lua")
 
 local suite = helpers.create_suite("PlacementRaysSuite")
 local T = suite.assert_test
@@ -21,7 +22,9 @@ local HAND = { x = 0, y = 1.5, z = 0 }
 local GROUND = { x = 0, y = 0, z = -1.5 }
 local SHELF = { x = 0, y = 0.85, z = -0.65 }
 
-app:add_systems(Startup, { ResMut[Assets[Mesh]], Commands }, function(meshes, commands)
+app:add_systems(Startup, { World, ResMut[Assets[Mesh]], Commands }, function(world, meshes, commands)
+    -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+    Net.declare_ownership(world, commands)
     -- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
     local world_net = commands:spawn({
         ["core/world/net"] = { mode = "client" },

@@ -21,6 +21,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local Quat = require("bevy::math::Quat")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerHandoverClientSuite")
+local Net = require("modules/core/net/shared/net.lua")
 local T = suite.assert_test
 
 local HERE = "github:zzphc/here:main"
@@ -93,6 +94,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
+        -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+        Net.declare_ownership(world, commands)
         commands:spawn({
             player = { client_id = 7, spawn_index = 1 },
             Transform = { translation = { x = 0, y = 50, z = 0 } },

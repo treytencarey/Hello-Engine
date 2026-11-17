@@ -32,6 +32,7 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local Quat = require("bevy::math::Quat")
+local Net = require("modules/core/net/shared/net.lua")
 
 local suite = helpers.create_suite("ScopePortalClientSuite")
 local T = suite.assert_test
@@ -137,6 +138,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
+        -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+        Net.declare_ownership(world, commands)
         -- Turned 0.5 about Y, looking 0.8 to its left and 0.1 down, from 6 m back and 2 m up.
         commands:spawn({ player = { client_id = 7 }, ["core/net/owner"] = world_net, ["core/net/sync"] = false,
             Transform = { translation = { x = 3, y = 1, z = 4 }, rotation = Quat.from_rotation_y(0.5) },

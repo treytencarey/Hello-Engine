@@ -5,6 +5,7 @@ local helpers = require("modules/core/test_helpers.lua")
 local Instances = require("modules/core/instances.lua")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
+local Net = require("modules/core/net/shared/net.lua")
 
 local suite = helpers.create_suite("SidebarSuite")
 
@@ -124,6 +125,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local me = player(world, "me")
 
     if phase == "spawn" then
+        -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+        Net.declare_ownership(world, commands)
         commands:spawn({
             ["zz/player"] = { name = "me" },
             ["core/net/owner"] = own_net,

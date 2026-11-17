@@ -53,10 +53,13 @@ require("modules/core/net/server/init.lua")
 require("modules/core/mod_registry/init.lua")
 local Instances = require("modules/core/instances.lua")
 local helpers = require("modules/core/test_helpers.lua")
+local Net = require("modules/core/net/shared/net.lua")
 
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("PlayerVrNetState", boot.DEFAULTS)
-app:add_systems(Startup, { Commands }, function(commands)
+app:add_systems(Startup, { World, Commands }, function(world, commands)
+    -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+    Net.declare_ownership(world, commands)
     commands:spawn({
         ["core/world/net"] = { mode = "server", name = "zzvr", port = boot.PORT },
         ["core/net"] = { mode = "server", name = "zzvr", port = boot.PORT },

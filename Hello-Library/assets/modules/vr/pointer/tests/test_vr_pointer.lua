@@ -15,6 +15,7 @@ local helpers = require("modules/core/test_helpers.lua")
 local bevy = require("bevy::prelude")
 local Quat = require("bevy::math::Quat")
 local VrPoseInput = require("hello::vr_messages::VrPoseInput")
+local Net = require("modules/core/net/shared/net.lua")
 
 local suite = helpers.create_suite("VrPointerSuite")
 local T = suite.assert_test
@@ -22,7 +23,9 @@ local T = suite.assert_test
 -- This client's world net, unconnected: what it owns here is in its `core/net/owns`.
 local world_net
 
-app:add_systems(Startup, { Commands }, function(commands)
+app:add_systems(Startup, { World, Commands }, function(world, commands)
+    -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+    Net.declare_ownership(world, commands)
     world_net = commands:spawn({
         ["core/world/net"] = { mode = "client" },
         ["core/net"] = { mode = "client", name = "zzvrp" },
