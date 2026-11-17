@@ -732,12 +732,10 @@ app:add_systems(Update, {
             "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
         },
     }],
-    Query[{ with = { "core/world/presence", "WorldMirror" } }],
-    Query[{ with = { "core/world/status", "WorldMirror" } }],
     Query[{ with = { "scope/portal", "core/net/local" }, without = { "placement" } }],
     Commands,
-}, function(views, carriers, scrolls, rows, texts, asks, statuses, flips, pulls, locked, standing, row_asks, presences,
-            others, placed, commands)
+}, function(views, carriers, scrolls, rows, texts, asks, statuses, flips, pulls, locked, standing, row_asks,
+            placed, commands)
     local view = views:iter_mut()[1]
     local carrier = carriers:iter()[1]
     local parts = view and scrolls:iter_descendants(view:id()) or {}
@@ -830,30 +828,25 @@ app:add_systems(Update, {
 
         -- SESSIONS: root's list of the registry's sessions, and the worlds root holds for this player.
         local my_root = me and me:get("core/world/status").scope_root
+        -- `held` is root's word for the worlds Stop on this PC counts as held, so a held line shows
+        -- exactly where Stop is not refused `not-held`.
         local sessions, list_error, site_user = nil, nil, nil
+        local holds = {}
         for _, ask in ipairs(standing:iter_many(carrier:get("Children") or {})) do
             if ask:has("core/registry/sessions") then
                 local said = opt(ask, "core/registry/sessions/reply")
-                if said ~= nil then sessions, list_error = said.sessions or {}, said.error end
+                if said ~= nil then
+                    sessions, list_error = said.sessions, said.error
+                    for _, h in ipairs(said.held or {}) do
+                        if type(h) == "table" and h.scope ~= nil then
+                            holds[h.scope] = h.playing and "playing" or "background"
+                        end
+                    end
+                end
                 for _, s in ipairs(standing:iter_many(ask:get("Children") or {})) do
                     local who = opt(s, "core/player/session/signin/reply")
                     if who ~= nil and who.user ~= nil then site_user = who.user end
                 end
-            end
-        end
-        -- Root holds a world while its own presence for the scope says play or watch and the world's
-        -- client row is up: a presence stays after its world stops. Any world can share a presence.
-        local up = {}
-        if scope ~= nil then up[scope] = true end
-        for _, r in ipairs(others:iter()) do
-            local row = r:get("core/world/status")
-            if (row.mode or "client") == "client" and row.scope_key ~= nil then up[row.scope_key] = true end
-        end
-        local holds = {}
-        for _, p in ipairs(presences:iter()) do
-            local pr = p:get("core/world/presence")
-            if p:get("WorldMirror").world_id == 0 and pr.observer ~= nil and up[pr.scope_key] then
-                holds[pr.scope_key] = pr.observer and "background" or "playing"
             end
         end
         local world_rows, listed_scope = {}, {}
@@ -1423,14 +1416,12 @@ end):in_set("git/panel/render"):after("git/panel"):run_if({
                 "core/registry/sessions/reply", "core/player/session/signin/reply",
                 "core/registry/despawn", "core/world/unload", "core/world/restart",
                 "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
-                "core/world/presence", "core/world/status",
             },
             changed = {
                 "core/registry/sessions/reply", "core/player/session/signin/reply",
                 "core/registry/despawn/reply", "core/world/unload/reply", "core/world/restart/reply",
-                "core/world/presence",
             },
-            removed = { "core/registry/despawn", "core/world/unload", "core/world/restart", "core/world/status" },
+            removed = { "core/registry/despawn", "core/world/unload", "core/world/restart" },
         },
     }],
     Query[{
@@ -1440,8 +1431,8 @@ end):in_set("git/panel/render"):after("git/panel"):run_if({
         },
     }],
 }, function(views, scrolls, asks, flips, statuses, pulls, locks, sessions, portals)
-    -- Root's replies, its presences, the flip asks and the worlds' rows cross from other VMs, and a
-    -- mirrored edge arrives as surely as a local one, so their edges are all this waits on.
+    -- Root's replies and the flip asks cross from root's VM, and a mirrored edge arrives as surely as
+    -- a local one, so their edges are all this waits on.
     return not views:is_empty() and (not scrolls:is_empty() or not asks:is_empty() or not flips:is_empty()
         or not statuses:is_empty() or not pulls:is_empty() or not locks:is_empty() or not sessions:is_empty()
         or not portals:is_empty())

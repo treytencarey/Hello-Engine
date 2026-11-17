@@ -9,9 +9,9 @@
 -- W6  signed out of the Site there is no "X"; signed in, "X" only on rows of this world's repository
 -- W4  "X" arms as "sure?"; a second click asks root for one despawn; an arm lapses after 5 s
 -- W5  a refused despawn says why on its row, and 10 s later its ask goes
--- W7  a world root holds is listed with "background" or "playing", Stop and Restart, a held world
---     not on the registry's list getting a row of its own; a presence another world shares, or one
---     for a world whose row is gone, lists nothing
+-- W7  a world root's sessions reply says it holds is listed with "background" or "playing", Stop and
+--     Restart, a held world not on the registry's list getting a row of its own; nothing else (a
+--     presence of root's, a world's row) makes a world held
 -- W8  Stop asks root to stop the world here, in place of an earlier ask; each refusal in the row's
 --     own words; done closes the ask
 -- W9  Restart asks root, reads "..." while restarting, and done closes the ask
@@ -289,18 +289,15 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("W5_and_10_s_later_its_ask_goes", #asks(world, "core/registry/despawn") == 0
             and not has_text(shown, "⚠ despawn refused: zz-no") and next(state_of(world).refused or {}) == nil,
             tostring(#asks(world, "core/registry/despawn")))
-        -- Root's presences, and the worlds' rows as they reach this world.
-        for _, p in ipairs({
-            { scope = HERE, observer = false, from = 0 }, { scope = BG, observer = true, from = 0 },
-            { scope = FORGED, observer = true, from = 5 }, { scope = GONE, observer = true, from = 0 },
-        }) do
-            commands:spawn({ ["core/world/presence"] = { scope_key = p.scope, observer = p.observer },
-                WorldMirror = { world_id = p.from }, ["core/net/sync"] = false })
-        end
-        for _, s in ipairs({ BG, FORGED }) do
-            commands:spawn({ ["core/world/status"] = { scope_key = s, mode = "client", status = "ready" },
-                WorldMirror = { world_id = 9 }, ["core/net/sync"] = false })
-        end
+        -- Root says what it holds on the sessions reply. A presence of root's for a world it doesn't
+        -- list, with that world's row here, is no word that it holds it.
+        reply(commands, sessions_ask(world).id, "core/registry/sessions/reply", { sessions = LIST, held = {
+            { scope = BG, playing = false }, { scope = HERE, playing = true },
+        } })
+        commands:spawn({ ["core/world/presence"] = { scope_key = GONE, observer = true },
+            WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
+        commands:spawn({ ["core/world/status"] = { scope_key = GONE, mode = "client", status = "ready" },
+            WorldMirror = { world_id = 9 }, ["core/net/sync"] = false })
         step("held")
 
     elseif phase == "held" and has_text(shown, "zzpanel/world:bg") and clock > 0.3 then
@@ -309,8 +306,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             and has_text(row_texts(world, "zzpanel/world:bg", 1), "■ Stop")
             and has_text(row_texts(world, "zzpanel/world:bg", 1), "↻ Restart"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
         T("W7_the_world_played_reads_playing", has_text(row_texts(world, "● zzpanel/world:main", 1), "playing"), (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
-        T("W7_a_shared_presence_or_one_for_a_stopped_world_lists_nothing",
-            not has_text(shown, "zzpanel/world:forged") and not has_text(shown, "zzpanel/world:gone"))
+        T("W7_only_root_s_held_list_says_a_world_is_held", not has_text(shown, "zzpanel/world:gone"))
         T("W7_no_held_line_on_a_world_root_does_not_hold",
             not has_text(row_texts(world, "zzother/elsewhere:main", 1), "■ Stop"))
         click(commands, button_in(world, "● zzpanel/world:main", "■ Stop", 1))
