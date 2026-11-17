@@ -27,7 +27,7 @@ Top-down 2D walking. The owning client moves its own body from input; every othe
 | Schedule | Set | Purpose |
 |----------|-------|---------|
 | First (both) | `movement/2d/init` | On an added `movement/2d` with no `Velocity2d`, add one |
-| First (client) | `movement/2d/bind` | When the body is this client's (`core/net/local` arrives frames after it), bind its keys; again when `input` is added back |
+| First (client) | `movement/2d/bind` | When the body is this client's (in one of its own nets' `core/net/owns`, on the owner's `added` or `changed` edge, which can come after the body), bind its keys; again when `input` is added back |
 | First (client) | `movement/2d/shadow` | For another client's body, seed the shadow its Transform arrives in |
 | Update (client) | `movement/2d/walk` | Polls while it moves: with a key held (`any_of`), the velocity eases toward the keys' direction at `speed`; with none, it eases to rest and writes no more |
 | Update (client) | `movement/2d/follow` | Polls: another client's body eases toward its synced Transform |

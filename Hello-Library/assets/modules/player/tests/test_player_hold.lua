@@ -16,8 +16,15 @@ local AssetServer = require("bevy::asset::AssetServer")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerHoldSuite")
 local T = suite.assert_test
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzhold" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({
         ["zz/scene"] = {},
         SceneRoot = asset_server:load("modules/player/spawner/tests/fixtures/zz_scene.gltf#Scene0"),
@@ -45,7 +52,7 @@ local function arrive(commands, name, claim, at, owned)
         LockedAxes3d = "ROTATION_LOCKED",
         Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
         camera = { yaw = 0 },
-        ["core/net/local"] = owned and {} or nil,
+        ["core/net/owner"] = owned and world_net or nil,
         ["core/net/sync"] = false,
     })
 end

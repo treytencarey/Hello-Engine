@@ -22,7 +22,12 @@ local GROUND = { x = 0, y = 0, z = -1.5 }
 local SHELF = { x = 0, y = 0.85, z = -0.65 }
 
 app:add_systems(Startup, { ResMut[Assets[Mesh]], Commands }, function(meshes, commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    -- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+    local world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzpr" },
+        ["core/net/sync"] = false,
+    }):id()
     -- Off the ray until R2 moves it onto it.
     commands:spawn({
         ["zz/pr/shelf"] = {},
@@ -42,7 +47,7 @@ app:add_systems(Startup, { ResMut[Assets[Mesh]], Commands }, function(meshes, co
     commands:spawn({
         ["zz/pr/me"] = {},
         input = {},
-        ["core/net/local"] = {},
+        ["core/net/owner"] = world_net,
         ["vr/pointer/ray"] = { origin = HAND, direction = Vec3.normalize(Vec3.sub(GROUND, HAND)) },
         Transform = {},
         ["core/net/sync"] = false,
@@ -50,7 +55,7 @@ app:add_systems(Startup, { ResMut[Assets[Mesh]], Commands }, function(meshes, co
     commands:spawn({
         ["zz/pr/placed"] = {},
         placement = {},
-        ["core/net/local"] = {},
+        ["core/net/owner"] = world_net,
         Transform = { translation = { x = 5, y = 0, z = 5 } },
         ["core/net/sync"] = false,
     })

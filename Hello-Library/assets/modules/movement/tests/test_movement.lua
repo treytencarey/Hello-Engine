@@ -6,8 +6,15 @@ local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("MovementSuite")
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzmove" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
 end)
 
@@ -79,7 +86,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local game = named(world, "me"):get("input/game") or {}
         suite.assert_test("V0b_nothing_is_bound_before_the_player_is_ours", game.movement == nil, "")
         -- The player mod turns its body dynamic then; `movement` leaves this client's own body alone.
-        named(world, "me"):patch({ ["core/net/local"] = {}, RigidBody3d = "Dynamic" })
+        named(world, "me"):patch({ ["core/net/owner"] = world_net, RigidBody3d = "Dynamic" })
         step("standing")
 
     elseif phase == "standing" and clock > 1.0 then

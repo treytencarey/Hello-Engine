@@ -50,5 +50,5 @@ end)
 - Read it in `Update` or later, never in `First`, where it is written.
 - `collision_trigger` holds only the latest change. A consumer that misses a run still sees `inside`, but not every entry and exit in between.
 - `entered`, `exited` and `inside` hold entity values: compare one with `==` to an `id()`.
-- A fixed trigger sees every kinematic body too: on a client, other players walk in as well as this client's own, so a consumer that cares only for its own player filters for it (`core/net/local`).
+- A fixed trigger sees every kinematic body too: on a client, other players walk in as well as this client's own, so a consumer that cares only for its own player filters for it (its `core/net/owner` one of this client's own nets, `Query[{ with = { "core/net", "core/net/owns" } }]`, through `contains`).
 - Suite: `tests/test_collision_trigger.lua`, headless, with real Rapier bodies: T1-T3 entries and exits of dynamic bodies, never a mirror; T4-T5 removal and despawn; T6-T8 a trigger with its own list, through a reload; T9 a kinematic body moved by its Transform into a fixed trigger enters it. A starting `inside` is covered by `scope/portal`'s suites (a portal dropped on a player, a door spawned around one).

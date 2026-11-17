@@ -1,22 +1,40 @@
 -- The client half: the owner's body walks in the plane, once the player mod has turned it
 -- dynamic; others' bodies follow their synced Transform. Input is the `input/game.movement_2d`
--- group: an action is held while its component exists. A 2D body never turns. The net client
--- marks its own player `core/net/local` frames after the player arrives, so both edges count.
+-- group: an action is held while its component exists. A 2D body never turns. This client's own
+-- body is one in its own nets' `core/net/owns`: an owner can come after the body, so both edges
+-- count.
 
 local Vec2 = require("bevy::math::Vec2")
 local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")
 
+--- The rows of `q` this client owns, writable: those in its own nets' `core/net/owns`.
+local function owned_mut(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+--- Is the row's owner one of this client's own nets? Its owner column must be named.
+local function mine(own, row)
+    local owner = row:get("core/net/owner")
+    return owner ~= nil and own:contains(owner)
+end
+
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "movement/2d", "core/net/local", "input" },
+            added = { "movement/2d", "core/net/owner", "input" },
+            changed = { "core/net/owner" },
         },
-        with = { "movement/2d", "core/net/local", "input" },
+        with = { "movement/2d", "core/net/owner", "input" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(owned, commands)
-    for _, e in ipairs(owned:iter()) do
+}, function(bodies, own, commands)
+    for _, e in ipairs(bodies:iter()) do
+        if not mine(own, e) then goto next_body end
         commands:entity(e:id()):patch({
             ["input/game"] = {
                 movement_2d = {
@@ -27,6 +45,7 @@ app:add_systems(First, {
                 },
             },
         })
+        ::next_body::
     end
 end):in_set("movement/2d/bind")
 
@@ -36,12 +55,16 @@ app:add_systems(First, {
     Query[{
         added = { "movement/2d" },
         with = { "Transform" },
-        without = { "core/net/local", "core/net/sync/Transform" },
+        without = { "core/net/sync/Transform" },
+        optional = { "core/net/owner" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(others, commands)
+}, function(others, own, commands)
     for _, e in ipairs(others:iter()) do
-        commands:entity(e:id()):insert({ ["core/net/sync/Transform"] = e:get("Transform") })
+        if not mine(own, e) then
+            commands:entity(e:id()):insert({ ["core/net/sync/Transform"] = e:get("Transform") })
+        end
     end
 end):in_set("movement/2d/shadow")
 
@@ -60,10 +83,10 @@ app:add_systems(Update, {
             "input/game/movement_2d/left",
             "input/game/movement_2d/right",
         },
-        with = { "movement/2d", "core/net/local", Mut["Velocity2d"] },
+        with = { "movement/2d", Mut["Velocity2d"] },
     }],
     Query[{
-        with = { "movement/2d", "core/net/local", Mut["Velocity2d"] },
+        with = { "movement/2d", Mut["Velocity2d"] },
         without = {
             "input/game/movement_2d/up",
             "input/game/movement_2d/down",
@@ -71,9 +94,10 @@ app:add_systems(Update, {
             "input/game/movement_2d/right",
         },
     }],
-}, function(time, walkers, coasters)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(time, walkers, coasters, own)
     local dt = time:delta_secs()
-    for _, e in ipairs(walkers:iter_mut()) do
+    for _, e in ipairs(owned_mut(own, walkers)) do
         local m = e:get("movement/2d")
         local up = e:get("input/game/movement_2d/up")
         local down = e:get("input/game/movement_2d/down")
@@ -93,7 +117,7 @@ app:add_systems(Update, {
             },
         })
     end
-    for _, e in ipairs(coasters:iter_mut()) do
+    for _, e in ipairs(owned_mut(own, coasters)) do
         local linvel = e:get("Velocity2d").linvel
         if linvel.x ~= 0 or linvel.y ~= 0 then
             local m = e:get("movement/2d")
@@ -112,11 +136,13 @@ app:add_systems(Update, {
     Res[Time],
     Query[{
         with = { "movement/2d", "core/net/sync/Transform", Mut["Transform"] },
-        without = { "core/net/local" },
+        optional = { "core/net/owner" },
     }],
-}, function(time, others)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(time, others, own)
     local dt = time:delta_secs()
     for _, e in ipairs(others:iter_mut()) do
+        if mine(own, e) then goto next_other end
         local m = e:get("movement/2d")
         local target = e:get("core/net/sync/Transform")
         local current = e:get("Transform")
@@ -125,6 +151,7 @@ app:add_systems(Update, {
                 translation = Vec3.lerp(current.translation, target.translation, math.min(1, m.smoothing * dt)),
             },
         })
+        ::next_other::
     end
 end):in_set("movement/2d/follow")
 

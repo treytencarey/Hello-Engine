@@ -120,7 +120,6 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["input/ui"] = { zz = { esc = { key = "Escape" } } },
         ["vr/input"] = {},
         ["vr/pointer"] = { pitch = 0, yaw = 0 },
-        ["core/net/local"] = {},
         ["core/net/sync"] = false,
         Transform = {},
     }):id()
@@ -147,11 +146,15 @@ app:add_systems(Update, {
 }, function(nets, players, placed, escapes, commands)
     if ts.srv_ready and not joined then
         joined = true
-        commands:spawn({
+        local net = commands:spawn({
             ["core/world/net"] = { mode = "client", name = "zzpl_c", ip = "127.0.0.1", port = boot.PORT },
             ["core/net"] = { mode = "client", name = "zzpl_c", ip = "127.0.0.1", port = boot.PORT },
             ["core/net/sync"] = false,
-        })
+        }):id()
+        -- This client's player, as the server's lands: owned by its connection, its net entity.
+        for _, me in ipairs(players:iter()) do
+            commands:entity(me:id()):insert({ ["core/net/owner"] = net })
+        end
     end
     for _, n in ipairs(nets:iter()) do
         ts.c_connected = n:get("core/net/state").connected == true

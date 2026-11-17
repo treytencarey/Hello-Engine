@@ -1,5 +1,5 @@
 -- --host
--- The local player on a client, handed to another world: the net client takes `core/net/local`
+-- The local player on a client, handed to another world: the net client takes its `core/net/owner`
 -- off when the server demotes the player, and the entity stays, moved by what the server sends.
 -- Then this client world as the target of a predicted crossing, still only watching: root is
 -- stubbed by its ask as it arrives here, an entity carrying `WorldMirror { world_id = 0 }`; a
@@ -43,7 +43,7 @@ app:add_systems(Startup, { Commands }, function(commands)
 end)
 
 local function me(world)
-    return world:query({ with = { "zz/phc/me" }, optional = { "RigidBody3d", "Velocity3d", "core/net/local", "player" } })[1]
+    return world:query({ with = { "zz/phc/me" }, optional = { "RigidBody3d", "Velocity3d", "core/net/owner", "player" } })[1]
 end
 
 -- The stand-ins here, and the first.
@@ -51,7 +51,7 @@ local function standins(world)
     local out = world:query({
         with = { "player/spawner/standin" },
         without = { "core/world/flip" },
-        optional = { "player", "Transform", "camera", "core/net/local", "core/net/sync", "RigidBody3d", "Collider3d",
+        optional = { "player", "Transform", "camera", "core/net/owner", "core/net/sync", "RigidBody3d", "Collider3d",
             "movement", "camera/third_person" },
     })
     return out, out[1]
@@ -100,7 +100,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
             LockedAxes3d = "ROTATION_LOCKED",
             Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
-            ["core/net/local"] = true,
+            ["core/net/owner"] = world_net,
             ["core/net/sync"] = false,
             ["zz/phc/me"] = {},
         })
@@ -114,7 +114,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("moving")
 
     elseif phase == "moving" and clock > 0.2 then
-        commands:entity(me(world):id()):remove("core/net/local")
+        commands:entity(me(world):id()):remove("core/net/owner")
         step("handed")
 
     elseif phase == "handed" and clock > 0.3 then
@@ -154,7 +154,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         -- there is turned pi/2 + 0.5, and the look 0.8 to its left is pi/2 + 1.3.
         T("HS3_once_the_place_lands_it_stands_there_turned_with_the_whole_camera_local_and_never_synced",
             #all == 1 and s:has("player") and s:get("RigidBody3d") == "Dynamic" and s:has("Collider3d")
-                and s:has("movement") and s:has("camera/third_person") and s:has("core/net/local")
+                and s:has("movement") and s:has("camera/third_person") and s:get("core/net/owner") == world_net
                 and s:get("core/net/sync") == false
                 and near(at.x, 12) and near(at.z, 3) and near(yaw_of(t.rotation), math.pi / 2 + 0.5)
                 and near(cam.yaw, math.pi / 2 + 1.3) and near(cam.pitch, -0.1) and cam.distance == 6 and cam.height == 2,

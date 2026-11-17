@@ -16,7 +16,7 @@
 --   C5  a switch on this client's player asks one plain flip to its target, with no prediction
 --   C12 a switch on another entity asks none, nor one on a player that is not this client's
 --   C13 the switch written again (the next crossing; the copy here keeps the last) asks again
---   C15 the switch and the player's demotion (`core/net/local` taken off) landing in the same frame,
+--   C15 the switch and the player's demotion (its `core/net/owner` taken off) landing in the same frame,
 --       as the net client applies them in `First`, ask one plain flip
 --   C14 a reload of this half, with the last switch still on a player handed over (no longer this
 --       client's), asks nothing
@@ -50,8 +50,15 @@ local STALE = "github:zzportalc/stale:main"
 local LATE = "github:zzportalc/late:main"
 local CLIENT_SOURCE = "assets/modules/scope/portal/client/init.lua"
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzpc" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({
         ["core/world/status"] = { scope_key = HERE, mode = "client", status = "ready", observer = false },
         WorldShared = {},
@@ -121,7 +128,7 @@ app:add_systems(First, { World, Commands }, function(world, commands)
         demote_late = false
         local late = named(world, "zz/pc/h", "late"):id()
         commands:entity(late):insert({ ["core/net/peer/switch"] = { target_scope = LATE } })
-        commands:entity(late):remove("core/net/local")
+        commands:entity(late):remove("core/net/owner")
     end
 end):in_set("zz/portal_client_net"):after("scope/portal/client")
 
@@ -131,14 +138,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     if phase == "spawn" then
         -- Turned 0.5 about Y, looking 0.8 to its left and 0.1 down, from 6 m back and 2 m up.
-        commands:spawn({ player = { client_id = 7 }, ["core/net/local"] = true, ["core/net/sync"] = false,
+        commands:spawn({ player = { client_id = 7 }, ["core/net/owner"] = world_net, ["core/net/sync"] = false,
             Transform = { translation = { x = 3, y = 1, z = 4 }, rotation = Quat.from_rotation_y(0.5) },
             camera = { yaw = 1.3, pitch = -0.1, distance = 6, height = 2 },
             ["zz/pc/h"] = { name = "me" } })
         -- This client's player once, handed over since, as the switch will find it.
-        commands:spawn({ player = { client_id = 7 }, ["core/net/local"] = true, ["core/net/sync"] = false,
+        commands:spawn({ player = { client_id = 7 }, ["core/net/owner"] = world_net, ["core/net/sync"] = false,
             ["zz/pc/h"] = { name = "gone" } })
-        commands:spawn({ player = { client_id = 7 }, ["core/net/local"] = true, ["core/net/sync"] = false,
+        commands:spawn({ player = { client_id = 7 }, ["core/net/owner"] = world_net, ["core/net/sync"] = false,
             ["zz/pc/h"] = { name = "late" } })
         commands:spawn({ player = { client_id = 8 }, ["core/net/sync"] = false,
             Transform = { translation = { x = -3, y = 1, z = 4 } }, ["zz/pc/h"] = { name = "them" } })
@@ -218,9 +225,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local pr, nr = asks(world, REMOTE)
         T("C12_a_switch_on_another_entity_or_a_player_not_this_client_s_asks_none", p12 + n12 + pr + nr == 0,
             string.format("other entity=%d not this client's=%d", p12 + n12, pr + nr))
-        -- The player handed over: the net client takes `core/net/local` off it, and the switch it
+        -- The player handed over: the net client takes its `core/net/owner` off it, and the switch it
         -- followed stays on its copy here.
-        commands:entity(named(world, "zz/pc/h", "gone"):id()):remove("core/net/local")
+        commands:entity(named(world, "zz/pc/h", "gone"):id()):remove("core/net/owner")
         commands:entity(named(world, "zz/pc/h", "me"):id()):insert({
             ["core/net/peer/switch"] = { target_scope = SWITCHED, link = "peer_to_" .. SWITCHED },
         })

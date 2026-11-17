@@ -47,6 +47,11 @@ local OTHER = "github:zzportal/other:main"
 local FOURTH = "github:zzportal/fourth:main"
 local THIRD = "github:zzportal/third:main"
 
+--- A client's connection, as the net server spawns one: it owns that client's player.
+local function connection(commands, client_id)
+    return commands:spawn({ ["core/net/connection"] = { client_id = client_id, observer = false }, ["core/net/sync"] = false }):id()
+end
+
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
     commands:spawn({
@@ -232,7 +237,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             }) do
                 commands:spawn({
                     player = { client_id = h[2], spawn_index = 0 },
-                    ["core/net/owner"] = { client_id = h[2] },
+                    ["core/net/owner"] = connection(commands, h[2]),
                     ["core/net/peer/share"] = h[3] and { stable_id = "player_" .. h[2] } or nil,
                     ["core/net/peer/mirror"] = h[4] and { stable_id = "player_" .. h[2] } or nil,
                     ["core/net/sync"] = false,
@@ -242,7 +247,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             -- Cooling as a handed player arrives: a `cooldown` timer, which `cooldown` turns into the mark.
             commands:spawn({
                 player = { client_id = 21, spawn_index = 0 },
-                ["core/net/owner"] = { client_id = 21 },
+                ["core/net/owner"] = connection(commands, 21),
                 ["core/net/peer/share"] = { stable_id = "player_21" },
                 cooldown = { ["scope/portal/cooling"] = { remaining = 3 } },
                 ["core/net/sync"] = false,
@@ -348,7 +353,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         commands:spawn({
             player = { client_id = 22, spawn_index = 0 },
-            ["core/net/owner"] = { client_id = 22 },
+            ["core/net/owner"] = connection(commands, 22),
             ["core/net/peer/share"] = { stable_id = "player_22" },
             Transform = { translation = { x = 30, y = 0, z = 0 } },
             RigidBody3d = "KinematicPositionBased",
@@ -376,7 +381,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 tostring(switched.hd)))
         commands:spawn({
             player = { client_id = 23, spawn_index = 0 },
-            ["core/net/owner"] = { client_id = 23 },
+            ["core/net/owner"] = connection(commands, 23),
             ["core/net/peer/share"] = { stable_id = "player_23" },
             Transform = { translation = { x = 30, y = 0, z = 0 } },
             RigidBody3d = "KinematicPositionBased",
@@ -407,7 +412,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P22_walking_out_and_back_in_hands_it_over", switched.hd == OTHER, tostring(switched.hd))
         commands:spawn({
             player = { client_id = 24, spawn_index = 0 },
-            ["core/net/owner"] = { client_id = 24 },
+            ["core/net/owner"] = connection(commands, 24),
             ["core/net/peer/share"] = { stable_id = "player_24" },
             Transform = { translation = { x = 50, y = 0, z = 0 } },
             RigidBody3d = "KinematicPositionBased",

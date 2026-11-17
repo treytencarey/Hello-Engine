@@ -20,8 +20,15 @@ local helpers = require("modules/core/test_helpers.lua")
 
 local suite = helpers.create_suite("Movement2dSuite")
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzmove2d" },
+        ["core/net/sync"] = false,
+    }):id()
     -- As `player/2d/spawner` sends a body: kinematic, with its collider.
     commands:spawn({
         ["zz/name"] = { name = "me" },
@@ -92,7 +99,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("M0_nothing_happens_before_the_player_is_ours",
             (me:get("input/game") or {}).movement_2d == nil and me:get("RigidBody2d") == "KinematicPositionBased",
             tostring(me:get("RigidBody2d")))
-        me:patch({ ["core/net/local"] = {} })
+        me:patch({ ["core/net/owner"] = world_net })
         step("standing")
 
     elseif phase == "standing" and clock > 0.5 then

@@ -38,8 +38,15 @@ end
 
 local camera, player
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzfly" },
+        ["core/net/sync"] = false,
+    }):id()
     camera = commands:spawn({ ["zz/camera"] = {} }):id()
     commands:spawn({
         ["zz/floor"] = {},
@@ -142,7 +149,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     -- The net client marks its own player local frames after it arrives; the world's client half
     -- adds flight to it.
     if phase == "arrived" and clock > 0.3 then
-        commands:entity(player):insert({ ["core/net/local"] = {}, ["movement/fly"] = {} })
+        commands:entity(player):insert({ ["core/net/owner"] = world_net, ["movement/fly"] = {} })
         step("bound")
 
     elseif phase == "bound" and clock > 0.5 then

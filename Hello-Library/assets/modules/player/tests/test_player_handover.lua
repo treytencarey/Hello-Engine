@@ -47,6 +47,13 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 end)
 
+--- The connection of `client_id`, which owns its client's player.
+local function connection_of(world, client_id)
+    for _, c in ipairs(world:query({ with = { "core/net/connection" } })) do
+        if c:get("core/net/connection").client_id == client_id then return c:id() end
+    end
+end
+
 local function player_of(world, client_id)
     for _, p in ipairs(world:query({
         with = { "player", "core/net/owner" },
@@ -55,7 +62,7 @@ local function player_of(world, client_id)
             "cooldown", "scope/portal/cooling",
         },
     })) do
-        if p:get("core/net/owner").client_id == client_id then return p end
+        if p:get("core/net/owner") == connection_of(world, client_id) then return p end
     end
 end
 
@@ -246,7 +253,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         })
         local p
         for _, e in ipairs(seven) do
-            if e:get("core/net/owner").client_id == 7 then p = e end
+            if e:get("core/net/owner") == connection_of(world, 7) then p = e end
         end
         local cam = p and p:get("camera") or {}
         T("H11_back_in_place_the_camera_stays_whole_its_yaw_the_look_turned_by_the_facing_and_the_look_goes",

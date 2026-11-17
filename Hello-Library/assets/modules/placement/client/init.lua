@@ -5,6 +5,9 @@
 --
 -- placement = {}: on the placed entity, synced with client authority, as is its Transform
 --
+-- What this client owns is what its own nets' `core/net/owns` list: the placed entity (a
+-- prediction, owned by the world net) and its player.
+--
 -- Bindings, on this client's player while it owns a placing entity:
 -- input/ui.placement = { confirm = { button = "Left" }, cancel = { key = "Escape", button = "Right", take = true } }
 
@@ -12,28 +15,56 @@ local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
 local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
 local Vec3 = require("bevy::math::Vec3")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+local function owned_mut(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+--- The rows of `q` (its owner named) that belong to this client.
+local function mine(own, q)
+    local out = {}
+    for _, e in ipairs(q:iter()) do
+        local owner = e:get("core/net/owner")
+        if owner ~= nil and own:contains(owner) then out[#out + 1] = e end
+    end
+    return out
+end
+
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "placement", "core/net/local" },
+            added = { "placement", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "placement", "core/net/local" },
+        with = { "placement", "core/net/owner" },
     }],
     Query[{
         ["or"] = {
-            added = { "input", "core/net/local" },
+            added = { "input", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "input", "core/net/local" },
+        with = { "input", "core/net/owner" },
     }],
-    Query[{ with = { "placement", "core/net/local" } }],
-    Query[{ with = { "input", "core/net/local" } }],
+    Query[{ with = { "placement" } }],
+    Query[{ with = { "input" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(started, arrived, placing, players, commands)
-    local binding = arrived:iter()
-    if not started:is_empty() then
-        binding = players:iter()
+}, function(started, arrived, placing, players, own, commands)
+    local binding = mine(own, arrived)
+    if #mine(own, started) > 0 then
+        binding = owned(own, players)
     end
-    if placing:is_empty() then
+    if #owned(own, placing) == 0 then
         binding = {}
     end
     for _, e in ipairs(binding) do
@@ -50,13 +81,14 @@ end):in_set("placement/bind")
 -- never seen by the mode's other bindings of it.
 app:add_systems(First, {
     Query[{ removed = { "placement" } }],
-    Query[{ with = { "placement", "core/net/local" } }],
-    Query[{ with = { "input", "input/ui", "core/net/local" } }],
+    Query[{ with = { "placement" } }],
+    Query[{ with = { "input", "input/ui" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(ended, placing, players, commands)
+}, function(ended, placing, players, own, commands)
     for _, _ in ipairs(ended:iter()) do
-        if placing:is_empty() then
-            for _, e in ipairs(players:iter()) do
+        if #owned(own, placing) == 0 then
+            for _, e in ipairs(owned(own, players)) do
                 commands:entity(e:id()):entry("input/ui"):and_modify(function(ui)
                     ui.placement = nil
                 end)
@@ -74,16 +106,17 @@ end):in_set("placement/unbind")
 app:add_systems(Update, {
     ReadRapierContext,
     MeshRayCast,
-    Query[{ with = { "placement", "core/net/local", Mut["Transform"] } }],
+    Query[{ with = { "placement", Mut["Transform"] } }],
     Query[{
-        with = { "input", "core/net/local" },
+        with = { "input" },
         optional = { "vr/pointer/ray", "Children" },
     }],
     Query[{ with = { "camera/3d/eye", "Camera", "GlobalTransform" } }],
     Query[{ with = { "Window" } }],
     Query[{ with = { "Pickable" } }],
-}, function(rapier, ray_cast, placing, players, eyes, windows, pickables)
-    for _, player in ipairs(players:iter()) do
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(rapier, ray_cast, placing, players, eyes, windows, pickables, own)
+    for _, player in ipairs(owned(own, players)) do
         local ray = player:get("vr/pointer/ray")
         local eye = eyes:iter_many(player:get("Children") or {})[1]
         local window = windows:iter()[1]
@@ -99,7 +132,7 @@ app:add_systems(Update, {
         end
         if ray ~= nil then
             local me = player:id()
-            for _, p in ipairs(placing:iter_mut()) do
+            for _, p in ipairs(owned_mut(own, placing)) do
                 local placed = p:id()
                 local function passes(entity)
                     local root = players:root_ancestor(entity)
@@ -124,13 +157,14 @@ end):in_set("placement/follow")
 app:add_systems(Update, {
     Query[{
         added = { "input/ui/placement/confirm" },
-        with = { "core/net/local" },
+        with = { "core/net/owner" },
     }],
-    Query[{ with = { "placement", "core/net/local" } }],
+    Query[{ with = { "placement" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(pressed, placing, commands)
-    for _, _ in ipairs(pressed:iter()) do
-        for _, p in ipairs(placing:iter()) do
+}, function(pressed, placing, own, commands)
+    for _, _ in ipairs(mine(own, pressed)) do
+        for _, p in ipairs(owned(own, placing)) do
             commands:entity(p:id()):remove("placement")
         end
         break
@@ -141,13 +175,14 @@ end):in_set("placement/confirm")
 app:add_systems(Update, {
     Query[{
         removed = { "input/ui/placement/cancel" },
-        with = { "core/net/local" },
+        with = { "core/net/owner" },
     }],
-    Query[{ with = { "placement", "core/net/local" } }],
+    Query[{ with = { "placement" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(released, placing, commands)
-    for _, _ in ipairs(released:iter()) do
-        for _, p in ipairs(placing:iter()) do
+}, function(released, placing, own, commands)
+    for _, _ in ipairs(mine(own, released)) do
+        for _, p in ipairs(owned(own, placing)) do
             commands:entity(p:id()):try_despawn()
         end
         break

@@ -9,8 +9,15 @@ require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerClientSuite")
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzpc" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({ Camera2d = {}, Camera = { order = 0 } })
 end)
 
@@ -55,7 +62,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     -- The net client marks its own player local frames after it arrives.
     elseif phase == "arrived" and clock > 0.3 then
         suite.assert_test("C0b_nothing_happens_before_the_player_is_ours", not named(world, "me"):has("input"), "")
-        named(world, "me"):patch({ ["core/net/local"] = {} })
+        named(world, "me"):patch({ ["core/net/owner"] = world_net })
         step("local")
 
     elseif phase == "local" and clock > 1.0 then

@@ -38,6 +38,8 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["core/net/sync"] = false,
     })
     commands:spawn({ ["player/2d/spawner"] = { count = 2 }, ["core/net/sync"] = false })
+    -- Another client's connection, only watching, so the spawner makes it no player of its own.
+    local elsewhere = commands:spawn({ ["core/net/connection"] = { client_id = 999, observer = true }, ["core/net/sync"] = false }):id()
     -- Another client's player, as the spawner makes one, moved on the server.
     commands:spawn({
         ["zz/other"] = {},
@@ -46,7 +48,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         RigidBody2d = "KinematicPositionBased",
         Collider2d = { capsule_y = { radius = 8, half_height = 10 } },
         GravityScale2d = 0,
-        ["core/net/owner"] = { client_id = 999 },
+        ["core/net/owner"] = elsewhere,
         ["core/net/sync"] = {
             Transform = { authority = "server", reliable = false },
             RigidBody2d = { authority = "server" },
@@ -83,21 +85,34 @@ local function key(code, state)
     key_frames[#key_frames + 1] = { key_code = code, state = state }
 end
 
+--- Is `e` (whole, or naming its owner) this client's: in its net entity's `core/net/owns`?
+local function owned_here(world, e)
+    local owner = e and world:get_entity(e:id()):get("core/net/owner")
+    for _, n in ipairs(world:query({ with = { "core/net", "core/net/owns" } })) do
+        if owner ~= nil and n:id() == owner then return true end
+    end
+    return false
+end
+
 local function mine(world)
-    return world:query({
-        with = { "player/2d", "core/net/local" },
-        optional = {
-            "player", "movement", "camera/third_person", "animation",
-            "core/player/attest", "input/mode", "input/game", "sidebar", "RigidBody2d", "Velocity2d",
-            "camera", "camera/2d", "movement/2d", "animation/sprite", "animation/sprite/playing", "Children",
-        },
-    })[1]
+    for _, n in ipairs(world:query({ with = { "core/net", "core/net/owns" } })) do
+        local p = world:query({
+            with = { "player/2d" },
+            optional = {
+                "player", "movement", "camera/third_person", "animation",
+                "core/player/attest", "input/mode", "input/game", "sidebar", "RigidBody2d", "Velocity2d",
+                "camera", "camera/2d", "movement/2d", "animation/sprite", "animation/sprite/playing", "Children",
+            },
+            iter_many = n:get("core/net/owns"),
+        })[1]
+        if p ~= nil then return p end
+    end
 end
 
 local function other(world)
     return world:query({
         with = { "zz/other" },
-        optional = { "RigidBody2d", "input/game", "core/net/local" },
+        optional = { "RigidBody2d", "input/game" },
     })[1]
 end
 
@@ -160,7 +175,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local y = at(world, copy).y
         suite.assert_test("N7a_another_clients_player_follows_the_server_here", y > other_y + 20, string.format("%.2f to %.2f", other_y, y))
         suite.assert_test("N7b_kinematic_and_bound_to_nothing",
-            copy:get("RigidBody2d") == "KinematicPositionBased" and not copy:has("input/game") and not copy:has("core/net/local"), "")
+            copy:get("RigidBody2d") == "KinematicPositionBased" and not copy:has("input/game") and not owned_here(world, copy), "")
         key("KeyW", "Released")
         phase = "done"
         suite.finish("Player2dNetSuite")

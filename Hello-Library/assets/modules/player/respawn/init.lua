@@ -12,18 +12,40 @@ local Click = require("bevy::picking::prelude::Click")
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+local function owned_mut(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+--- Is the row's owner one of this client's own nets? Its owner column must be named.
+local function mine(own, row)
+    local owner = row:get("core/net/owner")
+    return owner ~= nil and own:contains(owner)
+end
+
 -- The item goes in the menu's list for a local player with respawn: on a new list (the menu opened,
 -- or reloaded), and on the carrier itself (added, or this mod reloaded).
 app:add_systems(Update, {
-    Query[{ with = { "player/respawn", "core/net/local" } }],
+    Query[{ with = { "player/respawn" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Query[{
         with = { "sidebar/menu/list" },
         optional = { "Children" },
     }],
     Query[{ with = { "player/respawn/item" } }],
     Commands,
-}, function(carriers, lists, items, commands)
-    if not carriers:is_empty() then
+}, function(carriers, own, lists, items, commands)
+    if #owned(own, carriers) > 0 then
         for _, list in ipairs(lists:iter()) do
             local children = list:get("Children") or {}
             if items:iter_many(children)[1] == nil then
@@ -39,12 +61,13 @@ app:add_systems(Update, {
                 -- what turns a player.
                 item:observe(On[Pointer[Click]], {
                     Query[{
-                        with = { "player/respawn", "player", "core/net/local", "Collider3d", Mut["Transform"] },
+                        with = { "player/respawn", "player", "Collider3d", Mut["Transform"] },
                         optional = { Mut["Velocity3d"], Mut["camera"] },
                     }],
+                    Query[{ with = { "core/net", "core/net/owns" } }],
                     Query[{ with = { "player/spawner/point", "Name", "GlobalTransform" } }],
-                }, function(_, players, points)
-                    for _, p in ipairs(players:iter_mut()) do
+                }, function(_, players, nets, points)
+                    for _, p in ipairs(owned_mut(nets, players)) do
                         local claim = p:get("player").spawn_point
                         local collider = p:get("Collider3d")
                         local capsule = collider.unscaled.Capsule
@@ -77,10 +100,16 @@ end):in_set("player/respawn"):run_if({
     Query[{ added = { "sidebar/menu/list" } }],
     Query[{
         ["or"] = {
-            added = { "player/respawn", "core/net/local" },
+            added = { "player/respawn", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "player/respawn", "core/net/local" },
+        with = { "player/respawn", "core/net/owner" },
     }],
-}, function(new_lists, new_carriers)
-    return not new_lists:is_empty() or not new_carriers:is_empty()
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(new_lists, new_carriers, own)
+    if not new_lists:is_empty() then return true end
+    for _, e in ipairs(new_carriers:iter()) do
+        if mine(own, e) then return true end
+    end
+    return false
 end)

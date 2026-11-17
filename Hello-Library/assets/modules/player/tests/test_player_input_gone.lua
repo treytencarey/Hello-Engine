@@ -25,13 +25,25 @@ local LEAVERS = {
     { "camera/2d", "camera_2d" },
 }
 
+-- This client's net, unconnected: what it owns here is in its `core/net/owns`.
+local own
+
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "both" }, ["core/net/sync"] = false })
+    own = commands:spawn({ ["core/net"] = { mode = "client", name = "zzpig" }, ["core/net/sync"] = false }):id()
+end)
+
+-- The crowd comes once ownership is declared: a mod binds on an owner's edge joined with its own
+-- nets, and an owner stored before the declaration is linked only after that frame's edges.
+local spawned = false
+app:add_systems(Update, { Query[{ with = { "LuaRelationship" } }], Commands }, function(declared, commands)
+    if spawned or declared:is_empty() then return end
+    spawned = true
     for i = 1, 20 do
         commands:spawn({
             ["zz/crowd"] = { n = i },
             player = { client_id = i, spawn_index = 1 },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = own,
             ["core/net/sync"] = false,
             Transform = { translation = { x = i * 10, y = 1, z = 0 } },
         })
@@ -46,7 +58,7 @@ app:add_systems(Startup, { Commands }, function(commands)
             sidebar = {},
             input = {},
             ["input/mode"] = { mode = "input/game" },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = own,
             ["core/net/sync"] = false,
             Transform = { translation = { x = i * 10, y = 1, z = 300 } },
         })
@@ -57,7 +69,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         sidebar = {},
         input = {},
         ["input/mode"] = { mode = "input/game" },
-        ["core/net/local"] = {},
+        ["core/net/owner"] = own,
         ["core/net/sync"] = false,
         Transform = { translation = { x = 0, y = 1, z = 600 } },
     })
@@ -69,7 +81,7 @@ app:add_systems(Startup, { Commands }, function(commands)
             input = {},
             ["input/mode"] = { mode = "input/game" },
             ["input/game"] = { zzother = { go = { key = "KeyO" } } },
-            ["core/net/local"] = {},
+            ["core/net/owner"] = own,
             ["core/net/sync"] = false,
             Transform = { translation = { x = -100, y = 1, z = 0 } },
         })
@@ -78,7 +90,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({
         ["zz/opener"] = {},
         sidebar = {},
-        ["core/net/local"] = {},
+        ["core/net/owner"] = own,
         ["core/net/sync"] = false,
         Transform = { translation = { x = -300, y = 1, z = 0 } },
     })
@@ -87,7 +99,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         commands:spawn({
             ["zz/bare"] = { name = leaver[1] },
             [leaver[1]] = leaver[1] == "abilities" and { zzkey = { key = "KeyZ" } } or {},
-            ["core/net/local"] = {},
+            ["core/net/owner"] = own,
             ["core/net/sync"] = false,
             Transform = { translation = { x = -200, y = 1, z = 0 } },
         })

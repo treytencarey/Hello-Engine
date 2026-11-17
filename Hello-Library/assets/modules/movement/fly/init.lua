@@ -16,6 +16,27 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+local function owned_mut(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+--- Is the row's owner one of this client's own nets? Its owner column must be named.
+local function mine(own, row)
+    local owner = row:get("core/net/owner")
+    return owner ~= nil and own:contains(owner)
+end
+
 -- No-clip needs flight: a flip that leaves no-clip on without flight carries the other field with
 -- it, so no-clip turned on turns flight on, and flight turned off turns no-clip off.
 local function flip(fly, field)
@@ -28,20 +49,24 @@ end
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "movement/fly", "core/net/local", "input" },
+            added = { "movement/fly", "core/net/owner", "input" },
+            changed = { "core/net/owner" },
         },
-        with = { "movement/fly", "core/net/local", "input" },
+        with = { "movement/fly", "core/net/owner", "input" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(owned, commands)
-    for _, e in ipairs(owned:iter()) do
-        commands:entity(e:id()):entry("input/game"):or_default():and_modify(function(game)
-            game.fly = {
-                toggle = { key = "KeyF" },
-                up = { key = "Space" },
-                down = { key = "ShiftLeft" },
-            }
-        end)
+}, function(players, own, commands)
+    for _, e in ipairs(players:iter()) do
+        if mine(own, e) then
+            commands:entity(e:id()):entry("input/game"):or_default():and_modify(function(game)
+                game.fly = {
+                    toggle = { key = "KeyF" },
+                    up = { key = "Space" },
+                    down = { key = "ShiftLeft" },
+                }
+            end)
+        end
     end
 end):in_set("movement/fly")
 
@@ -79,11 +104,12 @@ end):in_set("movement/fly")
 app:add_systems(Update, {
     Query[{
         added = { "input/game/fly/toggle" },
-        with = { Mut["movement/fly"], "core/net/local" },
+        with = { Mut["movement/fly"], "core/net/owner" },
     }],
-}, function(toggled)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(toggled, own)
     for _, e in ipairs(toggled:iter_mut()) do
-        flip(e:get_mut("movement/fly"), "on")
+        if mine(own, e) then flip(e:get_mut("movement/fly"), "on") end
     end
 end):in_set("movement/fly")
 
@@ -119,11 +145,12 @@ end):in_set("movement/fly")
 -- and a ceiling or a floor that stops the body doesn't stop it climbing or sinking again.
 app:add_systems(Update, {
     Query[{
-        with = { "movement/fly", "movement", "core/net/local", Mut["Velocity3d"] },
+        with = { "movement/fly", "movement", Mut["Velocity3d"] },
         optional = { "input/game/fly/up", "input/game/fly/down" },
     }],
-}, function(fliers)
-    for _, e in ipairs(fliers:iter_mut()) do
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(fliers, own)
+    for _, e in ipairs(owned_mut(own, fliers)) do
         local fly = e:get("movement/fly")
         if fly.on then
             local m = e:get("movement")
@@ -137,15 +164,16 @@ end):in_set("movement/fly"):after("movement/walk"):after("movement/jump")
 -- The items go in the menu's list for a local player with flight: on a new list (the menu opened,
 -- or reloaded), and on the carrier itself (added, or this mod reloaded). Each shows its field.
 app:add_systems(Update, {
-    Query[{ with = { "movement/fly", "core/net/local" } }],
+    Query[{ with = { "movement/fly" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Query[{
         with = { "sidebar/menu/list" },
         optional = { "Children" },
     }],
     Query[{ with = { "movement/fly/item" } }],
     Commands,
-}, function(carriers, lists, items, commands)
-    local carrier = carriers:iter()[1]
+}, function(carriers, own, lists, items, commands)
+    local carrier = owned(own, carriers)[1]
     if carrier ~= nil then
         local fly = carrier:get("movement/fly")
         for _, list in ipairs(lists:iter()) do
@@ -164,12 +192,13 @@ app:add_systems(Update, {
                 for _, item in ipairs({ flight, noclip }) do
                     item:observe(On[Pointer[Click]], {
                         Query[{ with = { "movement/fly/item" } }],
-                        Query[{ with = { Mut["movement/fly"], "core/net/local" } }],
-                    }, function(event, clicked, fliers)
+                        Query[{ with = { Mut["movement/fly"] } }],
+                        Query[{ with = { "core/net", "core/net/owns" } }],
+                    }, function(event, clicked, fliers, nets)
                         local row = clicked:get(event.entity)
                         if row ~= nil then
                             local field = row:get("movement/fly/item").field
-                            for _, e in ipairs(fliers:iter_mut()) do
+                            for _, e in ipairs(owned_mut(nets, fliers)) do
                                 flip(e:get_mut("movement/fly"), field)
                             end
                         end
@@ -182,28 +211,37 @@ end):in_set("movement/fly"):run_if({
     Query[{ added = { "sidebar/menu/list" } }],
     Query[{
         ["or"] = {
-            added = { "movement/fly", "core/net/local" },
+            added = { "movement/fly", "core/net/owner" },
+            changed = { "core/net/owner" },
         },
-        with = { "movement/fly", "core/net/local" },
+        with = { "movement/fly", "core/net/owner" },
     }],
-}, function(new_lists, new_carriers)
-    return not new_lists:is_empty() or not new_carriers:is_empty()
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(new_lists, new_carriers, own)
+    if not new_lists:is_empty() then return true end
+    for _, e in ipairs(new_carriers:iter()) do
+        if mine(own, e) then return true end
+    end
+    return false
 end)
 
 -- The items show the state, which lives on the player.
 app:add_systems(Update, {
     Query[{
         changed = { "movement/fly" },
-        with = { "core/net/local" },
+        with = { "core/net/owner" },
     }],
     Query[{ with = { "movement/fly/item", Mut["sidebar/menu/item"] } }],
-}, function(changed, items)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(changed, items, own)
     for _, e in ipairs(changed:iter()) do
+        if not mine(own, e) then goto next_flier end
         local fly = e:get("movement/fly")
         for _, item in ipairs(items:iter_mut()) do
             local field = item:get("movement/fly/item").field
             item:get_mut("sidebar/menu/item").on = fly[field]
         end
+        ::next_flier::
     end
 end):in_set("movement/fly")
 

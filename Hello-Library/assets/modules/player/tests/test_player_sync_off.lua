@@ -27,10 +27,12 @@ app:add_systems(Update, { World, Res[Time], Commands }, function(world, time, co
     local p = player_id and world:get_entity(player_id)
     local sync = p and p:get("core/net/sync") or {}
     if phase == "spawn" then
+        -- Its client's connection, as the net server spawns one, owns it.
+        local connection = commands:spawn({ ["core/net/connection"] = { client_id = 7, observer = false }, ["core/net/sync"] = false }):id()
         player_id = commands:spawn({
             player = { client_id = 7 },
             [PANEL] = {},
-            ["core/net/owner"] = { client_id = 7 },
+            ["core/net/owner"] = connection,
             ["core/net/sync"] = { Transform = { authority = "client" } },
         }):id()
         phase, clock = "loaded", 0

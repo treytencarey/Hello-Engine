@@ -1,23 +1,47 @@
 -- The client half: the owner's player walks, jumps and turns; others' players follow their
 -- synced Transform. Input is the `input/game.movement` group: an action is held while its
--- component exists. The net client marks its own player `core/net/local` frames after the
--- player arrives, so both edges count.
+-- component exists. This client's own player is one in its own nets' `core/net/owns`: an owner
+-- can come after the player, so both edges count.
 
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 local Time = require("bevy::time::Time")
 local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")
 
+--- The rows of `q` this client owns: those in its own nets' `core/net/owns`.
+local function owned(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+local function owned_mut(own, q)
+    local out = {}
+    for _, n in ipairs(own:iter()) do
+        for _, e in ipairs(q:iter_many_mut(n:get("core/net/owns"))) do out[#out + 1] = e end
+    end
+    return out
+end
+--- Is the row's owner one of this client's own nets? Its owner column must be named.
+local function mine(own, row)
+    local owner = row:get("core/net/owner")
+    return owner ~= nil and own:contains(owner)
+end
+
 app:add_systems(First, {
     Query[{
         ["or"] = {
-            added = { "movement", "core/net/local", "input" },
+            added = { "movement", "core/net/owner", "input" },
+            changed = { "core/net/owner" },
         },
-        with = { "movement", "core/net/local", "input" },
+        with = { "movement", "core/net/owner", "input" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(owned, commands)
-    for _, e in ipairs(owned:iter()) do
+}, function(players, own, commands)
+    for _, e in ipairs(players:iter()) do
+        if not mine(own, e) then goto next_player end
         commands:entity(e:id()):patch({
             ["input/game"] = {
                 movement = {
@@ -29,6 +53,7 @@ app:add_systems(First, {
                 },
             },
         })
+        ::next_player::
     end
 end):in_set("movement/bind")
 
@@ -38,12 +63,16 @@ app:add_systems(First, {
     Query[{
         added = { "movement" },
         with = { "Transform" },
-        without = { "core/net/local", "core/net/sync/Transform" },
+        without = { "core/net/sync/Transform" },
+        optional = { "core/net/owner" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(others, commands)
+}, function(others, own, commands)
     for _, e in ipairs(others:iter()) do
-        commands:entity(e:id()):insert({ ["core/net/sync/Transform"] = e:get("Transform") })
+        if not mine(own, e) then
+            commands:entity(e:id()):insert({ ["core/net/sync/Transform"] = e:get("Transform") })
+        end
     end
 end):in_set("movement/shadow")
 
@@ -57,11 +86,12 @@ app:add_systems(First, {
             changed = { "RigidBody3d" },
         },
         with = { "movement", Mut["RigidBody3d"] },
-        without = { "core/net/local" },
+        optional = { "core/net/owner" },
     }],
-}, function(copies)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(copies, own)
     for _, e in ipairs(copies:iter_mut()) do
-        if e:get("RigidBody3d") ~= "KinematicPositionBased" then
+        if not mine(own, e) and e:get("RigidBody3d") ~= "KinematicPositionBased" then
             e:set({ RigidBody3d = "KinematicPositionBased" })
         end
     end
@@ -86,10 +116,10 @@ app:add_systems(Update, {
                 "input/game/movement/right",
             },
         },
-        with = { "movement", "core/net/local", "Velocity3d" },
+        with = { "movement", "core/net/owner", "Velocity3d" },
     }],
     Query[{
-        with = { "movement", "core/net/local", Mut["Velocity3d"] },
+        with = { "movement", Mut["Velocity3d"] },
     }],
     Query[{
         any_of = {
@@ -98,20 +128,21 @@ app:add_systems(Update, {
             "input/game/movement/left",
             "input/game/movement/right",
         },
-        with = { "movement", "camera", "core/net/local", Mut["Velocity3d"], Mut["Transform"] },
+        with = { "movement", "camera", Mut["Velocity3d"], Mut["Transform"] },
     }],
-}, function(time, released, bodies, walkers)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(time, released, bodies, walkers, own)
     -- A released key stops its body here (only the edge is read), and the keys still held
     -- are walked below. A body that despawned has no row in `bodies`.
     local stopped = {}
     for _, e in ipairs(released:iter()) do
-        stopped[#stopped + 1] = e:id()
+        if mine(own, e) then stopped[#stopped + 1] = e:id() end
     end
     for _, e in ipairs(bodies:iter_many_mut(stopped)) do
         e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
     end
     local dt = time:delta_secs()
-    for _, e in ipairs(walkers:iter_mut()) do
+    for _, e in ipairs(owned_mut(own, walkers)) do
         local m = e:get("movement")
         local camera = e:get("camera")
         local rotation = e:get("Transform").rotation
@@ -144,11 +175,12 @@ end):in_set("movement/walk")
 app:add_systems(Update, {
     Res[Time],
     Query[{
-        with = { "movement", "camera", "core/net/local", Mut["Transform"] },
+        with = { "movement", "camera", Mut["Transform"] },
     }],
-}, function(time, bodies)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(time, bodies, own)
     local dt = time:delta_secs()
-    for _, e in ipairs(bodies:iter_mut()) do
+    for _, e in ipairs(owned_mut(own, bodies)) do
         local m = e:get("movement")
         if m.face == "look" then
             local camera = e:get("camera")
@@ -168,13 +200,14 @@ end):in_set("movement/face")
 -- skips the player's own body, cast through Rapier's `ReadRapierContext`.
 app:add_systems(Update, {
     Query[{
-        with = { "movement", "core/net/local", "Transform" },
+        with = { "movement", "Transform" },
         optional = { "movement/grounded" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     ReadRapierContext,
     Commands,
-}, function(walkers, rapier, commands)
-    for _, e in ipairs(walkers:iter()) do
+}, function(walkers, own, rapier, commands)
+    for _, e in ipairs(owned(own, walkers)) do
         local m = e:get("movement")
         local at = e:get("Transform").translation
         local hit = m.ground ~= nil
@@ -191,14 +224,17 @@ end):in_set("movement/ground")
 app:add_systems(Update, {
     Query[{
         added = { "input/game/movement/jump" },
-        with = { "movement", "movement/grounded", "core/net/local", Mut["Velocity3d"] },
+        with = { "movement", "movement/grounded", "core/net/owner", Mut["Velocity3d"] },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(jumpers, commands)
+}, function(jumpers, own, commands)
     for _, e in ipairs(jumpers:iter_mut()) do
-        local m = e:get("movement")
-        e:patch({ Velocity3d = { linvel = { y = m.jump } } })
-        commands:entity(e:id()):remove("movement/grounded")
+        if mine(own, e) then
+            local m = e:get("movement")
+            e:patch({ Velocity3d = { linvel = { y = m.jump } } })
+            commands:entity(e:id()):remove("movement/grounded")
+        end
     end
 end):in_set("movement/jump")
 
@@ -207,11 +243,13 @@ app:add_systems(Update, {
     Res[Time],
     Query[{
         with = { "movement", "core/net/sync/Transform", Mut["Transform"] },
-        without = { "core/net/local" },
+        optional = { "core/net/owner" },
     }],
-}, function(time, others)
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(time, others, own)
     local dt = time:delta_secs()
     for _, e in ipairs(others:iter_mut()) do
+        if mine(own, e) then goto next_other end
         local m = e:get("movement")
         local target = e:get("core/net/sync/Transform")
         local current = e:get("Transform")
@@ -222,6 +260,7 @@ app:add_systems(Update, {
                 rotation = Quat.slerp(current.rotation, target.rotation, t),
             },
         })
+        ::next_other::
     end
 end):in_set("movement/follow")
 

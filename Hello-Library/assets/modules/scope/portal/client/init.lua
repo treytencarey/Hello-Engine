@@ -6,6 +6,12 @@
 
 local Quat = require("bevy::math::Quat")
 
+--- Is the row's owner one of this client's own nets? Its owner column must be named.
+local function mine(own, row)
+    local owner = row:get("core/net/owner")
+    return owner ~= nil and own:contains(owner)
+end
+
 -- The predicted ask carries where the player stands and looks, for the target's client world to
 -- stand it in: through a door (`at`, on a named node) relative to the door, as the target places
 -- it at the node `at` names there; through any other portal as it stands here. The look is the
@@ -21,7 +27,7 @@ app:add_systems(Update, {
         optional = { "Name", "GlobalTransform" },
     }],
     Query[{
-        with = { "player", "core/net/local", "GlobalTransform" },
+        with = { "player", "core/net/owner", "GlobalTransform" },
         without = { "scope/portal/cooling" },
         optional = { "camera" },
     }],
@@ -29,8 +35,9 @@ app:add_systems(Update, {
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(portals, mine, rows, commands)
+}, function(portals, players, rows, own, commands)
     local me = rows:iter()[1]
     local row = me and me:get("core/world/status")
     local scope = row and row.scope_key
@@ -40,7 +47,8 @@ app:add_systems(Update, {
         local entered = p:get("collision_trigger").entered or {}
         local door = portal.at ~= nil and p:has("Name") and p:has("GlobalTransform")
         if not watching and portal.target ~= scope then
-            for _, player in ipairs(mine:iter_many(entered)) do
+            for _, player in ipairs(players:iter_many(entered)) do
+                if not mine(own, player) then goto next_player end
                 local body = player.GlobalTransform:compute_transform()
                 local t = body
                 if door then t = player.GlobalTransform:reparented_to(p:id()) end
@@ -71,13 +79,15 @@ app:add_systems(Update, {
                 })
                 print(string.format("[SCOPE/PORTAL] walked into %s: predicting the crossing%s", portal.target,
                     door and (" through door '" .. p:get("Name").name .. "'") or ""))
+                ::next_player::
             end
         end
     end
 end):in_set("scope/portal/client")
 
 -- The server's switch reaches only its player's owner, and is followed when it landed on a player
--- that is this client's (`core/net/local`), or stopped being so with it: the server sends the
+-- that is this client's (its owner one of this client's own nets), or stopped being so with it (its
+-- owner taken off or given away): the server sends the
 -- switch a frame before it demotes the player, but both can reach this client in one frame. On
 -- `changed` too: its removal after the handover is sent to nobody, so the copy here keeps the last
 -- switch, and the next crossing writes over it. That kept copy is why the player must be this
@@ -91,17 +101,18 @@ app:add_systems(First, {
     Query[{
         changed = { "core/net/peer/switch" },
         with = { "player" },
-        optional = { "core/net/local" },
+        optional = { "core/net/owner" },
     }],
     Query[{
-        removed = { "core/net/local" },
+        ["or"] = { removed = { "core/net/owner" }, changed = { "core/net/owner" } },
         with = { "player" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(switched, demoted, commands)
+}, function(switched, demoted, own, commands)
     local just = demoted:iter()
     for _, player in ipairs(switched:iter()) do
-        local ours = player:has("core/net/local")
+        local ours = mine(own, player)
         for _, d in ipairs(just) do
             if d:id() == player:id() then ours = true end
         end

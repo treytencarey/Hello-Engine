@@ -100,12 +100,19 @@ helpers.spawn_vm("modules/test_fixtures/gen_movement_net_vm1.lua", {
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn(GROUND)
+    -- This client's copy of the map's point: the player's body waits for the point it claims here.
+    commands:spawn({
+        Name = "zz_start",
+        Transform = { translation = { x = 3, y = 0, z = 0 } },
+        ["player/spawner/point"] = {},
+        ["core/net/sync"] = false,
+    })
 end)
 
 local function copy(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/copy" },
-        optional = { "RigidBody3d", "core/net/sync/Transform", "Velocity3d", "core/net/local" },
+        optional = { "RigidBody3d", "core/net/sync/Transform", "Velocity3d" },
     })) do
         if e:get("zz/copy").name == name then
             return e
@@ -113,11 +120,16 @@ local function copy(world, name)
     end
 end
 
+--- This client's player: the one in its net entity's `core/net/owns`.
 local function mine(world)
-    return world:query({
-        with = { "player", "core/net/local" },
-        optional = { "RigidBody3d", "Velocity3d", "movement/grounded" },
-    })[1]
+    for _, n in ipairs(world:query({ with = { "core/net", "core/net/owns" } })) do
+        local p = world:query({
+            with = { "player" },
+            optional = { "RigidBody3d", "Velocity3d", "movement/grounded" },
+            iter_many = n:get("core/net/owns"),
+        })[1]
+        if p ~= nil then return p end
+    end
 end
 
 local function at(world, e)

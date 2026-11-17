@@ -37,10 +37,17 @@ end
 local facing = Quat.mul_quat(Quat.from_rotation_y(0.7), Quat.from_rotation_x(0.3))
 local start = { x = 3, y = 2, z = -4 }
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 local camera, player
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzrespawn" },
+        ["core/net/sync"] = false,
+    }):id()
     camera = commands:spawn({ ["zz/camera"] = {} }):id()
     commands:spawn({
         ["zz/point"] = {},
@@ -143,7 +150,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     -- The net client marks its own player local frames after it arrives.
     if phase == "arrived" and clock > 0.3 then
         T("R0_nothing_before_the_player_is_ours", not me(world):has("player/respawn") and #items(world) == 0)
-        commands:entity(player):insert({ ["core/net/local"] = {} })
+        commands:entity(player):insert({ ["core/net/owner"] = world_net })
         step("button")
 
     elseif phase == "button" and menu_button(world) ~= nil and clock > 0.2 then

@@ -2,8 +2,12 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerServerSuite")
+local Net = require("modules/core/net/shared/net.lua")
 
-app:add_systems(Startup, { Commands }, function(commands)
+app:add_systems(Startup, { World, Commands }, function(world, commands)
+    -- A world's net declares ownership: `core/net/owner` names a connection, whose `core/net/owns`
+    -- the engine keeps.
+    Net.declare_ownership(world, commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 end)
 
@@ -26,7 +30,8 @@ local function players(world, client_id)
         with = { "player", "core/net/owner" },
         optional = { "abilities/fireball", "abilities/grenade", "Transform", "camera/third_person", "movement", "animation", "core/net/sync/Transform", "RigidBody3d" },
     })) do
-        if p:get("core/net/owner").client_id == client_id then
+        local c = connection(world, client_id)
+        if c ~= nil and p:get("core/net/owner") == c:id() then
             out[#out + 1] = p
         end
     end
@@ -121,7 +126,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local eight = world:query({ with = { "core/net/owner" }, optional = { "camera/third_person", "movement", "animation", "abilities/fireball", "abilities/grenade" } })
         local gone = true
         for _, e in ipairs(eight) do
-            if e:get("core/net/owner").client_id == 8 then
+            local c = connection(world, 8)
+            if c ~= nil and e:get("core/net/owner") == c:id() then
                 gone = not e:has("camera/third_person") and not e:has("movement")
                     and not e:has("animation")
                     and not e:has("abilities/fireball") and not e:has("abilities/grenade")
