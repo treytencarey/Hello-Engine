@@ -447,10 +447,10 @@ app:add_systems(Update, {
     local asked = {}
     for _, drop in ipairs(drops) do
         local carrier, scope = drop.carrier, drop.scope
-        local me = carrier:has("core/net/owner") and carrier:get("core/net/owner").client_id
+        local me = carrier:has("core/net/owner") and carrier:get("core/net/owner")
         local mine, open = 0, false
         for _, p in ipairs(portals:iter()) do
-            if p:has("core/net/local") or (me ~= nil and p:has("core/net/owner") and p:get("core/net/owner").client_id == me) then
+            if p:has("core/net/local") or (me and p:has("core/net/owner") and p:get("core/net/owner") == me) then
                 mine = mine + 1
                 open = open or p:get("scope/portal").target == scope
             end
@@ -536,11 +536,11 @@ app:add_systems(Update, {
     for _, p in ipairs(gone:iter()) do
         local target = (p:get("scope/portal") or {}).target
         for _, carrier in ipairs(carriers:iter()) do
-            local me = carrier:has("core/net/owner") and carrier:get("core/net/owner").client_id
+            local me = carrier:has("core/net/owner") and carrier:get("core/net/owner")
             local still = false
             for _, q in ipairs(portals:iter()) do
                 local owned = q:has("core/net/local")
-                    or (me ~= nil and q:has("core/net/owner") and q:get("core/net/owner").client_id == me)
+                    or (me and q:has("core/net/owner") and q:get("core/net/owner") == me)
                 still = still or (owned and q:get("scope/portal").target == target)
             end
             for _, load in ipairs(loads:iter_many(carrier:get("Children") or {})) do

@@ -26,8 +26,15 @@ local T = suite.assert_test
 local HERE = "github:zzphc/here:main"
 local ELSEWHERE = "github:zzphc/elsewhere:main"
 
+-- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
+local world_net
+
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    world_net = commands:spawn({
+        ["core/world/net"] = { mode = "client" },
+        ["core/net"] = { mode = "client", name = "zzphc" },
+        ["core/net/sync"] = false,
+    }):id()
     commands:spawn({
         ["core/world/status"] = { scope_key = HERE, mode = "client", status = "ready", observer = true },
         WorldShared = {},
@@ -166,7 +173,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
             LockedAxes3d = "ROTATION_LOCKED",
             camera = { yaw = 0, pitch = 0 },
-            ["core/net/local"] = true,
+            -- As the server's player lands: owned by this client's connection, its net entity.
+            ["core/net/owner"] = world_net,
             ["core/net/sync"] = false,
             ["zz/phc/real"] = {},
         })

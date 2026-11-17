@@ -71,13 +71,16 @@ local function answer_of(world, name)
     return c and c:has("git/panel/response") and c:get("git/panel/response") or {}
 end
 
+-- Each client's connection, as the net server spawns one: what owns that client's entities.
+local conns = {}
+
 local function portals(world, client_id)
     local out = {}
     for _, p in ipairs(world:query({
         with = { "scope/portal", "core/net/owner" },
         optional = { "scope/portal/view", "placement", "Transform", "core/net/sync", "core/script/owner", "zz/held" },
     })) do
-        if client_id == nil or p:get("core/net/owner").client_id == client_id then out[#out + 1] = p end
+        if client_id == nil or p:get("core/net/owner") == conns[client_id] then out[#out + 1] = p end
     end
     return out
 end
@@ -95,10 +98,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "spawn" then
+        for _, cid in ipairs({ 5, 7, 8 }) do
+            conns[cid] = commands:spawn({ ["core/net/connection"] = { client_id = cid }, ["core/net/sync"] = false }):id()
+        end
         commands:spawn({
             player = { client_id = 5, spawn_index = 0 },
             Transform = { translation = { x = 0, y = 0, z = 0 } },
-            ["core/net/owner"] = { client_id = 5 },
+            ["core/net/owner"] = conns[5],
             ["core/net/sync"] = { Transform = { authority = "client", reliable = false } },
             ["zz/carrier"] = { name = "player" },
         })
@@ -110,7 +116,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                     translation = { x = c[3], y = 1, z = 2 },
                     rotation = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 },
                 },
-                ["core/net/owner"] = { client_id = c[2] },
+                ["core/net/owner"] = conns[c[2]],
                 ["core/net/sync"] = {},
                 ["zz/carrier"] = { name = c[1] },
             })
@@ -141,7 +147,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             tostring(#portals(world)))
         T("PS2_3_m_ahead_of_the_asker_for_it_to_place", p ~= nil and p:has("placement") and math.abs(at.x - 7) < 0.01
             and math.abs(at.y - 1) < 0.01 and math.abs(at.z - 2) < 0.01, at and string.format("%.2f %.2f %.2f", at.x, at.y, at.z) or "")
-        T("PS2_owned_by_the_asker_on_the_net", p ~= nil and p:get("core/net/owner").client_id == 7, "")
+        T("PS2_owned_by_the_asker_on_the_net", p ~= nil and p:get("core/net/owner") == conns[7], "")
         T("PS2_with_the_sync_every_client_needs",
             sync.placement and sync.placement.authority == "client"
                 and sync.Transform and sync.Transform.authority == "client" and sync.Transform.reliable == false
@@ -167,7 +173,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             at and string.format("%.2f %.2f %.2f", at.x, at.y, at.z) or "none")
         T("PS9_placed_its_transform_the_server_s", placed ~= nil and placed:get("scope/portal").target == OTHER
             and sync.placement == nil and sync.Transform and sync.Transform.authority == "server"
-            and sync["scope/portal"] and sync["scope/portal/hosted"] and placed:get("core/net/owner").client_id == 7, "")
+            and sync["scope/portal"] and sync["scope/portal/hosted"] and placed:get("core/net/owner") == conns[7], "")
         T("PS9_answered_with_its_op", said.scope == OTHER and said.status == "opened", tostring(said.status))
         T("PS10_though_the_portal_ask_s_answer_stood", placed ~= nil, "")
         ask(commands, world, "seven", {})
@@ -209,7 +215,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         for i = 1, 6 do
             commands:spawn({
                 ["scope/portal"] = { target = "github:zzpanelsrv/held:" .. i },
-                ["core/net/owner"] = { client_id = 7 },
+                ["core/net/owner"] = conns[7],
                 ["core/net/sync"] = false,
                 ["zz/held"] = {},
             })

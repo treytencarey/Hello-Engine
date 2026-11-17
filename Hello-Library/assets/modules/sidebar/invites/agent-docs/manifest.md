@@ -52,7 +52,7 @@ The portal ask: `git/panel/request = { op = "drop_portal", target_sk = <scope> }
 - `ready`: the portal is asked for. Before it is, the client checks what the server will, and says:
   - no row of this world's own (`core/world/status` without `WorldMirror`), or a carrier without `git/panel`: "No active scope to place a portal in";
   - the target is this world's `scope_key`: "You are already in that world";
-  - the player already has 8 portals here (counted over `scope/portal` entities that are `core/net/local` or owned by the carrier's `core/net/owner.client_id`): "You have too many portals open".
+  - the player already has 8 portals here (counted over `scope/portal` entities that are `core/net/local` or whose `core/net/owner` is the carrier's, compared as entities): "You have too many portals open".
   A refused drop also despawns the carrier's load for that scope. A target the player already has a portal to, or an ask out for, asks nothing more; a second `ready` asks nothing.
 - The server refusing the ask says "You have too many portals open": the other checks passed here.
 - The load stays while a portal of this player's names its world, so the observed world is not let go between the load and the portal's own view.

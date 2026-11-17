@@ -68,11 +68,13 @@ local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalReturnState", boot.DEFAULTS)
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({
+    local wn = commands:spawn({
         ["core/world/net"] = { mode = "server", name = "zzpr_x", port = 15515 },
         ["core/net"] = { mode = "server", name = "zzpr_x", port = 15515 },
         ["core/net/sync"] = false,
     })
+    -- The client's connection, as the world net spawns one: it owns what the client owns here.
+    local c41 = commands:spawn({ ["core/net/connection"] = { client_id = 41 }, ["core/net/sync"] = false, ChildOf = wn:id() }):id()
     commands:spawn({
         ["core/net/peer/listen"] = { name = "zzpr_x_peer", port = 15518, scope_key = boot.HERE, world_port = 15515 },
         ["core/net/peer"] = {},
@@ -91,7 +93,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["scope/portal"] = { target = boot.OTHER },
         ["scope/portal/view"] = { mode = "3d" },
         Transform = { translation = { x = 2, y = 0, z = 1 } },
-        ["core/net/owner"] = { client_id = 41 },
+        ["core/net/owner"] = c41,
         ["zz/pr/tag"] = { n = 7 },
         ["core/net/sync"] = {
             Transform = { authority = "server" },
@@ -107,7 +109,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["scope/portal"] = { target = boot.THIRD },
         ["scope/portal/view"] = { mode = "3d" },
         Transform = { translation = { x = -3, y = 0, z = 4 } },
-        ["core/net/owner"] = { client_id = 41 },
+        ["core/net/owner"] = c41,
         ["core/net/sync"] = {
             Transform = { authority = "server" },
             ["scope/portal"] = { authority = "server" },
@@ -130,7 +132,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["scope/portal/view"] = { mode = "3d" },
         placement = {},
         Transform = { translation = { x = 9, y = 0, z = 0 } },
-        ["core/net/owner"] = { client_id = 41 },
+        ["core/net/owner"] = c41,
         ["core/net/sync"] = {
             placement = { authority = "client" },
             Transform = { authority = "client", reliable = false },
@@ -144,7 +146,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({
         player = { client_id = 41 },
         Transform = { translation = { x = 2, y = 0, z = 1 } },
-        ["core/net/owner"] = { client_id = 41 },
+        ["core/net/owner"] = c41,
         ["core/net/peer/share"] = { stable_id = "player_41" },
         ["core/net/sync"] = { Transform = { authority = "server", reliable = false } },
         ["core/script/owner"] = false,

@@ -53,10 +53,13 @@ local function finish()
     suite.finish("INVITES")
 end
 
-local camera, player
+local camera, player, own, other
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+    -- What owns this player's entities here, the client's own net entity (its connection lands
+    -- there); and another user's connection, as this client holds it.
+    own = commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false }):id()
+    other = commands:spawn({ ["zz/other_connection"] = {}, ["core/net/sync"] = false }):id()
     commands:spawn({ ["ui/theme/dark"] = {} })
     camera = commands:spawn({ ["zz/camera"] = {} }):id()
     player = commands:spawn({
@@ -64,7 +67,7 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["sidebar/invites"] = {},
         ["git/panel"] = {},
         ["core/net/local"] = {},
-        ["core/net/owner"] = { client_id = 1 },
+        ["core/net/owner"] = own,
         Transform = {
             translation = { x = 10, y = 0, z = 5 },
             rotation = { x = 0, y = 0.70710678, z = 0, w = 0.70710678 },
@@ -213,7 +216,7 @@ end
 local function server_portal(commands, scope)
     return commands:spawn({
         ["scope/portal"] = { target = scope },
-        ["core/net/owner"] = { client_id = 1 },
+        ["core/net/owner"] = own,
         ["core/net/local"] = {},
         ["core/net/sync"] = false,
     }):id()
@@ -503,9 +506,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "lookalike" and clock > 0.6 then
         T("IA6_a_load_that_is_not_the_carrier_s_drops_nothing", #portals(world, "github:zz/host:f") == 0)
         for i = 1, 8 do
-            commands:spawn({ ["scope/portal"] = { target = "github:zz/full:" .. i }, ["core/net/owner"] = { client_id = 1 }, ["zz/full"] = {} })
+            commands:spawn({ ["scope/portal"] = { target = "github:zz/full:" .. i }, ["core/net/owner"] = own, ["zz/full"] = {} })
         end
-        commands:spawn({ ["scope/portal"] = { target = "github:zz/other:1" }, ["core/net/owner"] = { client_id = 2 }, ["zz/full"] = {} })
+        commands:spawn({ ["scope/portal"] = { target = "github:zz/other:1" }, ["core/net/owner"] = other, ["zz/full"] = {} })
         debug_card(commands, 5, "github:zz/here:debug-hub-5")
         step("full")
 

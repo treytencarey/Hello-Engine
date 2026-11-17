@@ -30,12 +30,12 @@ app:add_systems(First, {
     local taken, owned = {}, {}
     for _, p in ipairs(players:iter()) do
         taken[p:get("player/2d").spawn_index] = true
-        owned[p:get("core/net/owner").client_id] = true
+        owned[p:get("core/net/owner")] = true
     end
     for _, c in ipairs(connections:iter()) do
         local connection = c:get("core/net/connection")
         local spawner = spawners:iter()[1]
-        if spawner and not connection.observer and not owned[connection.client_id] then
+        if spawner and not connection.observer and not owned[c:id()] then
             local s = spawner:get("player/2d/spawner")
             local index = 0
             for i = s.count, 1, -1 do
@@ -58,7 +58,7 @@ app:add_systems(First, {
                 LockedAxes2d = "ROTATION_LOCKED",
                 GravityScale2d = 0,
                 Velocity2d = { linvel = { x = 0, y = 0 }, angvel = 0 },
-                ["core/net/owner"] = { client_id = connection.client_id },
+                ["core/net/owner"] = c:id(),
                 ["core/net/sync/Transform"] = { translation = at, rotation = { x = 0, y = 0, z = 0, w = 1 } },
                 ["core/net/sync"] = {
                     Transform = { authority = "client", reliable = false },
@@ -74,28 +74,32 @@ app:add_systems(First, {
     end
 end):in_set("player/2d/spawner/spawn")
 
--- A client that left, or went back to only watching: its player goes. A connection whose
--- entity is gone has no row in `connected`.
+-- A client that went back to only watching: the players its connection owns go. One that left:
+-- its connection going takes the owner off its players, which keep the entity, and they go. A
+-- demotion takes the owner too, but leaves a mirror.
 app:add_systems(PreUpdate, {
+    Query[{ changed = { "core/net/connection" }, optional = { "core/net/owns" } }],
+    Query[{ with = { "player/2d" }, optional = { "core/net/owner" } }],
     Query[{
-        ["or"] = {
-            changed = { "core/net/connection" },
-            removed = { "core/net/connection" },
-        },
-        optional = { "core/net/connection" },
+        ["or"] = { removed = { "core/net/owner" } },
+        with = { "player/2d" },
+        without = { "core/net/peer/mirror" },
     }],
-    Query[{ with = { "core/net/connection" } }],
-    Query[{ with = { "player/2d", "core/net/owner" } }],
     Commands,
-}, function(connections, connected, players, commands)
+}, function(connections, players, unowned, commands)
     for _, c in ipairs(connections:iter()) do
-        local connection = c:get("core/net/connection")
-        if connection ~= nil and (connection.observer or not connected:contains(c:id())) then
-            for _, p in ipairs(players:iter()) do
-                if p:get("core/net/owner").client_id == connection.client_id then
-                    commands:entity(p:id()):despawn()
-                end
+        if c:get("core/net/connection").observer then
+            for _, p in ipairs(players:iter_many(c:get("core/net/owns") or {})) do
+                commands:entity(p:id()):despawn()
             end
+        end
+    end
+    -- A removed edge also comes for an entity that despawned: only a player still here, and still
+    -- unowned, goes.
+    for _, p in ipairs(unowned:iter()) do
+        local player = players:get(p:id())
+        if player ~= nil and not player:has("core/net/owner") then
+            commands:entity(p:id()):despawn()
         end
     end
 end):in_set("player/2d/spawner/left")

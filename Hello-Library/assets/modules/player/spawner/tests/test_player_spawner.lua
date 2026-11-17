@@ -22,18 +22,28 @@ require("modules/core/mod_registry/init.lua")
 local AssetServer = require("bevy::asset::AssetServer")
 local suite = require("modules/core/test_helpers.lua").create_suite("PlayerSpawnerSuite")
 local T = suite.assert_test
+local Net = require("modules/core/net/shared/net.lua")
 
-app:add_systems(Startup, { Commands }, function(commands)
+app:add_systems(Startup, { World, Commands }, function(world, commands)
+    -- A world's net declares ownership: `core/net/owner` names a connection, whose `core/net/owns`
+    -- the engine keeps.
+    Net.declare_ownership(world, commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
     commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false, ["zz/ps/spawner"] = {} })
 end)
+
+--- The client owning `e`: that of the connection its `core/net/owner` names.
+local function owner_client(world, e)
+    local c = world:get_entity(e:get("core/net/owner"))
+    return c and (c:get("core/net/connection") or {}).client_id
+end
 
 local function player_of(world, client_id)
     for _, p in ipairs(world:query({
         with = { "player", "core/net/owner" },
         optional = { "player/spawner/player", "core/net/peer/share", "camera" },
     })) do
-        if p:get("core/net/owner").client_id == client_id then return p end
+        if owner_client(world, p) == client_id then return p end
     end
 end
 

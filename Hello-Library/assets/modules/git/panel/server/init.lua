@@ -82,13 +82,13 @@ app:add_systems(Update, {
     local mine = me and me:get("core/world/status").scope_key
     local held = {}
     for _, p in ipairs(portals:iter()) do
-        local client_id = p:get("core/net/owner").client_id
-        held[client_id] = (held[client_id] or 0) + 1
+        local owner = p:get("core/net/owner")
+        held[owner] = (held[owner] or 0) + 1
     end
     for _, e in ipairs(asking:iter()) do
         local ask = e:get("git/panel/request")
         local said = e:has("git/panel/response") and e:get("git/panel/response") or {}
-        local client_id = e:get("core/net/owner").client_id
+        local owner = e:get("core/net/owner")
         local op = type(ask) == "table" and ask.op or nil
         if op == nil then
             if said.op ~= nil then
@@ -99,7 +99,7 @@ app:add_systems(Update, {
             local named = type(target) == "string" and target ~= "" and #target <= 512
             local why = (not named and "not a scope key")
                 or (target == mine and "this world's own scope")
-                or ((held[client_id] or 0) >= 8 and "8 portals already")
+                or ((held[owner] or 0) >= 8 and "8 portals already")
                 or nil
             if why ~= nil then
                 commands:entity(e:id()):insert({
@@ -110,9 +110,9 @@ app:add_systems(Update, {
                         message = why,
                     },
                 })
-                print(string.format("[GIT/PANEL] client %s's portal refused: %s", tostring(client_id), why))
+                print(string.format("[GIT/PANEL] %s's portal refused: %s", tostring(owner), why))
             else
-                held[client_id] = (held[client_id] or 0) + 1
+                held[owner] = (held[owner] or 0) + 1
                 -- Both stand 3 m ahead of the carrier, its back() (its rotation applied to +Z) on the
                 -- ground plane: a portal to place starts in view, and placed where it started it
                 -- holds nobody who asked for it.
@@ -124,7 +124,7 @@ app:add_systems(Update, {
                         ["scope/portal"] = { target = target },
                         ["scope/portal/view"] = { mode = "3d" },
                         Transform = { translation = { x = at.x + ahead.x * 3, y = at.y, z = at.z + ahead.z * 3 } },
-                        ["core/net/owner"] = { client_id = client_id },
+                        ["core/net/owner"] = owner,
                         ["core/net/sync"] = {
                             Transform = { authority = "server" },
                             ["scope/portal"] = { authority = "server" },
@@ -139,7 +139,7 @@ app:add_systems(Update, {
                         ["scope/portal/view"] = { mode = "3d" },
                         placement = {},
                         Transform = { translation = { x = at.x + ahead.x * 3, y = at.y, z = at.z + ahead.z * 3 } },
-                        ["core/net/owner"] = { client_id = client_id },
+                        ["core/net/owner"] = owner,
                         ["core/net/sync"] = {
                             placement = { authority = "client" },
                             Transform = { authority = "client", reliable = false },
@@ -153,7 +153,7 @@ app:add_systems(Update, {
                 commands:entity(e:id()):insert({
                     ["git/panel/response"] = { op = op, scope = target, status = "opened" },
                 })
-                print(string.format("[GIT/PANEL] client %s opened a portal to %s", tostring(client_id), target))
+                print(string.format("[GIT/PANEL] %s opened a portal to %s", tostring(owner), target))
             end
         end
     end

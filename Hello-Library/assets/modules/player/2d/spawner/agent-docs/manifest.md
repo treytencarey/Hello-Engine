@@ -19,14 +19,14 @@ exposes: [player/2d/spawner]
   | `z` | how far above the origin the players are drawn | 0 |
   | `sprite` | the `animation/sprite` every player starts with | `{}`: no sheet, so no sprite is drawn |
 
-- Each player it spawns is a root with `player/2d`, `camera = { distance = 1 }` (its starting zoom), `animation/sprite`, `Transform`, a kinematic capsule body (`RigidBody2d`, `Collider2d`, `LockedAxes2d`, `GravityScale2d = 0`, `Velocity2d`), `core/net/owner = { client_id }`, the `core/net/sync/Transform` shadow the owner's Transform arrives in, and `core/net/sync` (Transform from the owning client, unreliable; the body from the server). `["core/script/owner"] = false`: a player is not reaped with this mod, and lives until its client leaves.
+- Each player it spawns is a root with `player/2d`, `camera = { distance = 1 }` (its starting zoom), `animation/sprite`, `Transform`, a kinematic capsule body (`RigidBody2d`, `Collider2d`, `LockedAxes2d`, `GravityScale2d = 0`, `Velocity2d`), `core/net/owner` (the client's `core/net/connection` entity), the `core/net/sync/Transform` shadow the owner's Transform arrives in, and `core/net/sync` (Transform from the owning client, unreliable; the body from the server). `["core/script/owner"] = false`: a player is not reaped with this mod, and lives until its client leaves.
 
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
 | First | `player/2d/spawner/spawn` | On a changed connection, a client that is not only watching and has no player gets one, at the lowest free point (point 0, the centre, when all are taken) |
-| PreUpdate | `player/2d/spawner/left` | When a connection goes, or turns to only watching, its client's player is despawned |
+| PreUpdate | `player/2d/spawner/left` | A connection turning to only watching despawns the players in its `core/net/owns`. A connection going takes the owner off its players (core), and a `player/2d` that loses its owner, still here and not a peer mirror, is despawned |
 
 ## Use
 

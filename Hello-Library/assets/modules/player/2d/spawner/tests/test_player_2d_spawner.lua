@@ -19,8 +19,12 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local suite = require("modules/core/test_helpers.lua").create_suite("Player2dSpawnerSuite")
+local Net = require("modules/core/net/shared/net.lua")
 
-app:add_systems(Startup, { Commands }, function(commands)
+app:add_systems(Startup, { World, Commands }, function(world, commands)
+    -- A world's net declares ownership: `core/net/owner` names a connection, whose `core/net/owns`
+    -- the engine keeps.
+    Net.declare_ownership(world, commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
 end)
 
@@ -37,6 +41,12 @@ local function connection(world, client_id)
     end
 end
 
+--- The client owning `e`: that of the connection its `core/net/owner` names.
+local function owner_client(world, e)
+    local c = world:get_entity(e:get("core/net/owner"))
+    return c and (c:get("core/net/connection") or {}).client_id
+end
+
 local function players(world, client_id)
     local out = {}
     for _, p in ipairs(world:query({
@@ -47,7 +57,7 @@ local function players(world, client_id)
             "core/net/sync", "core/net/sync/Transform", "RigidBody2d", "Collider2d", "LockedAxes2d", "GravityScale2d",
         },
     })) do
-        if p:get("core/net/owner").client_id == client_id then
+        if owner_client(world, p) == client_id then
             out[#out + 1] = p
         end
     end
@@ -160,8 +170,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "left" and clock > 0.3 then
         suite.assert_test("D11a_a_client_back_to_watching_loses_its_player", #players(world, 9) == 0, "")
+        -- Counted by the player's own client id: a player whose connection went has no owner.
+        local left = 0
+        for _, e in ipairs(world:query({ with = { "player/2d" } })) do
+            if e:get("player/2d").client_id == 7 then left = left + 1 end
+        end
         suite.assert_test("D11b_a_client_that_left_loses_its_player_and_others_stay",
-            #players(world, 7) == 0 and #players(world, 8) == 1, "")
+            left == 0 and #players(world, 8) == 1, "players of 7 left: " .. left)
         connect(commands, 10)
         step("reused")
 
@@ -177,7 +192,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             with = { "core/net/owner" },
             optional = { "camera/2d", "movement/2d", "animation/sprite" },
         })) do
-            if e:get("core/net/owner").client_id == 8 then
+            if owner_client(world, e) == 8 then
                 gone = not e:has("camera/2d")
                     and not e:has("movement/2d") and not e:has("animation/sprite")
             end

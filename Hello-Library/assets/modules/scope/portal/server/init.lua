@@ -388,7 +388,7 @@ app:add_systems(Update, {
                     share.transfer_data = carried
                 end)
                 print(string.format("[SCOPE/PORTAL] client %s walks into %s: handing the player over on %s",
-                    tostring(player:get("core/net/owner").client_id), target, tostring(link)))
+                    tostring(player:get("player").client_id), target, tostring(link)))
             end
         end
     end

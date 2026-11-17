@@ -73,11 +73,14 @@ app:add_systems(Update, {
     ts.srv_players = #players:iter()
     -- A goes off to another world: its client tells this server it only watches now (PRESENCE).
     local owner = portals:iter()[1]
+    local list = portals:iter()
     for _, c in ipairs(connections:iter_mut()) do
         local conn = c:get("core/net/connection")
-        if ts.a_leave and owner ~= nil and conn.client_id == owner:get("core/net/owner").client_id and not conn.observer then
+        if ts.a_leave and owner ~= nil and c:id() == owner:get("core/net/owner") and not conn.observer then
             c:get_mut("core/net/connection").observer = true
         end
+        -- The first portal's owner, by its connection's client id.
+        if list[1] ~= nil and c:id() == list[1]:get("core/net/owner") then ts.srv_owner = conn.client_id end
     end
     local placed = 0
     for _, p in ipairs(portals:iter()) do
@@ -87,9 +90,7 @@ app:add_systems(Update, {
     for _, n in ipairs(nets:iter()) do
         ts.srv_ready = ts.srv_ready or n:get("core/net/state").bound == true or n:get("core/net/state").listening == true
     end
-    local list = portals:iter()
     ts.srv_portals = #list
-    if list[1] ~= nil then ts.srv_owner = list[1]:get("core/net/owner").client_id end
 end):in_set("zz/panel_net_server")
 ]=])
 

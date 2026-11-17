@@ -58,11 +58,11 @@ app:add_systems(PostUpdate, {
     local held, owned, named = {}, {}, {}
     for _, p in ipairs(players:iter()) do
         local player = p:get("player")
-        local owner = p:get("core/net/owner")
         if player.spawn_point ~= nil then
             held[player.spawn_point] = (held[player.spawn_point] or 0) + 1
         end
-        owned[owner.client_id] = true
+        -- By its owner, the connection.
+        owned[p:get("core/net/owner")] = true
     end
     local ready = {}
     for _, point in ipairs(points:iter()) do
@@ -91,7 +91,7 @@ app:add_systems(PostUpdate, {
     local waiting = 0
     for _, c in ipairs(connections:iter()) do
         local connection = c:get("core/net/connection")
-        if spawner and not connection.observer and not owned[connection.client_id] then
+        if spawner and not connection.observer and not owned[c:id()] then
             local s = spawner:get("player/spawner")
             local handed = connection.synced_state or {}
             local stood = handed.Transform
@@ -137,7 +137,7 @@ app:add_systems(PostUpdate, {
                     Velocity3d = { linvel = { x = 0, y = 0, z = 0 }, angvel = { x = 0, y = 0, z = 0 } },
                     camera = camera,
                     cooldown = handed.cooldown,
-                    ["core/net/owner"] = { client_id = connection.client_id },
+                    ["core/net/owner"] = c:id(),
                     ["core/net/peer/share"] = { stable_id = "player_" .. tostring(connection.client_id) },
                     ["core/net/sync/Transform"] = { translation = at, rotation = facing },
                     -- The portal's switch, which its client follows, is listed here: a name added
@@ -153,7 +153,7 @@ app:add_systems(PostUpdate, {
                     },
                     ["core/script/owner"] = false,
                 })
-                owned[connection.client_id] = true
+                owned[c:id()] = true
             end
         end
     end
@@ -168,28 +168,32 @@ end):in_set("player/spawner/spawn"):after(TransformSystems.Propagate):run_if({
     return not (connections:is_empty() and statuses:is_empty() and points:is_empty())
 end)
 
--- A client that left, or went back to only watching: its player goes. A connection whose
--- entity is gone has no row in `connected`.
+-- A client that went back to only watching: the players its connection owns go. One that left:
+-- its connection going takes the owner off its players, which keep the entity, and they go. A
+-- demotion takes the owner too, but leaves a mirror.
 app:add_systems(PreUpdate, {
+    Query[{ changed = { "core/net/connection" }, optional = { "core/net/owns" } }],
+    Query[{ with = { "player" }, optional = { "core/net/owner" } }],
     Query[{
-        ["or"] = {
-            changed = { "core/net/connection" },
-            removed = { "core/net/connection" },
-        },
-        optional = { "core/net/connection" },
+        ["or"] = { removed = { "core/net/owner" } },
+        with = { "player" },
+        without = { "core/net/peer/mirror" },
     }],
-    Query[{ with = { "core/net/connection" } }],
-    Query[{ with = { "player", "core/net/owner" } }],
     Commands,
-}, function(connections, connected, players, commands)
+}, function(connections, players, unowned, commands)
     for _, c in ipairs(connections:iter()) do
-        local connection = c:get("core/net/connection")
-        if connection ~= nil and (connection.observer or not connected:contains(c:id())) then
-            for _, p in ipairs(players:iter()) do
-                if p:get("core/net/owner").client_id == connection.client_id then
-                    commands:entity(p:id()):despawn()
-                end
+        if c:get("core/net/connection").observer then
+            for _, p in ipairs(players:iter_many(c:get("core/net/owns") or {})) do
+                commands:entity(p:id()):despawn()
             end
+        end
+    end
+    -- A removed edge also comes for an entity that despawned: only a player still here, and still
+    -- unowned, goes.
+    for _, p in ipairs(unowned:iter()) do
+        local player = players:get(p:id())
+        if player ~= nil and not player:has("core/net/owner") then
+            commands:entity(p:id()):despawn()
         end
     end
 end):in_set("player/spawner/left")

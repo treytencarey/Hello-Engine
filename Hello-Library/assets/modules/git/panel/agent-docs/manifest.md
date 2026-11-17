@@ -43,7 +43,7 @@ The target is the chosen repository's canonical key, `github:<owner>/<name>:<bra
 
 ## The portal the server opens
 
-On an ask with `op = "portal"` or `"drop_portal"`, the server checks only that `target_sk` is a string, not empty, at most 512 bytes, and not this world's own scope (`scope_key` of this world's own `core/world/status`, with `WorldShared` and without `WorldMirror`), and that the owner holds fewer than 8 portals here (counted by query over `scope/portal` with `core/net/owner`, with the ones this run opened). No library mod checks that a scope key is canonical: root canonicalizes the target when a client's view observes it, and a target root refuses ends as a locked portal with root's reason (`scope/portal/view`).
+On an ask with `op = "portal"` or `"drop_portal"`, the server checks only that `target_sk` is a string, not empty, at most 512 bytes, and not this world's own scope (`scope_key` of this world's own `core/world/status`, with `WorldShared` and without `WorldMirror`), and that the owner holds fewer than 8 portals here (counted by query over `scope/portal` with `core/net/owner`, grouped by the owner entity, with the ones this run opened). No library mod checks that a scope key is canonical: root canonicalizes the target when a client's view observes it, and a target root refuses ends as a locked portal with root's reason (`scope/portal/view`).
 
 A refused ask is answered `failed` with its reason and opens nothing. An accepted one is answered `opened`, with the op it answers. For `portal` the server spawns, for everyone to see and the owner to place:
 
@@ -53,7 +53,7 @@ A refused ask is answered `failed` with its reason and opens nothing. An accepte
     ["scope/portal/view"] = { mode = "3d" },
     placement = {},
     Transform = { translation = <3 m ahead of the carrier, as for drop_portal below> },
-    ["core/net/owner"] = { client_id = <the asker> },
+    ["core/net/owner"] = <the asker's owner, copied: its connection>,
     ["core/net/sync"] = {
         placement = { authority = "client" },
         Transform = { authority = "client", reliable = false },
@@ -69,7 +69,7 @@ The owner's client marks it `core/net/local` and places it (`placement`); confir
 
 It starts 3 m ahead, not at the carrier, so it is in view before the pointer moves it, and a portal placed where it started holds nobody who asked for it. For `drop_portal` the server spawns the same portal with no `placement`, already placed, at that same point, 3 m ahead of the carrier on the ground plane (the carrier's translation plus 3 times the x and z of its rotation applied to +Z, Bevy's `back()`, as v0.7.0 did; the height kept), with `Transform` synced from the server (`{ authority = "server" }`) and no `placement` sync.
 
-Either portal is the world's, not the panel's: closing the panel, taking `git/panel` off, reloading either half, or its placer leaving the world (gone off to another, only watching here) keeps it. Its `core/net/owner` stays the placer's; the server despawns no entity for an owner that leaves.
+Either portal is the world's, not the panel's: closing the panel, taking `git/panel` off, reloading either half, or its placer leaving the world (gone off to another, only watching here) keeps it. Its `core/net/owner` names the placer's connection; when the placer leaves, the connection going takes the owner off (core) and the portal stays, unowned. The server despawns no entity for an owner that leaves.
 
 The slot is a handshake. The client half takes its ask back (`git/panel/request = {}`) when an answer with an `op` lands, so the next ask is a change even when it asks the same; the server then takes its answer back (`git/panel/response = {}`). An ask that the standing answer already answers (same `op`, `scope` equal to `target_sk`) is not answered again: a reload of the server half runs it over every standing ask. An ask with the other op is answered, so `sidebar/invites`' ask is never taken for the panel's. While an answer stands on the client, a Portal click asks nothing, so an ask for the same target never meets the answer to the last one.
 

@@ -35,11 +35,13 @@ local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalCrossState", boot.DEFAULTS)
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({
+    local wn = commands:spawn({
         ["core/world/net"] = { mode = "server", name = "zzpx_s", port = 15495 },
         ["core/net"] = { mode = "server", name = "zzpx_s", port = 15495 },
         ["core/net/sync"] = false,
     })
+    -- The client's connection, as the world net spawns one: it owns what the client owns here.
+    local c31 = commands:spawn({ ["core/net/connection"] = { client_id = 31 }, ["core/net/sync"] = false, ChildOf = wn:id() }):id()
     -- A world states its scope to a peer through its own listener.
     commands:spawn({
         ["core/net/peer/listen"] = { name = "zzpx_s_peer", port = 15498, scope_key = boot.HERE, world_port = 15495 },
@@ -56,7 +58,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({
         player = { client_id = 31, spawn_index = 0 },
         Transform = { translation = { x = 2, y = 0, z = 1 } },
-        ["core/net/owner"] = { client_id = 31 },
+        ["core/net/owner"] = c31,
         ["core/net/peer/share"] = { stable_id = "player_31" },
         ["core/net/sync"] = { Transform = { authority = "server", reliable = false } },
         ["core/script/owner"] = false,
@@ -137,7 +139,7 @@ app:add_systems(Update, {
         commands:entity(c:id()):entry("core/net/connection"):and_modify(function(conn) conn.observer = false end)
     end
     for _, p in ipairs(players:iter()) do
-        if p:get("core/net/owner").client_id == 31 then
+        if c ~= nil and p:get("core/net/owner") == c:id() then
             local sync = p:get("core/net/sync")
             ts.t_cooling = p:has("scope/portal/cooling")
             ts.t_synced = type(sync) == "table" and sync.cooldown ~= nil and sync.cooldown.target == "owner"

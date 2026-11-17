@@ -32,8 +32,9 @@ app:add_systems(PostUpdate, {
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
+    Query[{ with = { "core/net", "core/world/net" }, without = { "WorldMirror" } }],
     Commands,
-}, function(asks, standins, landed, names, nodes, rows, commands)
+}, function(asks, standins, landed, names, nodes, rows, nets, commands)
     local me = rows:iter()[1]
     local scope = me and me:get("core/world/status").scope_key
     local shown
@@ -78,6 +79,7 @@ app:add_systems(PostUpdate, {
         end
         camera.yaw = (camera.yaw or 0) + Quat.to_euler(stood.rotation, "YXZ")[1]
         camera.pitch = camera.pitch or 0
+        local net = nets:iter()[1]
         commands:entity(id):insert({
             player = {},
             Transform = { translation = stood.translation, rotation = stood.rotation, scale = stood.scale },
@@ -88,7 +90,8 @@ app:add_systems(PostUpdate, {
             movement = {},
             ["camera/third_person"] = {},
             camera = camera,
-            ["core/net/local"] = true,
+            -- This client's, as a local spawn is: owned by its world net.
+            ["core/net/owner"] = net and net:id(),
         })
         print(string.format("[PLAYER/SPAWNER/STANDIN] predicted crossing: the player stands in at %s",
             shown.at and ("'" .. shown.at .. "'") or "where it stood"))
@@ -166,19 +169,20 @@ end)
 -- server put it.
 app:add_systems(Update, {
     Query[{
-        added = { "core/net/local" },
+        ["or"] = { added = { "core/net/owner" }, changed = { "core/net/owner" } },
         with = { "player" },
         without = { "player/spawner/standin" },
     }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Query[{
         with = { "player/spawner/standin" },
         without = { "core/world/flip" },
         optional = { "Transform", "camera" },
     }],
     Commands,
-}, function(arrived, standins, commands)
+}, function(arrived, own, standins, commands)
     for _, p in ipairs(arrived:iter()) do
-        for _, s in ipairs(standins:iter()) do
+        for _, s in ipairs(own:contains(p:get("core/net/owner")) and standins:iter() or {}) do
             if s:has("Transform") and s:has("camera") then
                 commands:entity(p:id()):insert({ Transform = s:get("Transform"), camera = s:get("camera") })
             end
