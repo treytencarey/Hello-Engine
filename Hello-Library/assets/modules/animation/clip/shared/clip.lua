@@ -1,4 +1,4 @@
--- What both halves of `animation/clip` need of a clip: the asset it names, and where a seek puts
+-- What `animation/clip` needs of a clip: the asset it names, and where a seek puts
 -- it. Required by path; not a mod file.
 
 local M = {}
@@ -16,21 +16,6 @@ function M.place(to, duration)
     if duration == nil then return nil end
     if to == "end" then return duration end
     return math.max(0, math.min(to, duration))
-end
-
---- The length of the longest clip the node names with a weight, from the loaded clips; nil while
---- one of them has not loaded.
-function M.length(wanted, clips, asset_server)
-    local longest = 0
-    for clip, weight in pairs(wanted.clips or {}) do
-        local path = M.resolve(clip)
-        if path and weight > 0 then
-            local asset = clips:get(asset_server:load(path))
-            if asset == nil then return nil end
-            longest = math.max(longest, asset.duration)
-        end
-    end
-    return longest
 end
 
 return M
