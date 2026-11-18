@@ -28,6 +28,7 @@
 --   C9b ...once dropped it has them, and its trigger reads the player inside, who did not walk in:
 --       no ask
 --   C10 ...and walking out and back in asks one
+--   C16 a door without `target` asks nothing when walked into
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -162,11 +163,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:spawn({ ["scope/portal"] = { target = DOOR, at = "zz_arrival" }, Name = "zz_door",
             Transform = { translation = { x = 1, y = 0, z = 2 }, rotation = Quat.from_rotation_y(math.pi / 2) },
             ["core/net/sync"] = false, ["zz/pc/p"] = { name = "door" } })
+        commands:spawn({ ["scope/portal"] = { at = "zz_arrival" }, Name = "zz_door_none",
+            Transform = { translation = { x = -1, y = 0, z = 2 } },
+            ["core/net/sync"] = false, ["zz/pc/p"] = { name = "none" } })
         step("spawned")
 
     -- The trigger mod writes its first `collision_trigger` once its sensor parts land, which would
     -- overwrite a walk written before it: walk once every portal has them, and they have settled.
-    elseif phase == "spawned" and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 5 then
+    elseif phase == "spawned" and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 6 then
         step("settling")
 
     elseif phase == "settling" and clock > 0.5 then
@@ -175,6 +179,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         walk(commands, world, "c3", { "me" })
         walk(commands, world, "c4", { "them" })
         walk(commands, world, "door", { "me" })
+        walk(commands, world, "none", { "me" })
         step("walked")
 
     elseif phase == "walked" and clock > 0.3 then
@@ -193,6 +198,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("C2_walking_into_a_hosted_one_asks_the_same", p2 == 1 and n2 == 0, string.format("predicted=%d plain=%d", p2, n2))
         local p3, n3 = asks(world, HERE)
         T("C3_a_portal_to_this_world_asks_none", p3 + n3 == 0, "")
+        local p16, n16 = asks(world, nil)
+        T("C16_a_door_without_target_asks_nothing", p16 + n16 == 0, string.format("predicted=%d plain=%d", p16, n16))
         local p4, n4 = asks(world, THIRD)
         T("C4_a_remote_player_walking_in_asks_none", p4 + n4 == 0, "")
         -- The player at (3, 1, 4) is (2, 1, 2) from the door, which is (-2, 1, 2) in the door's
@@ -279,7 +286,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "cooling" and #world:query({ with = { "zz/pc/h", "scope/portal/cooling" } }) == 1
         and named(world, "zz/pc/p", "c5") ~= nil
-        and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 6 and clock > 0.5 then
+        and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 7 and clock > 0.5 then
         walk(commands, world, "c5", { "me" })
         step("cooled_walk")
 

@@ -27,6 +27,9 @@
 --   V11 in a world that only observes, no portal asks; promoted, it catches up
 --   V12 taking the view off a portal that stays takes its ask and its stencil
 --   V13 a reload of the mod keeps each ask, once
+--   V20 a door without `target` asks nothing
+--   V21 ...given a target, it asks and shows it
+--   V22 ...and its target taken away again, its ask and its stencils go
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -105,7 +108,7 @@ local function mapped_at(world, kids, x, y, z)
 end
 
 local phase, clock = "spawn", 0
-local door_kids, mapped_kids = {}, {}
+local door_kids, mapped_kids, blank_kids = {}, {}, {}
 local kept_ask
 
 app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, commands, assets)
@@ -137,6 +140,10 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
             ["core/net/sync"] = false, ["zz/view/p"] = { name = "mapped" } }):id()
         mapped_kids[1] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = mapped }):id()
         mapped_kids[2] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = mapped }):id()
+        local blank = commands:spawn({ ["scope/portal"] = { at = "zz_arrival" },
+            ["scope/portal/view"] = { mode = "none" }, Name = "zz_blank", Transform = {},
+            ["core/net/sync"] = false, ["zz/view/p"] = { name = "blank" } }):id()
+        blank_kids[1] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = blank }):id()
         step("asked")
 
     elseif phase == "asked" and #asks_of(world, portal(world, "a")) > 0 and clock > 0.3 then
@@ -149,6 +156,8 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
         T("V2_each_portal_to_one_world_asks", #b == 1 and b[1].ask.ref == OTHER, "asks=" .. #b)
         T("V3_a_portal_to_this_world_asks_nothing", #asks_of(world, portal(world, "self")) == 0, "")
         T("V4a_a_portal_being_placed_asks_nothing", #asks_of(world, portal(world, "placing")) == 0, "")
+        T("V20_a_door_without_target_asks_nothing", #asks_of(world, portal(world, "blank")) == 0,
+            "asks=" .. #asks_of(world, portal(world, "blank")))
         commands:entity(portal(world, "placing"):id()):remove("placement")
         commands:entity(portal(world, "a"):id()):insert({ ["scope/portal/hosted"] = {} })
         step("placed")
@@ -216,6 +225,7 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
         T("V19_the_door_moved_its_stencils_frame_follows", ok, said)
         commands:spawn({ ["core/world/observe/answer"] = { ref = SECOND, state = "refused", reason = "not-running" },
             WorldMirror = { world_id = 0 }, ["core/net/sync"] = false, ["zz/view/second"] = {} })
+        commands:entity(portal(world, "blank"):id()):insert({ ["scope/portal"] = { target = MAPPED, at = "zz_arrival" } })
         step("refused")
 
     elseif phase == "refused" and clock > 0.3 then
@@ -227,6 +237,11 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
             commands:entity(e:id()):insert({ ["core/world/observe/answer"] = { ref = SECOND, state = "allowed" } })
         end
         commands:entity(portal(world, "b"):id()):insert({ ["scope/portal"] = { target = MOVED } })
+        local blank = asks_of(world, portal(world, "blank"))
+        local bs = stencil_on(world, blank_kids[1])
+        T("V21_given_a_target_it_asks_and_shows_it", #blank == 1 and blank[1].ask.ref == MAPPED
+            and bs ~= nil and bs.world == MAPPED, "asks=" .. #blank)
+        commands:entity(portal(world, "blank"):id()):insert({ ["scope/portal"] = { at = "zz_arrival" } })
         step("reopened")
 
     elseif phase == "reopened" and clock > 0.3 then
@@ -235,6 +250,8 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
         T("V8b_a_later_allowed_unlocks_it", not placing:has("scope/portal/locked") and s ~= nil and s.world == SECOND, "")
         local b = asks_of(world, portal(world, "b"))
         T("V10_a_changed_target_replaces_the_ask", #b == 1 and b[1].ask.ref == MOVED, "asks=" .. #b)
+        T("V22_its_target_taken_away_its_ask_and_stencils_go", #asks_of(world, portal(world, "blank")) == 0
+            and stencil_on(world, blank_kids[1]) == nil, "asks=" .. #asks_of(world, portal(world, "blank")))
         commands:entity(row(world):id()):insert({
             ["core/world/status"] = { scope_key = HERE, mode = "client", status = "ready", observer = true },
         })

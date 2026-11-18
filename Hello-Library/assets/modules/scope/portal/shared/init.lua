@@ -1,10 +1,12 @@
 -- A portal: a way into another world, named by its scope key. A hosted portal a player dropped
 -- stands in its target too, leading back (the server half); any other is one-ended, the way back
 -- being the other world's own portal. On both sides a dropped portal is a fixed ball of radius 1.2
--- that says who walks into it (`collision_trigger`); one still being placed is none of that.
+-- that says who walks into it (`collision_trigger`); one still being placed is none of that. A door
+-- without `target` leads nowhere until one is set (a console's re-point): no link, no crossing, no
+-- view.
 --
 -- scope/portal = {
---     target = <the scope key of the world it leads to>,
+--     target = <the scope key of the world it leads to; absent, the portal leads nowhere>,
 --     at = <on a door: the Name of the node in the target's map this door stands for there>,
 -- }
 --

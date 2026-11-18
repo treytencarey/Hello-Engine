@@ -73,7 +73,7 @@ app:add_systems(Update, {
         if scenes:iter_many(scenes:iter_ancestors(p:id()))[1] ~= nil then start = false end
         local kept
         for _, ask in ipairs(asks:iter_many(p:get("Children") or {})) do
-            if kept == nil and target ~= scope and ask:get("core/world/observe").ref == target then
+            if kept == nil and target ~= nil and target ~= scope and ask:get("core/world/observe").ref == target then
                 kept = ask
             else
                 commands:entity(ask:id()):despawn()
@@ -87,7 +87,7 @@ app:add_systems(Update, {
                     if start == false then ask.join_only = false end
                 end)
             end
-        elseif target ~= scope then
+        elseif target ~= nil and target ~= scope then
             commands:spawn({
                 ["core/world/observe"] = { ref = target, libraries = libraries, hosted = hosted, join_only = start },
                 WorldShared = {},
@@ -162,7 +162,7 @@ app:add_systems(Update, {
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
         local target = portal.target
-        local answer = target ~= scope and said[target] or nil
+        local answer = target ~= nil and target ~= scope and said[target] or nil
         local surfaces = { p }
         if p:get("scope/portal/view").mode == "none" and not p:has("Mesh3d") then
             surfaces = meshes:iter_many(p:get("Children") or {})
@@ -178,7 +178,17 @@ app:add_systems(Update, {
                 scale = { x = t.scale.x, y = t.scale.y, z = t.scale.z },
             }
         end
-        if answer ~= nil and answer.state == "allowed" then
+        if target == nil then
+            -- A door leading nowhere shows nothing, and is not locked.
+            for _, s in ipairs(surfaces) do
+                if s:has("core/compositor/stencil") then
+                    commands:entity(s:id()):remove("core/compositor/stencil")
+                end
+            end
+            if p:has("scope/portal/locked") then
+                commands:entity(p:id()):remove("scope/portal/locked")
+            end
+        elseif answer ~= nil and answer.state == "allowed" then
             for _, s in ipairs(surfaces) do
                 local stencil = s:get("core/compositor/stencil")
                 local frame = stencil and stencil.frame
@@ -262,7 +272,7 @@ app:add_systems(PostUpdate, {
     local scope = me and me:get("core/world/status").scope_key
     for _, e in ipairs(portals:iter()) do
         local target = e:get("scope/portal").target
-        if e:get("scope/portal/view").mode == "3d" and target ~= scope then
+        if e:get("scope/portal/view").mode == "3d" and target ~= nil and target ~= scope then
             local entity = commands:entity(e:id())
             if not e:has("Mesh3d") then
                 entity:insert({ Mesh3d = meshes:add(Sphere.new(1.2)) })

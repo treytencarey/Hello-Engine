@@ -28,6 +28,9 @@
 --   P17 a player still cooling from its crossing (`cooldown`'s `scope/portal/cooling`) is not handed
 --       over
 --   P18 ...and once it has cooled, walking in again hands it over
+--   P28 a door without `target` gets no link and hands nobody over who walks into it
+--   P29 ...given a target, it gets its door link
+--   P30 ...and its target taken away again, the link goes
 --   P20 with real physics: a hosted portal dropped where a player stands reads it inside and hands
 --       it nobody over, as only walking in counts
 --   P21 ...nor a player spawned inside it, as one spawns inside a door
@@ -88,7 +91,7 @@ local function near(a, b) return type(a) == "number" and math.abs(a - b) < 1e-3 
 
 -- Core's switch takes `core/net/peer/switch` off in the same frame when it finds no peer for the
 -- target, so what the portal asked for is read on its edge, right after the portal's systems.
-local switched, carried, via = {}, {}, {}
+local switched, carried, via, crossed = {}, {}, {}, {}
 app:add_systems(Update, {
     Query[{
         added = { "core/net/peer/switch" },
@@ -99,6 +102,7 @@ app:add_systems(Update, {
     for _, r in ipairs(rows:iter()) do
         local name = r:get("zz/portal/h").name
         switched[name] = r:get("core/net/peer/switch").target_scope
+        crossed[name] = true
         via[name] = r:get("core/net/peer/switch").link
         local share = r:get("core/net/peer/share") or {}
         local timers = share.transfer_data and share.transfer_data.cooldown or {}
@@ -171,6 +175,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             commands:spawn({ ["scope/portal"] = { target = FOURTH, at = "zz_arrival" }, Name = "zz_door4",
                 Transform = { translation = { x = -8, y = 0, z = 3 } },
                 ["core/net/sync"] = false, ["zz/portal/p"] = { name = "door_4" } })
+            commands:spawn({ ["scope/portal"] = { at = "zz_arrival" }, Name = "zz_door_none",
+                Transform = { translation = { x = -8, y = 0, z = -3 } },
+                ["core/net/sync"] = false, ["zz/portal/p"] = { name = "door_none" } })
             step("linking")
         end
 
@@ -233,7 +240,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             })
             for _, h in ipairs({
                 { "h7", 17, true, false }, { "h8", 18, true, false }, { "hm", 19, true, true }, { "hn", 20, false, false },
-                { "hp", 25, true, false }, { "hdo", 26, true, false }, { "hd4", 27, true, false },
+                { "hp", 25, true, false }, { "hdo", 26, true, false }, { "hd4", 27, true, false }, { "hz", 28, true, false },
             }) do
                 commands:spawn({
                     player = { client_id = h[2], spawn_index = 0 },
@@ -271,6 +278,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         walk("l4", "h8")
         walk("door_o", "hdo")
         walk("door_4", "hd4")
+        walk("door_none", "hz")
         step("walked")
 
     elseif phase == "walked" and clock > 0.3 then
@@ -286,6 +294,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             string.format("portal: %s %s door: %s %s", tostring(switched.h8), tostring(via.h8), tostring(switched.hd4),
                 tostring(via.hd4)))
         T("P19_a_portal_still_being_placed_hands_nobody_over", switched.hp == nil, tostring(switched.hp))
+        local none = named(world, "zz/portal/p", "door_none")
+        T("P28_a_door_without_target_gets_no_link_and_hands_nobody_over", crossed.hz == nil
+            and #links(world, nil, true) == 0 and not none:has("scope/portal/hosted"), tostring(switched.hz))
+        commands:entity(none:id()):insert({ ["scope/portal"] = { target = OTHER, at = "zz_arrival" } })
         local ends, kept = 0, false
         for _, e in ipairs(world:query({ with = { "scope/portal/return", "scope/portal" } })) do
             local back = e:get("scope/portal")
@@ -333,6 +345,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             #others == 1 and now ~= link_holder and names ~= nil and names.target == OTHER,
             string.format("links=%d under %s, was %s", #others, tostring(now), tostring(link_holder)))
         link_holder = now
+        local none_link = false
+        for _, l in ipairs(links(world, OTHER, true)) do
+            none_link = none_link or l:get("core/net/peer/link").name == "peer_to_" .. OTHER .. "@zz_door_none"
+        end
+        T("P29_given_a_target_it_gets_its_door_link", none_link, "")
+        commands:entity(named(world, "zz/portal/p", "door_none"):id()):insert({ ["scope/portal"] = { at = "zz_arrival" } })
         step("cooled")
 
     elseif phase == "cooled" and not named(world, "zz/portal/h", "hc"):has("scope/portal/cooling")
@@ -343,6 +361,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "walked_again" and clock > 0.3 then
         T("P18_once_it_has_cooled_walking_in_hands_it_over", switched.hc == OTHER, tostring(switched.hc))
+        local none_link = false
+        for _, l in ipairs(links(world, OTHER, true)) do
+            none_link = none_link or l:get("core/net/peer/link").name == "peer_to_" .. OTHER .. "@zz_door_none"
+        end
+        T("P30_its_target_taken_away_its_link_goes", not none_link, "")
         -- Real physics from here: a player is a kinematic body moved by its Transform, as on a server.
         commands:spawn({
             ["scope/portal"] = { target = OTHER },

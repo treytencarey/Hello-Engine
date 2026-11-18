@@ -46,7 +46,7 @@ app:add_systems(Update, {
         local portal = p:get("scope/portal")
         local entered = p:get("collision_trigger").entered or {}
         local door = portal.at ~= nil and p:has("Name") and p:has("GlobalTransform")
-        if not watching and portal.target ~= scope then
+        if not watching and portal.target ~= nil and portal.target ~= scope then
             for _, player in ipairs(players:iter_many(entered)) do
                 if not mine(own, player) then goto next_player end
                 local body = player.GlobalTransform:compute_transform()

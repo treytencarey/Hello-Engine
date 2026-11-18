@@ -7,6 +7,8 @@
 --   C2 a changed record moves the door with it
 --   C3 the record gone, the door takes its authored target and `at` again
 --   C4 a door that arrives after its record (a scene that lands late, or is written again) takes it
+--   C5 a door authored without `target` takes a record's target
+--   C6 ...and the record gone, it has no target again
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -39,6 +41,14 @@ app:add_systems(Startup, { Commands }, function(commands)
     })
     commands:spawn(door("zz_door"))
     commands:spawn({ ["scope/portal/console"] = { door = "zz_door", at = "zz_door" }, ["core/net/sync"] = false })
+    commands:spawn({
+        Name = "zz_blank",
+        ["scope/portal"] = { at = "zz_arrival" },
+        GltfExtras = { value = '{"scope/portal":{"at":"zz_arrival"}}' },
+        Transform = { translation = { x = 4, y = 0, z = -10 } },
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({ ["scope/portal/console"] = { door = "zz_blank", at = "zz_blank" }, ["core/net/sync"] = false })
 end)
 
 local function portal(world, name)
@@ -98,6 +108,21 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "c4" and (show(portal(world, "zz_late")) == FEATURE .. " @ zz_late" or clock > 3) then
         T("C4_a_door_arriving_after_its_record_takes_it", show(portal(world, "zz_late")) == FEATURE .. " @ zz_late"
             and show(portal(world, "zz_door")) == AUTHORED .. " @ zz_arrival", show(portal(world, "zz_late")))
+        commands:spawn({
+            ["scope/portal/console/target"] = { door = "zz_blank", target = FEATURE, at = "zz_blank" },
+            ["core/net/sync"] = false,
+        })
+        step("c5")
+
+    elseif phase == "c5" and (show(portal(world, "zz_blank")) == FEATURE .. " @ zz_blank" or clock > 3) then
+        T("C5_a_door_authored_without_target_takes_a_record_s_target", show(portal(world, "zz_blank")) == FEATURE .. " @ zz_blank",
+            show(portal(world, "zz_blank")))
+        commands:entity(record(world, "zz_blank"):id()):despawn()
+        step("c6")
+
+    elseif phase == "c6" and (show(portal(world, "zz_blank")) ~= FEATURE .. " @ zz_blank" or clock > 3) then
+        T("C6_the_record_gone_it_has_no_target_again", show(portal(world, "zz_blank")) == "nil @ zz_arrival",
+            show(portal(world, "zz_blank")))
         phase = "done"
         suite.finish("PORTAL_CONSOLE_CLIENT")
     end

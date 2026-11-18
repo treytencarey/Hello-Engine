@@ -16,7 +16,7 @@ local Vec3 = require("bevy::math::Vec3")
 -- `at` names there, and has its own link. Every other portal to a target shares the identity
 -- link, which places nothing.
 local function door_link(p, portal)
-    if portal.at ~= nil and p:has("Name") then
+    if portal.target ~= nil and portal.at ~= nil and p:has("Name") then
         return "peer_to_" .. portal.target .. "@" .. p:get("Name").name
     end
 end
@@ -55,7 +55,7 @@ app:add_systems(Update, {
     end
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
-        if portal.target ~= mine and door_link(p, portal) == nil then named[portal.target] = true end
+        if portal.target ~= nil and portal.target ~= mine and door_link(p, portal) == nil then named[portal.target] = true end
     end
     local linked = {}
     for _, l in ipairs(links:iter_mut()) do
@@ -97,7 +97,7 @@ app:add_systems(Update, {
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
         local target = portal.target
-        local row = running[target]
+        local row = target ~= nil and running[target] or nil
         local door = door_link(p, portal)
         local identity = row and "peer_to_127.0.0.1_" .. tostring(row.ports.world or row.port)
         if row ~= nil and door == nil and named[target] and not linked[identity] then
@@ -260,7 +260,7 @@ app:add_systems(Update, {
         local target = p:get("scope/portal").target
         local sync = p:get("core/net/sync")
         local id
-        if mine ~= nil and target ~= mine and p:has("scope/portal/hosted") and type(sync) == "table" then
+        if mine ~= nil and target ~= nil and target ~= mine and p:has("scope/portal/hosted") and type(sync) == "table" then
             local at = p:get("Transform").translation
             id = string.format("scope/portal/return:%s>%s@%.3f,%.3f,%.3f", mine, target, at.x, at.y, at.z)
         end
@@ -374,8 +374,8 @@ app:add_systems(Update, {
         local portal = p:get("scope/portal")
         local target = portal.target
         local entered = p:get("collision_trigger").entered or {}
-        local link = door_link(p, portal) or identity[target]
-        if target ~= mine then
+        local link = door_link(p, portal) or (target ~= nil and identity[target] or nil)
+        if target ~= nil and target ~= mine then
             for _, player in ipairs(players:iter_many(entered)) do
                 commands:entity(player:id()):insert({
                     ["core/net/peer/switch"] = { target_scope = target, link = link },

@@ -16,6 +16,7 @@
 --   P6 "New branch" opens the name field and gives the player UI input; typing writes the name
 --   P7 Create asks root to load the new branch's world; once it is ready the door is re-pointed at
 --      it, the load goes, the field closes and game input comes back
+--   P9 a door with no target: "Points to nothing", and no branch marked as the door's
 --   P8 a screen's mesh gone, its UI root goes; the last console taken off a node that stays, its
 --      mesh's screen goes: `ui/screen`, its camera and its root
 require("modules/core/init.lua")
@@ -250,6 +251,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             tostring(r.target))
         T("P7_and_the_field_closes_with_game_input_back", (console_of(world):get("scope/portal/console/state") or {}).typing == nil
             and mode.mode == "input/game", tostring(mode.mode))
+        for _, d in ipairs(world:query({ with = { "scope/portal", "Name" } })) do
+            if d:get("Name").name == "zz_door" then
+                commands:entity(d:id()):insert({ ["scope/portal"] = { at = "zz_arrival" } })
+            end
+        end
+        step("blank")
+
+    elseif phase == "blank" and (said(world):find("nothing", 1, true) or clock > 5) then
+        T("P9_a_door_with_no_target_points_to_nothing_and_marks_no_branch", texts[1] == "Points to nothing"
+            and rows["main"] ~= nil and rows["prologue"] ~= nil and not said(world):find("?", 1, true), said(world))
         -- A second console with a screen of its own, so the mod stays loaded when the first goes.
         local spare = commands:spawn({ ["zz/spare"] = {}, ["scope/portal/console"] = { door = "zz_door", at = "zz_door" },
             Transform = { translation = { x = -2, y = 1, z = -2 } }, ["core/net/sync"] = false }):id()
