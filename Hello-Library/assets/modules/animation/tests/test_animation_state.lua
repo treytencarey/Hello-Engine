@@ -47,10 +47,15 @@ end)
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/char" },
-        optional = { "animation", "animation/graph", "animation/playing", "Transform", "core/net/sync/Transform" },
+        optional = { "animation", "animation/playing", "Transform", "core/net/sync/Transform" },
     })) do
         if e:get("zz/char").name == name then return e end
     end
+end
+
+--- Whether the character's model has its graph (`animation/clip` builds it on the model).
+local function built(world, e)
+    return #world:query({ with = { "animation/model", "animation/clip/graph" }, iter_many = world:descendants(e:id()) }) > 0
 end
 
 local phase, clock = "loading", 0
@@ -84,7 +89,7 @@ app:add_systems(Update, { World, Res[Time] }, function(world, time)
     local still, copy = named(world, "still"), named(world, "copy")
 
     if phase == "loading" then
-        local ready = still and copy and still:has("animation/graph") and copy:has("animation/graph")
+        local ready = still and copy and built(world, still) and built(world, copy)
             and copy:has("core/net/sync/Transform")
         if not ready and clock < 10 then return end
         step("settle")
@@ -112,9 +117,9 @@ app:add_systems(Update, { World, Res[Time] }, function(world, time)
         local models = world:query({ with = { "animation/model" }, iter_many = world:descendants(bare:id()) })
         suite.assert_test("AS3_with_no_model_nothing_is_drawn_or_played",
             a.model == nil and a.walk_speed == 6 and #models == 0
-                and not bare:has("animation/graph") and not bare:has("animation/playing"),
-            string.format("model=%s walk_speed=%s models=%d graph=%s playing=%s", tostring(a.model), tostring(a.walk_speed),
-                #models, tostring(bare:has("animation/graph")), tostring(bare:has("animation/playing"))))
+                and not bare:has("animation/playing"),
+            string.format("model=%s walk_speed=%s models=%d playing=%s", tostring(a.model), tostring(a.walk_speed),
+                #models, tostring(bare:has("animation/playing"))))
         suite.finish("ANIMATION_STATE")
         phase = "done"
     end

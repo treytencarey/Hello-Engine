@@ -1,28 +1,20 @@
 -- The client half: each character's model and the clip it plays, built per entity.
 --
--- A character's model is a child (`animation/model`) holding its scene, and its clips are
--- nodes of its own graph (`animation/graph`). Both hold asset handles, which Bevy refills in
--- place when a file changes or arrives, so a file change rebuilds nothing
--- here. A change to `animation` replaces only what it names anew: a new scene replaces the
--- model, new clips rebuild the graph. The scene spawns its own AnimationPlayer, which is
--- given its character's graph and marked `animation/player`. The clip to play comes from
--- the character's motion on this client, or from `animation/action` while that is there.
+-- A character's model is a child (`animation/model`) holding its scene, which spawns its own
+-- AnimationPlayer. The clips play through `animation/clip` on that child: this half writes every
+-- clip the character has, each at its weight, those silent at 0, so the child's graph stays the
+-- same while it fades from one to another. The clip to play comes from the character's motion on
+-- this client, or from `animation/action` while that is there.
 --
 -- animation/model = { scene = <the scene's path> }: the child holding the model's scene.
--- animation/graph = {
---     handle = <the AnimationGraph>,
---     nodes = { <state> = <node index> },
---     clips = { <state> = <the clip's path> },
--- }
--- animation/player = { state, graph }: on the AnimationPlayer the model's scene spawned, what it
---     last started (empty until it starts one).
 -- animation/motion = { at = { x, y, z } }: where the character was last frame.
 -- animation/playing = { state = <name>, speed = <playback speed> }: what it should play.
 
 local AssetServer = require("bevy::asset::AssetServer")
-local Assets = require("bevy::asset::Assets")
-local AnimationGraph = require("bevy::animation::graph::AnimationGraph")
 local Time = require("bevy::time::Time")
+
+-- How fast a clip's weight moves toward its target, per second: a fade takes 0.2 s.
+local FADE = 5
 
 -- Its model, once its fields are filled in: spawned on add, replaced when the scene changes.
 app:add_systems(First, {
@@ -46,68 +38,12 @@ app:add_systems(First, {
                     ["animation/model"] = { scene = scene },
                     SceneRoot = asset_server:load(scene),
                     Transform = { translation = a.offset },
+                    ["animation/clip"] = { clips = {}, speed = 1, ["repeat"] = true },
                 }):insert({ ChildOf = e:id() })
             end
         end
     end
 end):in_set("animation/model")
-
--- Its graph, a node per clip: built on add, rebuilt when a clip changes. Each clip is added
--- under the root (Bevy's `AnimationGraph::new()` and `add_clip`), and the graph moves into
--- `Assets<AnimationGraph>`, which answers its handle. A linked player is given the new one.
-app:add_systems(First, {
-    Query[{ changed = { "animation" }, optional = { "animation/graph" } }],
-    Query[{ with = { "animation/player" } }],
-    Res[AssetServer],
-    ResMut[Assets[AnimationGraph]],
-    Commands,
-}, function(changed, players, asset_server, graphs, commands)
-    for _, e in ipairs(changed:iter()) do
-        local a = e:get("animation")
-        if a.model and a.clips then
-            local built = (e:get("animation/graph") or {}).clips or {}
-            local same = true
-            for state, suffix in pairs(a.clips) do
-                same = same and built[state] == a.model .. suffix
-            end
-            for state in pairs(built) do
-                same = same and a.clips[state] ~= nil
-            end
-            if not same or not e:has("animation/graph") then
-                local graph, nodes, clips = AnimationGraph.new(), {}, {}
-                for state, suffix in pairs(a.clips) do
-                    nodes[state] = graph:add_clip(asset_server:load(a.model .. suffix), 1.0, graph.root)
-                    clips[state] = a.model .. suffix
-                end
-                local handle = graphs:add(graph)
-                -- `insert`, not `patch`: a patch merges into the old `nodes` and `clips`, so a
-                -- clip taken out would stay listed
-                commands:entity(e:id()):insert({ ["animation/graph"] = { handle = handle, nodes = nodes, clips = clips } })
-                local player = players:iter_many(players:iter_descendants(e:id()))[1]
-                if player then commands:entity(player:id()):insert({ AnimationGraphHandle = handle }) end
-            end
-        end
-    end
-end):in_set("animation/graph")
-
--- The scene's AnimationPlayer, linked to its character's graph: the nearest ancestor that
--- carries one.
-app:add_systems(First, {
-    Query[{ added = { "AnimationPlayer" } }],
-    Query[{ with = { "animation", "animation/graph" } }],
-    Commands,
-}, function(players, carriers, commands)
-    for _, p in ipairs(players:iter()) do
-        local carrier = carriers:iter_many(carriers:iter_ancestors(p:id()))[1]
-        if carrier then
-            commands:entity(p:id()):insert({
-                AnimationTransitions = {},
-                ["animation/player"] = {},
-                AnimationGraphHandle = carrier:get("animation/graph").handle,
-            })
-        end
-    end
-end):in_set("animation/link"):after("animation/graph")
 
 -- What it is doing: from its body's velocity while that says it moves (physics moves a body in
 -- fixed steps, so most frames show no movement), else from how it moved since last frame. A frame
@@ -116,7 +52,7 @@ end):in_set("animation/link"):after("animation/graph")
 app:add_systems(Update, {
     Res[Time],
     Query[{
-        with = { "animation", "animation/graph", "Transform" },
+        with = { "animation", "Transform" },
         optional = { "animation/motion", "animation/playing", "animation/action", "Velocity3d" },
     }],
     Commands,
@@ -125,6 +61,7 @@ app:add_systems(Update, {
     if dt <= 0 then return end
     for _, e in ipairs(characters:iter()) do
         local a = e:get("animation")
+        if a.model == nil then goto next_character end
         local at = e:get("Transform").translation
         local last = (e:get("animation/motion") or {}).at
         local from = last or at
@@ -155,45 +92,57 @@ app:add_systems(Update, {
         if playing.state ~= state or playing.speed ~= speed then
             commands:entity(e:id()):patch({ ["animation/playing"] = { state = state, speed = speed } })
         end
+        ::next_character::
     end
 end):in_set("animation/state")
 
--- The clip its player plays, when what it should play changes (its state, its speed or its
--- graph) or a new player appears. What a player last started is kept on it
--- (`animation/player`): a new state or graph crossfades into its clip from the start, and the
--- same state at a new speed only changes the running clip's speed (a restart on every speed
--- change kept a clip from ever reaching its end). A new player has started nothing.
+--- Each clip the character has, at 1 for what it plays (its state's, or idle's) and 0 for the rest.
+local function targets(a, playing)
+    local out = {}
+    for _, suffix in pairs(a.clips) do out[a.model .. suffix] = 0 end
+    local suffix = a.clips[playing.state] or a.clips.idle
+    if suffix then out[a.model .. suffix] = 1 end
+    return out
+end
+
+-- The clips on its model: each weight moves toward its target, so a new state fades in as the
+-- old one fades out. It polls while a weight moves; a model at its targets is not written.
 app:add_systems(Update, {
-    Query[{
-        ["or"] = { changed = { "animation/playing", "animation/graph" } },
-        with = { "animation" },
-    }],
-    Query[{ added = { "animation/player" } }],
-    Query[{ with = { "animation" } }],
-    Query[{ with = { "animation", "animation/playing", "animation/graph" } }],
-    Query[{ with = { Mut["animation/player"], Mut["AnimationTransitions"], Mut["AnimationPlayer"] } }],
-}, function(changed, new_players, owners, characters, players)
-    local carriers = {}
-    for _, e in ipairs(changed:iter()) do
-        carriers[#carriers + 1] = e:id()
-    end
-    for _, p in ipairs(new_players:iter()) do
-        local carrier = owners:iter_many(owners:iter_ancestors(p:id()))[1]
-        if carrier then carriers[#carriers + 1] = carrier:id() end
-    end
-    for _, e in ipairs(characters:iter_many(carriers)) do
+    Res[Time],
+    Query[{ with = { "animation", "animation/playing" }, optional = { "Children" } }],
+    Query[{ with = { "animation/model" }, optional = { "animation/clip" } }],
+    Commands,
+}, function(time, characters, models, commands)
+    local step = time:delta_secs() * FADE
+    for _, e in ipairs(characters:iter()) do
+        local a = e:get("animation")
         local playing = e:get("animation/playing")
-        local graph = e:get("animation/graph")
-        local node = graph.nodes[playing.state] or graph.nodes.idle
-        local player = players:iter_many_mut(players:iter_descendants(e:id()))[1]
-        if player and node then
-            local started = player:get("animation/player")
-            local options = { speed = playing.speed or 1, ["repeat"] = true }
-            if started.state == playing.state and started.graph == graph.handle then
-                player.AnimationPlayer:play(node, options)
-            else
-                player.AnimationTransitions:play(node, 0.2, options)
-                player:set({ ["animation/player"] = { state = playing.state, graph = graph.handle } })
+        local model = models:iter_many(e:get("Children") or {})[1]
+        if model and a.model and a.clips then
+            local current = model:get("animation/clip") or {}
+            local now = current.clips or {}
+            -- nothing playing yet: the first state starts at its weight, with nothing to fade from
+            local fresh = true
+            for _, w in pairs(now) do fresh = fresh and w == 0 end
+            local want, changed = targets(a, playing), false
+            local clips = {}
+            for clip, target in pairs(want) do
+                local w = now[clip] or 0
+                if fresh then
+                    w = target
+                elseif w < target then
+                    w = math.min(target, w + step)
+                elseif w > target then
+                    w = math.max(target, w - step)
+                end
+                clips[clip] = w
+                changed = changed or w ~= now[clip]
+            end
+            for clip in pairs(now) do changed = changed or want[clip] == nil end
+            if changed or current.speed ~= playing.speed then
+                commands:entity(model:id()):insert({
+                    ["animation/clip"] = { clips = clips, speed = playing.speed or 1, ["repeat"] = true },
+                })
             end
         end
     end

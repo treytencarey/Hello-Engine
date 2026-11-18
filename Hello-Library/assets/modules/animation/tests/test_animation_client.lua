@@ -2,8 +2,8 @@
 -- `animation` on a client, with a fixture model: an animated node under an `Armature`.
 --
 --   AN1 each character gets its own model, a child holding its scene (`animation/model`)
---   AN2 each gets its own graph, with a node per clip and the clip each node plays
---   AN3 the scene's AnimationPlayer is linked: marked `animation/player`, given the graph
+--   AN2 each model gets its own graph (`animation/clip/graph`), a node per clip file
+--   AN3 the scene's AnimationPlayer is given the graph
 --   AN4 standing still it plays idle; moving across, walk (faster for faster); rising, jump;
 --       dropping, fall
 --   AN4b walking on past the clip's length, speeding up halfway, it keeps walking: the clip
@@ -15,7 +15,7 @@
 --   AN5 `animation/action` wins while it is there; without it the motion's state returns
 --   AN10 a later change to `animation` that names nothing new (`walk_speed`) replaces nothing
 --   AN11 a new scene replaces the model; a new clip rebuilds the graph, and the model stays
---   AN12 a clip taken out rebuilds the graph without it (which graph a linked player holds
+--   AN12 a clip file no state names any more leaves the graph (which graph a linked player holds
 --        cannot be read: a created asset's handle reads back as an opaque reflect value)
 --   AN6 a changed clip file rebuilds nothing: Bevy refills the clip in place, and every
 --       character keeps its model and graph
@@ -43,7 +43,7 @@ end)
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/char" },
-        optional = { "animation/graph", "animation/playing", "Transform" },
+        optional = { "animation/playing", "Transform" },
     })) do
         if e:get("zz/char").name == name then return e end
     end
@@ -52,6 +52,19 @@ end
 local function parts(world, carrier, comp)
     return world:query({ with = { comp }, iter_many = world:descendants(carrier) })
 end
+
+--- The character's model's graph, which `animation/clip` builds on the model.
+local function graph_of(world, carrier)
+    local model = world:query({ with = { "animation/model", "animation/clip/graph" }, iter_many = world:descendants(carrier) })[1]
+    return model and model:get("animation/clip/graph") or nil
+end
+
+--- The scene's AnimationPlayer, once it has its graph.
+local function player_of(world, carrier)
+    return world:query({ with = { "AnimationPlayer", "AnimationGraphHandle" }, iter_many = world:descendants(carrier) })[1]
+end
+
+local WALK, IDLE, JUMP = MODEL .. "-Walk.glb#Animation0", MODEL .. "-Idle.glb#Animation0", MODEL .. "-Jump.glb#Animation0"
 
 --- How long the player's running clip has played (`start()` resets it to 0).
 local function elapsed_of(world, player)
@@ -95,7 +108,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
 
     elseif phase == "loaded" then
         local a, b = named(world, "a"), named(world, "b")
-        local linked = a and b and #parts(world, a:id(), "animation/player") > 0 and #parts(world, b:id(), "animation/player") > 0
+        local linked = a and b and player_of(world, a:id()) ~= nil and player_of(world, b:id()) ~= nil
         if not linked and clock < 10 then return end
         local ok1 = true
         for _, c in ipairs({ a, b }) do
@@ -105,17 +118,15 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         end
         suite.assert_test("AN1_each_character_gets_its_own_model", ok1,
             string.format("a: models=%d", #parts(world, a:id(), "animation/model")))
-        local ga, gb = a:get("animation/graph") or {}, b:get("animation/graph") or {}
+        local ga, gb = graph_of(world, a:id()) or {}, graph_of(world, b:id()) or {}
         local count = 0
         for _ in pairs(ga.nodes or {}) do count = count + 1 end
-        suite.assert_test("AN2_each_gets_its_own_graph_with_a_node_per_clip",
-            count == 4 and ga.nodes.walk ~= nil and gb.handle ~= nil and ga.handle ~= gb.handle
-                and (ga.clips or {}).walk == MODEL .. "-Walk.glb#Animation0",
-            "nodes=" .. count .. " walk=" .. tostring((ga.clips or {}).walk))
-        local player = parts(world, a:id(), "animation/player")[1]
-        local full = player and world:get_entity(player:id())
-        suite.assert_test("AN3_the_scenes_player_is_linked",
-            full ~= nil and full:get("AnimationGraphHandle") ~= nil and full:get("AnimationTransitions") ~= nil, "")
+        -- fall plays the jump file, so three files
+        suite.assert_test("AN2_each_model_gets_its_own_graph_a_node_per_clip_file",
+            count == 3 and (ga.nodes or {})[WALK] ~= nil and gb.handle ~= nil and ga.handle ~= gb.handle,
+            "nodes=" .. count)
+        local player = player_of(world, a:id())
+        suite.assert_test("AN3_the_scenes_player_is_given_the_graph", player ~= nil, "")
         step("idle")
 
     elseif phase == "idle" then
@@ -130,9 +141,9 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         local p = a:get("animation/playing") or {}
         before.walk, before.walk_speed = p.state, p.speed
         -- The player itself plays the walk node, not only the state saying so.
-        local player = parts(world, a:id(), "animation/player")[1]
+        local player = player_of(world, a:id())
         local ok_p, on = pcall(function()
-            return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(a:get("animation/graph").nodes.walk)
+            return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(graph_of(world, a:id()).nodes[WALK])
         end)
         before.walk_playing = ok_p and on
         before.walk_changes = 0
@@ -154,8 +165,8 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         end
         if clock < 2.5 then return end
         local a = named(world, "a")
-        local player = parts(world, a:id(), "animation/player")[1]
-        local node = a:get("animation/graph").nodes.walk
+        local player = player_of(world, a:id())
+        local node = graph_of(world, a:id()).nodes[WALK]
         local ok_p, on = pcall(function()
             return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(node)
         end)
@@ -233,7 +244,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         suite.assert_test("AN5_an_action_wins_while_it_is_there",
             before.action == "jump@2" and p.state == "idle", "action=" .. tostring(before.action) .. " after=" .. tostring(p.state))
         before.b_model = parts(world, b:id(), "animation/model")[1]:id()
-        before.b_graph = b:get("animation/graph").handle
+        before.b_graph = graph_of(world, b:id()).handle
         -- A later change to `animation` (the server updating it) that names nothing new.
         world:get_entity(b:id()):patch({ animation = { walk_speed = 7 } })
         step("config_changed")
@@ -243,7 +254,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         local b = named(world, "b")
         local models = parts(world, b:id(), "animation/model")
         local same_model = #models == 1 and models[1]:id() == before.b_model
-        local same_graph = b:get("animation/graph").handle == before.b_graph
+        local same_graph = (graph_of(world, b:id()) or {}).handle == before.b_graph
         suite.assert_test("AN10_a_change_naming_nothing_new_replaces_nothing", same_model and same_graph,
             string.format("models=%d same_model=%s same_graph=%s", #models, tostring(same_model), tostring(same_graph)))
         -- A new scene, and a new walk clip.
@@ -257,35 +268,35 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         if clock < 1.0 then return end
         local b = named(world, "b")
         local models = parts(world, b:id(), "animation/model")
-        local graph = b:get("animation/graph") or {}
-        local clips = graph.clips or {}
-        local player = parts(world, b:id(), "animation/player")[1]
-        local linked = player and world:get_entity(player:id()):get("AnimationGraphHandle")
+        local graph = graph_of(world, b:id()) or {}
+        local nodes = graph.nodes or {}
+        local linked = player_of(world, b:id())
         local scene = models[1] and models[1]:get("animation/model").scene
         suite.assert_test("AN11_a_new_scene_replaces_the_model_and_a_new_clip_rebuilds_the_graph",
             #models == 1 and models[1]:id() ~= before.b_model and scene == MODEL .. "-Walk.glb#Scene0"
-                and graph.handle ~= before.b_graph and clips.walk == MODEL .. "-Jump.glb#Animation0"
-                and clips.idle == MODEL .. "-Idle.glb#Animation0" and linked ~= nil,
-            string.format("models=%d scene=%s walk=%s idle=%s linked=%s", #models, tostring(scene), tostring(clips.walk),
-                tostring(clips.idle), tostring(linked ~= nil)))
+                and graph.handle ~= before.b_graph and nodes[WALK] == nil and nodes[JUMP] ~= nil
+                and nodes[IDLE] ~= nil and linked ~= nil,
+            string.format("models=%d scene=%s walk=%s jump=%s linked=%s", #models, tostring(scene), tostring(nodes[WALK]),
+                tostring(nodes[JUMP]), tostring(linked ~= nil)))
         before.b_graph = graph.handle
-        world:get_entity(b:id()):patch({ animation = { clips = { fall = null } } })
+        -- every state that played the jump file plays the idle one now
+        world:get_entity(b:id()):patch({ animation = { clips = {
+            walk = "-Idle.glb#Animation0", jump = "-Idle.glb#Animation0", fall = "-Idle.glb#Animation0",
+        } } })
         step("clip_removed")
 
     elseif phase == "clip_removed" then
         if clock < 0.5 then return end
         local b = named(world, "b")
-        local graph = b:get("animation/graph") or {}
-        suite.assert_test("AN12_a_clip_taken_out_rebuilds_the_graph_without_it",
-            graph.handle ~= before.b_graph and (graph.clips or {}).fall == nil and (graph.nodes or {}).fall == nil
-                and (graph.clips or {}).idle ~= nil,
-            string.format("new_graph=%s fall=%s node=%s", tostring(graph.handle ~= before.b_graph),
-                tostring((graph.clips or {}).fall), tostring((graph.nodes or {}).fall)))
+        local graph = graph_of(world, b:id()) or {}
+        suite.assert_test("AN12_a_clip_file_no_state_names_leaves_the_graph",
+            graph.handle ~= before.b_graph and (graph.nodes or {})[JUMP] == nil and (graph.nodes or {})[IDLE] ~= nil,
+            string.format("new_graph=%s jump=%s", tostring(graph.handle ~= before.b_graph), tostring((graph.nodes or {})[JUMP])))
         before.models = {}
         for _, n in ipairs({ "a", "b" }) do
             local c = named(world, n)
             before.models[n] = parts(world, c:id(), "animation/model")[1]:id()
-            before[n .. "_graph"] = c:get("animation/graph").handle
+            before[n .. "_graph"] = graph_of(world, c:id()).handle
         end
         -- The walk clip's file is written again: Bevy reloads it in place.
         before.walk_key = key_of("Model-Walk.glb")
@@ -302,7 +313,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
             local c = named(world, n)
             local models = parts(world, c:id(), "animation/model")
             local same_model = #models == 1 and models[1]:id() == before.models[n]
-            local same_graph = c:get("animation/graph").handle == before[n .. "_graph"]
+            local same_graph = (graph_of(world, c:id()) or {}).handle == before[n .. "_graph"]
             ok = ok and same_model and same_graph
             detail[#detail + 1] = string.format("%s: same_model=%s same_graph=%s", n, tostring(same_model), tostring(same_graph))
         end
@@ -319,13 +330,14 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         for _, n in ipairs({ "a", "b" }) do
             local c = named(world, n)
             local models = #parts(world, c:id(), "animation/model")
-            local player = parts(world, c:id(), "animation/player")[1]
-            local graph = c:get("animation/graph")
+            local player = player_of(world, c:id())
+            local graph = graph_of(world, c:id())
             local playing = c:get("animation/playing") or {}
+            local suffix = playing.state and (world:get_entity(c:id()):get("animation") or { clips = {} }).clips[playing.state]
             local on = false
-            if player and graph and playing.state then
+            if player and graph and suffix then
                 local ok_p, r = pcall(function()
-                    return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(graph.nodes[playing.state])
+                    return world:get_entity(player:id()).AnimationPlayer:is_playing_animation(graph.nodes[MODEL .. suffix])
                 end)
                 on = ok_p and r
             end
@@ -342,7 +354,7 @@ app:add_systems(Update, { World, Res[Time], Res[AssetServer], Commands }, functi
         local full = a and world:get_entity(a:id())
         suite.assert_test("AN7_taken_off_its_model_and_parts_go",
             a ~= nil and #parts(world, a:id(), "animation/model") == 0
-                and full:get("animation/graph") == nil and full:get("animation/playing") == nil,
+                and full:get("animation/playing") == nil,
             string.format("model=%d", #parts(world, a:id(), "animation/model")))
         suite.finish("ANIMATION_CLIENT")
         phase = "done"
