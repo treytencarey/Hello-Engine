@@ -11,6 +11,8 @@
 --       ray at the point of a pixel meets the mesh at that pixel's uv
 --   WS3 and a click there, on "List branches", lands on that row and asks root for the branches
 --   WS4 a click 4 m away, past the 3 m reach, asks nothing
+--   WS5 the mouse's own click after that, as Bevy's picking writes it for the real button with the
+--       aim off the screen, clicks nothing on it: the pointer has left the screen's image
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -20,6 +22,8 @@ local StandardMaterial = require("bevy::pbr::StandardMaterial")
 local Plane3d = require("bevy::math::primitives::Plane3d")
 local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
 local Net = require("modules/core/net/shared/net.lua")
+local bevy = require("bevy::prelude")
+local PointerInput = require("bevy::picking::pointer::PointerInput")
 
 local suite = helpers.create_suite("PortalConsoleWindowedSuite")
 local T = suite.assert_test
@@ -101,6 +105,24 @@ app:add_systems(First, { World }, function(world)
     if c ~= nil then world:write_message("input/synthetic_mouse_button", c) end
 end):in_set("zz/console_windowed/clicks")
 
+-- The real button, as `bevy_picking`'s mouse input writes it: a press and a release of the mouse
+-- pointer, which picking sends to what the pointer hovers. Where it says it is doesn't matter to
+-- a press; the screen's image is a location Lua can build.
+local mouse = {}
+app:add_systems(First, {
+    Query[{ with = { "scope/portal/console/camera" } }],
+    bevy.MessageWriter[PointerInput],
+}, function(cameras, pointer)
+    local action = table.remove(mouse, 1)
+    local cam = cameras:iter()[1]
+    if action == nil or cam == nil then return end
+    pointer:write({
+        pointer_id = "Mouse",
+        location = { target = { Image = cam:get("scope/portal/console/camera").image }, position = { x = -10, y = -10 } },
+        action = action,
+    })
+end):in_set("zz/console_windowed/mouse")
+
 local phase, clock = "spawn", 0
 
 app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Commands }, function(world, ray_cast, materials, commands)
@@ -167,6 +189,13 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
 
     elseif phase == "far_clicked" and clock > 2 then
         T("WS4_past_3_m_a_click_asks_nothing", #asks(world) == 0, tostring(#asks(world)) .. " asks")
+        mouse[#mouse + 1] = { Press = "Primary" }
+        mouse[#mouse + 1] = { Release = "Primary" }
+        step("mouse_clicked")
+
+    elseif phase == "mouse_clicked" and clock > 1 then
+        T("WS5_the_mouse_s_own_click_off_the_screen_clicks_nothing_on_it", #asks(world) == 0,
+            tostring(#asks(world)) .. " asks: the pointer still hovers the row")
         phase = "done"
         suite.finish("PORTAL_CONSOLE_WINDOWED")
     end

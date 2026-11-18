@@ -653,5 +653,16 @@ app:add_systems(Update, {
         if location ~= nil then
             pointer:write({ pointer_id = "Mouse", location = location, action = { Release = "Primary" } })
         end
+        -- The pointer leaves the screen, off the image's edge: Bevy's picking presses what the pointer
+        -- hovers, and only a move moves it. In game input the hidden cursor sends no move, so the
+        -- mouse's own next click would land on the row it was left on.
+        local camera = p and cameras:iter()[1]
+        if camera ~= nil then
+            pointer:write({
+                pointer_id = "Mouse",
+                location = { target = { Image = camera:get("scope/portal/console/camera").image }, position = { x = -1, y = -1 } },
+                action = { Move = { delta = { x = -0.001, y = -0.001 } } },
+            })
+        end
     end
 end):in_set("scope/portal/console/client")
