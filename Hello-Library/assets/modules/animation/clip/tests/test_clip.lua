@@ -13,9 +13,9 @@
 --   CL7 a clip that starts backward starts from its start, which holds it there
 --   CL8 asked to repeat otherwise, a running clip starts again where it stands, in the new mode
 --   CL9 a clip that is not an asset path plays nothing
---   CL10 a clip newly in `clips` starts at `seek_to`
---   CL11 a changed `seek_to` moves the playing clips, within their length
---   CL12 a write that keeps `seek_to` moves nothing
+--   CL10 a clip newly in `clips` starts at `animation/clip/seek`
+--   CL11 `animation/clip/seek` changing moves the playing clips, within their length
+--   CL12 a write to `animation/clip` alone moves nothing
 --   CL13 `"end"` starts a clip at its end, a backward one too
 --   CL14 a clip whose length is not known yet (its file still loading) goes to its end once it is
 require("modules/core/init.lua")
@@ -94,8 +94,9 @@ app:add_systems(Update, {
         end
         return running
     end
-    local function set(value)
+    local function set(value, to)
         commands:entity(n:id()):insert({ ["animation/clip"] = value })
+        if to ~= nil then commands:entity(n:id()):insert({ ["animation/clip/seek"] = { to = to } }) end
     end
 
     if phase == "loading" then
@@ -158,21 +159,21 @@ app:add_systems(Update, {
     elseif phase == "named" and clock > 0.3 then
         T("CL9_a_clip_that_is_not_an_asset_path_plays_nothing", graph.nodes["portal_open"] == nil and count(graph.nodes) == 1
             and active_count() == 1, string.format("nodes %d", count(graph.nodes)))
-        set({ clips = { [IDLE] = 1, [WALK] = 1 }, speed = 0, seek_to = 0.4 })
+        set({ clips = { [IDLE] = 1, [WALK] = 1 }, speed = 0 }, 0.4)
         step("seek_new")
 
     elseif phase == "seek_new" and clock > 0.3 then
         local w = playing(WALK)
-        T("CL10_a_clip_newly_in_clips_starts_at_seek_to", w ~= nil and math.abs(w.seek_time - 0.4) < 1e-3,
+        T("CL10_a_clip_newly_in_clips_starts_at_the_seek", w ~= nil and math.abs(w.seek_time - 0.4) < 1e-3,
             w and tostring(w.seek_time) or "not playing")
-        set({ clips = { [IDLE] = 1, [WALK] = 1 }, speed = 0, seek_to = 0.7 })
+        set({ clips = { [IDLE] = 1, [WALK] = 1 }, speed = 0 }, 0.7)
         step("seek_moved")
 
     elseif phase == "seek_moved" and clock > 0.3 then
         local w, i = playing(WALK), playing(IDLE)
-        T("CL11_a_changed_seek_to_moves_the_playing_clips", w ~= nil and i ~= nil and math.abs(w.seek_time - 0.7) < 1e-3
+        T("CL11_a_changed_seek_moves_the_playing_clips", w ~= nil and i ~= nil and math.abs(w.seek_time - 0.7) < 1e-3
             and math.abs(i.seek_time - 0.7) < 1e-3, string.format("%s %s", tostring(w and w.seek_time), tostring(i and i.seek_time)))
-        set({ clips = { [IDLE] = 1, [WALK] = 1 }, speed = 0, seek_to = 5 })
+        set({ clips = { [IDLE] = 1, [WALK] = 1 }, speed = 0 }, 5)
         step("seek_clamped")
 
     elseif phase == "seek_clamped" and clock > 0.3 then
@@ -182,14 +183,14 @@ app:add_systems(Update, {
         step("seek_kept")
 
     elseif phase == "seek_kept" and clock > 0.3 then
-        set({ clips = { [IDLE] = 1, [WALK] = 0.5 }, speed = 0, seek_to = 5 })
+        set({ clips = { [IDLE] = 1, [WALK] = 0.5 }, speed = 0 })
         step("seek_kept_written")
 
     elseif phase == "seek_kept_written" and clock > 0.3 then
         local w = playing(WALK)
-        T("CL12_a_write_keeping_seek_to_moves_nothing", w ~= nil and w.weight == 0.5 and math.abs(w.seek_time - 0.2) < 1e-3,
+        T("CL12_a_write_to_animation_clip_alone_moves_nothing", w ~= nil and w.weight == 0.5 and math.abs(w.seek_time - 0.2) < 1e-3,
             w and string.format("weight %s at %s", w.weight, w.seek_time) or "not playing")
-        set({ clips = { [IDLE] = 1, [WALK] = 1, [JUMP] = 1 }, speed = -1, seek_to = "end" })
+        set({ clips = { [IDLE] = 1, [WALK] = 1, [JUMP] = 1 }, speed = -1 }, "end")
         step("seek_end")
 
     elseif phase == "seek_end" and clock > 0.3 then
@@ -197,7 +198,7 @@ app:add_systems(Update, {
         T("CL13_end_starts_a_clip_at_its_end_a_backward_one_too", j ~= nil and w ~= nil and j.speed == -1
             and math.abs(j.seek_time - 1) < 1e-3 and math.abs(w.seek_time - 1) < 1e-3,
             string.format("%s %s", tostring(j and j.seek_time), tostring(w and w.seek_time)))
-        set({ clips = { [IDLE] = 1, [LATE] = 1 }, speed = 0, seek_to = "end" })
+        set({ clips = { [IDLE] = 1, [LATE] = 1 }, speed = 0 })
         step("seek_late")
 
     elseif phase == "seek_late" then

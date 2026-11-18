@@ -7,7 +7,7 @@
 --   CW3 paused halfway back: it stays where it stands
 --   CW4 backward again: it reaches its start and holds it
 --   CW5 repeating: it plays past its length and goes round
---   CW6 backward with `seek_to = "end"`: it goes to its end and plays back from there
+--   CW6 backward with `animation/clip/seek` at `"end"`: it goes to its end and plays back from there
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -43,9 +43,9 @@ app:add_systems(Update, {
     local p = n and players:iter_many(world:descendants(n:id()))[1]
     local graph = n and n:get("animation/clip/graph")
     local a = graph and p and graph.nodes[WALK] and p.AnimationPlayer:animation(graph.nodes[WALK]) or nil
-    local function set(speed, loops, seek_to)
-        commands:entity(n:id()):insert({ ["animation/clip"] = { clips = { [WALK] = 1 }, speed = speed, ["repeat"] = loops,
-            seek_to = seek_to } })
+    local function set(speed, loops, to)
+        commands:entity(n:id()):insert({ ["animation/clip"] = { clips = { [WALK] = 1 }, speed = speed, ["repeat"] = loops } })
+        if to ~= nil then commands:entity(n:id()):insert({ ["animation/clip/seek"] = { to = to } }) end
     end
     local function said() return a and string.format("at %.3f, %d completions", a.seek_time, a.completions) or "not playing" end
 
@@ -82,7 +82,7 @@ app:add_systems(Update, {
         step("from_end")
 
     elseif phase == "from_end" and clock > 0.5 then
-        T("CW6_backward_from_seek_to_end_it_plays_back_from_its_end", a ~= nil and a.speed == -1 and a.seek_time > 0.3
+        T("CW6_backward_from_a_seek_to_the_end_it_plays_back_from_its_end", a ~= nil and a.speed == -1 and a.seek_time > 0.3
             and a.seek_time < 0.7, said())
         phase = "done"
         suite.finish("ANIMATION_CLIP_WINDOWED")

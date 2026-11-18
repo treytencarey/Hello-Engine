@@ -1,24 +1,15 @@
 -- Clips playing on a node: the base every skeletal animation plays through. A node carrying
 -- `animation/clip` plays its clips on the AnimationPlayer at that node or under it (Bevy's glTF
 -- loader puts the player on the animation's root node), each at its weight, all at one speed.
--- Missing fields get defaults when it is added.
 --
--- animation/clip = {
---     clips = { [<clip>] = <weight>, ... },
---     speed = <1 plays forward, -1 backward, 0 pauses; any other value scales>,
---     repeat = <true loops; false holds the end it reaches>,
---     seek_to = <where a clip starts: seconds of its own time, within its length, or "end">,
--- }
---
--- A clip is an asset path, `<file>#Animation<N>`. A clip that newly has a weight starts at
--- `seek_to`, or else from its start, which a negative speed holds; one that keeps a weight plays
--- on, taking the new weight and speed; one whose weight goes to 0, or that is taken out, stops.
--- `seek_to` stays: it applies when a clip starts, and to every playing clip when it changes.
+-- A clip is an asset path, `<file>#Animation<N>`. A clip that newly has a weight starts at the
+-- node's `animation/clip/seek`, or else from its start, which a negative speed holds; one that
+-- keeps a weight plays on, taking the new weight and speed; one whose weight goes to 0, or that is
+-- taken out, stops. `animation/clip/seek` arriving or changing moves every playing clip to it.
 --
 -- animation/clip/graph = {
 --     handle = <the node's AnimationGraph>,
 --     nodes = { [<clip>] = <the graph node playing it> },
---     seek_to = <the `seek_to` last applied to its playing clips>,
 -- }: on the node, this client only. Built for the set of clips the node names, and built again
 -- when that set changes, so a node that fades between clips lists all of them, at 0 when silent.
 
@@ -26,13 +17,9 @@ local AssetServer = require("bevy::asset::AssetServer")
 local Assets = require("bevy::asset::Assets")
 local AnimationGraph = require("bevy::animation::graph::AnimationGraph")
 local AnimationClip = require("bevy::animation::AnimationClip")
+local Clip = require("modules/animation/clip/shared/clip.lua")
 
---- The asset a clip names, or nil. An animation named in the node's own glTF resolves here once
---- a glTF's animations can be read; until then a name plays nothing.
-local function resolve(clip)
-    if clip:find("#", 1, true) then return clip end
-    return nil
-end
+local resolve = Clip.resolve
 
 local unresolved_said = {}
 
@@ -108,36 +95,24 @@ app:add_systems(PostUpdate, {
     end
 end):in_set("animation/clip/link"):after("animation/clip/graph")
 
--- A node whose `seek_to` waits for a clip's length: its file has not loaded. A flag, not a list:
--- while it is up, every node whose seek is not applied yet is tried again.
-local waiting = false
-
---- Where `seek_to` puts a clip `duration` seconds long: its seconds within the length, or the
---- end. Nil while the length is not known.
-local function place(seek_to, duration)
-    if duration == nil then return nil end
-    if seek_to == "end" then return duration end
-    return math.max(0, math.min(seek_to, duration))
-end
 
 --- The node's clips on its player. A clip starting (newly weighted, first reaching the player, or
---- a finished one started again) starts at `seek_to`; so does every playing clip when `seek_to`
---- has changed since the base last applied it (`animation/clip/graph.seek_to`).
-local function apply(e, player, clips, asset_server)
+--- a finished one started again) starts at the node's seek; with `seeking`, every playing clip
+--- moves to it. Answers false when the seek waits for a clip's length (its file not loaded yet).
+local function apply(e, player, clips, asset_server, seeking)
     local wanted = e:get("animation/clip")
-    local graph = e:get("animation/clip/graph")
-    local seek_to = wanted.seek_to
-    local moved = seek_to ~= graph.seek_to
+    local seek = e:get("animation/clip/seek")
+    local to = seek and seek.to
     local speed = wanted.speed
     local loops = wanted["repeat"] == true
-    local applied = true
-    for clip, index in pairs(graph.nodes) do
+    local placed = true
+    for clip, index in pairs(e:get("animation/clip/graph").nodes) do
         local weight = (wanted.clips or {})[clip] or 0
         local active = player.AnimationPlayer:animation(index)
         local asset = clips:get(asset_server:load(resolve(clip)))
         local duration = asset and asset.duration or nil
-        local at = seek_to ~= nil and place(seek_to, duration) or nil
-        if weight > 0 and seek_to ~= nil and at == nil then applied = false end
+        local at = to ~= nil and Clip.place(to, duration) or nil
+        if weight > 0 and to ~= nil and at == nil then placed = false end
         if weight <= 0 then
             if active then player.AnimationPlayer:stop(index) end
         elseif active == nil then
@@ -150,68 +125,50 @@ local function apply(e, player, clips, asset_server)
                 player.AnimationPlayer:stop(index)
                 player.AnimationPlayer:play(index, { weight = weight, speed = speed, ["repeat"] = loops or nil, seek_to = from })
             else
-                player.AnimationPlayer:play(index, { weight = weight, speed = speed, seek_to = moved and at or nil })
+                player.AnimationPlayer:play(index, { weight = weight, speed = speed, seek_to = seeking and at or nil })
             end
         end
     end
-    if applied and moved then
-        e:get_mut("animation/clip/graph").seek_to = seek_to
-    elseif not applied then
-        waiting = true
-    end
+    return placed
 end
 
--- The clips on the player, when the node's clips, weights, speed, `seek_to` or graph change, or
--- its player gets its graph. Bevy stops advancing a clip that does not repeat once it reaches an
--- end, so a finished one asked to go the other way, or one asked to repeat otherwise, starts
--- again, at `seek_to` or else where it stands.
+-- The clips on the player: when the node's clips, weights, speed or graph change, or its player
+-- gets its graph, and with a seek when `animation/clip/seek` arrives or changes. Bevy stops
+-- advancing a clip that does not repeat once it reaches an end, so a finished one asked to go the
+-- other way, or one asked to repeat otherwise, starts again, at the seek or else where it stands.
+-- A seek that waits for a clip's length writes its seek again, so its own edge tries it next frame.
 app:add_systems(PostUpdate, {
     Query[{
         ["or"] = { changed = { "animation/clip", "animation/clip/graph" } },
         with = { "animation/clip", "animation/clip/graph" },
     }],
+    Query[{
+        ["or"] = { added = { "animation/clip/seek" }, changed = { "animation/clip/seek" } },
+        with = { "animation/clip", "animation/clip/graph" },
+    }],
     Query[{ added = { "AnimationGraphHandle" }, with = { "AnimationPlayer" } }],
-    Query[{ with = { "animation/clip", Mut["animation/clip/graph"] } }],
+    Query[{ with = { "animation/clip", "animation/clip/graph" }, optional = { "animation/clip/seek" } }],
     Query[{ with = { Mut["AnimationPlayer"], "AnimationGraphHandle" } }],
     Res[Assets[AnimationClip]],
     Res[AssetServer],
-}, function(changed, linked, all, players, clips, asset_server)
-    local touched = {}
+    Commands,
+}, function(changed, sought, linked, all, players, clips, asset_server, commands)
+    local touched, seeking = {}, {}
     for _, e in ipairs(changed:iter()) do touched[#touched + 1] = e:id() end
+    for _, e in ipairs(sought:iter()) do
+        touched[#touched + 1] = e:id()
+        seeking[e:id()] = true
+    end
     for _, p in ipairs(linked:iter()) do
         local node = all:iter_many({ p:id() })[1] or all:iter_many(all:iter_ancestors(p:id()))[1]
         if node then touched[#touched + 1] = node:id() end
     end
-    for _, e in ipairs(all:iter_many_mut(touched)) do
-        local player = player_of(players, e:id())
-        if player then apply(e, player, clips, asset_server) end
+    local done = {}
+    for _, e in ipairs(all:iter_many(touched)) do
+        local player = not done[e:id()] and player_of(players, e:id())
+        done[e:id()] = true
+        if player and not apply(e, player, clips, asset_server, seeking[e:id()] == true) then
+            commands:entity(e:id()):insert({ ["animation/clip/seek"] = { to = e:get("animation/clip/seek").to } })
+        end
     end
 end):in_set("animation/clip/play"):after("animation/clip/link")
-
--- A seek that waited for a clip's length, tried each frame while one waits.
-app:add_systems(PostUpdate, {
-    Query[{ with = { "animation/clip", Mut["animation/clip/graph"] } }],
-    Query[{ with = { Mut["AnimationPlayer"], "AnimationGraphHandle" } }],
-    Res[Assets[AnimationClip]],
-    Res[AssetServer],
-}, function(all, players, clips, asset_server)
-    waiting = false
-    for _, e in ipairs(all:iter_mut()) do
-        local player = e:get("animation/clip").seek_to ~= e:get("animation/clip/graph").seek_to and player_of(players, e:id())
-        if player then apply(e, player, clips, asset_server) end
-    end
-end):in_set("animation/clip/seek"):after("animation/clip/play"):run_if({
-    Query[{ with = { "animation/clip/graph" } }],
-}, function()
-    return waiting
-end)
-
-return {
-    defaults = {
-        ["animation/clip"] = {
-            clips = {},
-            speed = 1,
-            ["repeat"] = false,
-        },
-    },
-}
