@@ -62,6 +62,7 @@ commands:entity(model):insert({ ["animation/clip"] = { clips = { [walk] = 0.7, [
 - The graph is built for the set of clips a node names, so a node that fades between clips lists all of them, those silent at 0: a set that changes builds the graph again, and what the player played stops.
 - A clip that newly has a weight starts at the seek, or else from its start, which a negative speed holds; one that keeps a weight is not restarted. A backward clip starts from its end with `animation/clip/seek = { to = "end" }`.
 - Bevy stops advancing a clip that does not repeat once it reaches an end. Turned the other way after that, or asked to repeat otherwise, the clip starts again at the seek, or else from where it stands (its `seek_time`, within its length), in the new mode.
+- A seek's end, and a place in seconds, stand 0.1 ms short of the clip's length: Bevy wraps a clip standing at its length back to 0 when it does not move on, so a door paused at its end showed shut (measured).
 - A graph built again holds the files of its set anew: a file no handle held any more is loaded again, so its length can come a few frames after the clip starts.
 - Where a node stands on the server is read in one place in the server half (`position`). No clip advances in a headless app, so for now it is the node's `animation/clip/seek` as last written there; the published place follows it.
 - Clients each play on their own clock between records, so they may differ a little.
