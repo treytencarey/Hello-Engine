@@ -7,6 +7,7 @@
 -- movement = {
 --     speed = <metres per second>,
 --     jump = <metres per second upward>,
+--     run = <metres per second while run (Shift) is held; absent, Shift changes nothing>,
 --     ground = <metres from its origin to just below its feet>,
 --     smoothing = <how fast another client's copy follows, per second>,
 -- }

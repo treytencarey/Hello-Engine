@@ -10,18 +10,19 @@ Walking and jumping. The owning client moves its own player from input, relative
 
 ## Components
 
-- `movement = { speed, jump, ground, smoothing }`, added by `player` on the server and synced from it. Missing fields get defaults when it is added:
+- `movement = { speed, run, jump, ground, smoothing }`, added by `player` on the server and synced from it. Missing fields get defaults when it is added:
 
   | Field | Meaning | Default |
   |-------|---------|---------|
   | `speed` | metres per second | 6 |
+  | `run` | metres per second while run (Shift) is held | none: Shift changes nothing |
   | `jump` | metres per second upward | 5 |
   | `ground` | metres from its origin to just below its feet (a capsule with half height 0.5 and radius 0.4 stands 0.9 above them) | 1 |
   | `smoothing` | how fast another client's copy follows its synced Transform, per second | 10 |
 
 - `movement/grounded`: on the owner's client while it stands on something.
 - `Velocity3d`: added with `movement` when the entity has none (the server does not send one), and left in place when `movement` goes.
-- On the owner's client it binds `input/game.movement` (`forward` W, `backward` S, `left` A, `right` D, `jump` Space) and writes `Velocity3d`. Which way the body faces is `facing`'s: `facing/velocity` reads the direction the walk writes. On other clients it seeds the `core/net/sync/Transform` shadow incoming Transforms land in. If `movement` is removed from an entity that stays, the keys are unbound and `movement/grounded` removed.
+- On the owner's client it binds `input/game.movement` (`forward` W, `backward` S, `left` A, `right` D, `jump` Space, `run` ShiftLeft) and writes `Velocity3d`. Which way the body faces is `facing`'s: `facing/velocity` reads the direction the walk writes. On other clients it seeds the `core/net/sync/Transform` shadow incoming Transforms land in. If `movement` is removed from an entity that stays, the keys are unbound and `movement/grounded` removed.
 
 ## Systems
 
@@ -31,7 +32,7 @@ Walking and jumping. The owning client moves its own player from input, relative
 | First (client) | `movement/bind` | When the player is this client's (in one of its own nets' `core/net/owns`, on the owner's `added` or `changed` edge, which can come after the player), bind its keys; again when `input` is added back |
 | First (client) | `movement/copy` | A copy that isn't this client's own is kinematic, as it only follows the server; a player's arrives so and is left alone, and a body dynamic on the server turns kinematic here. This client's own body is never changed: the player mod turns it dynamic, so a game's player can wait for its map's colliders |
 | First (client) | `movement/shadow` | For another client's player, seed the shadow its Transform arrives in |
-| Update (client) | `movement/walk` | While a key is held (`any_of`), it polls: horizontal velocity from the held keys, turned by `camera.yaw`. Letting go of a key (its `removed` edge) stands it still, and keys still held walk on. Vertical velocity is left to gravity and jumps |
+| Update (client) | `movement/walk` | While a key is held (`any_of`), it polls: horizontal velocity from the held keys, turned by `camera.yaw`, at `speed`, or at `run` while run is held and `run` is set (a half-pushed stick moves at half of either). Letting go of a key (its `removed` edge) stands it still, and keys still held walk on. Vertical velocity is left to gravity and jumps |
 | Update (client) | `movement/ground` | Polls: a ray down from the origin, skipping the player's own body, adds or removes `movement/grounded` |
 | Update (client) | `movement/jump` | On a jump press while grounded, straight up at `jump` |
 | Update (client) | `movement/follow` | Polls: another client's player eases toward its synced Transform |
@@ -42,6 +43,9 @@ Walking and jumping. The owning client moves its own player from input, relative
 ```lua
 -- on the server, on the player: walk faster and jump higher than the defaults
 commands:entity(player):insert({ movement = { speed = 8, jump = 7 } })
+
+-- and faster while Shift is held
+commands:entity(player):insert({ movement = { run = 12 } })
 ```
 
 ## Notes

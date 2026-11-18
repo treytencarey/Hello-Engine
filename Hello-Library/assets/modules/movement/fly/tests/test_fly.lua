@@ -4,11 +4,12 @@
 -- items are clicked as Bevy's picking triggers a click. The body is the spawner's capsule, dynamic
 -- as its owner has it, standing on a floor under gravity.
 --
---   F1 F, Space and ShiftLeft are bound in the `fly` group, and flight starts off
+--   F1 F, Space and ControlLeft are bound in the `fly` group, and flight starts off
 --   F2 F turns flight on: no gravity, so the body hovers; F again turns it off, flight's scale goes,
 --      `player/client` puts its 1 back, and it falls
---   F3 while it flies, Space climbs and ShiftLeft sinks at movement's speed, and the floor still
---      stops it
+--   F3 while it flies, Space climbs and ControlLeft sinks at movement's speed, and the floor still
+--      stops it; ShiftLeft does not sink it
+--   F10 with Shift held and movement's `run` set, it climbs at `run`
 --   F4 the menu holds Flight and No-clip, showing the state
 --   F5 No-clip turns flight on too and makes the body a sensor: it sinks through the floor
 --   F6 flight off turns no-clip off: no sensor and gravity again, and the floor stops it
@@ -174,7 +175,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local game = p:get("input/game") or {}
         local fly = game.fly or {}
         T("F1_its_keys_are_bound_in_the_fly_group", fly.toggle ~= nil and fly.toggle.key == "KeyF"
-            and fly.up ~= nil and fly.up.key == "Space" and fly.down ~= nil and fly.down.key == "ShiftLeft")
+            and fly.up ~= nil and fly.up.key == "Space" and fly.down ~= nil and fly.down.key == "ControlLeft")
         local state = fly_of(world)
         T("F1_flight_starts_off_with_the_player_s_scale_of_1", state.on == false and state.noclip == false
             and scale_of(p) == 1 and not p:has("Sensor3d"), tostring(scale_of(p)))
@@ -210,6 +211,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("F2_with_no_key_it_hovers", math.abs(height(world) - mark.hover) < 0.02 and mark.hover > 2,
             string.format("from %.3f to %.3f", mark.hover, height(world)))
         key("ShiftLeft", "Pressed")
+        step("shift_only")
+
+    elseif phase == "shift_only" and clock > 0.4 then
+        T("F3_shiftleft_does_not_sink_it", math.abs(height(world) - mark.hover) < 0.02,
+            string.format("from %.3f to %.3f", mark.hover, height(world)))
+        key("ShiftLeft", "Released")
+        key("ControlLeft", "Pressed")
         step("sinking")
 
     elseif phase == "sinking" and clock > 0.1 then
@@ -218,10 +226,18 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("landed")
 
     elseif phase == "landed" and clock > 1.5 then
-        T("F3_shift_sinks_at_movement_s_speed", math.abs(mark.sinking + 6) < 1e-3, tostring(mark.sinking))
+        T("F3_controlleft_sinks_at_movement_s_speed", math.abs(mark.sinking + 6) < 1e-3, tostring(mark.sinking))
         T("F3_and_the_floor_still_stops_it", math.abs(height(world) - 0.9) < 0.05, tostring(height(world)))
-        key("ShiftLeft", "Released")
+        key("ControlLeft", "Released")
+        commands:entity(me(world):id()):patch({ movement = { run = 10 } })
+        key("ShiftLeft", "Pressed")
         key("Space", "Pressed")
+        step("run_climb")
+
+    elseif phase == "run_climb" and clock > 0.3 then
+        local vy = me(world):get("Velocity3d").linvel.y
+        T("F10_with_shift_held_and_run_set_it_climbs_at_run", math.abs(vy - 10) < 1e-3, tostring(vy))
+        key("ShiftLeft", "Released")
         step("up_again")
 
     elseif phase == "up_again" and clock > 0.4 then
@@ -263,12 +279,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local list = items(world)
         T("F4_the_items_follow_the_state", label(list.on) == "Flight: On" and label(list.noclip) == "No-clip: On",
             label(list.on) .. " / " .. label(list.noclip))
-        key("ShiftLeft", "Pressed")
+        key("ControlLeft", "Pressed")
         step("through")
 
     elseif phase == "through" and clock > 0.6 then
         T("F5_it_sinks_through_the_floor", height(world) < -1, tostring(height(world)))
-        key("ShiftLeft", "Released")
+        key("ControlLeft", "Released")
         key("Space", "Pressed")
         step("back_up")
 

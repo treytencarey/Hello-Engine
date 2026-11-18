@@ -1,7 +1,8 @@
 -- Flight for the local player, with no-clip beside it: F turns flight on and off, and while it is
--- on the body has no gravity, Space climbs and ShiftLeft sinks, at movement's speed. No-clip makes
--- the body's collider a sensor, so walls and floors don't stop it; it needs flight. Both are items
--- in the sidebar's menu too. Only a world that adds it to its player has it. It syncs with the
+-- on the body has no gravity, Space climbs and ControlLeft sinks, at movement's speed, or at its
+-- `run` while movement's run (Shift) is held and the world set one. No-clip makes the body's
+-- collider a sensor, so walls and floors don't stop it; it needs flight. Both are items in the
+-- sidebar's menu too. Only a world that adds it to its player has it. It syncs with the
 -- owner's authority, so the server and other clients see it, and acts only on this client's own
 -- player: a copy someone else flies keeps its gravity and its collider here.
 --
@@ -50,7 +51,7 @@ app:add_systems(First, {
                 game.fly = {
                     toggle = { key = "KeyF" },
                     up = { key = "Space" },
-                    down = { key = "ShiftLeft" },
+                    down = { key = "ControlLeft" },
                 }
             end)
         end
@@ -139,7 +140,7 @@ end):in_set("movement/fly")
 app:add_systems(Update, {
     Query[{
         with = { "movement/fly", "movement", Mut["Velocity3d"] },
-        optional = { "input/game/fly/up", "input/game/fly/down" },
+        optional = { "input/game/fly/up", "input/game/fly/down", "input/game/movement/run" },
     }],
     Query[{ with = { "core/net", "core/net/owns" } }],
 }, function(fliers, own)
@@ -150,7 +151,9 @@ app:add_systems(Update, {
                 local m = e:get("movement")
                 local up = e:get("input/game/fly/up")
                 local down = e:get("input/game/fly/down")
-                e:get_mut("Velocity3d").linvel.y = m.speed * ((up and up.value or 0) - (down and down.value or 0))
+                local speed = m.speed
+                if m.run ~= nil and e:has("input/game/movement/run") then speed = m.run end
+                e:get_mut("Velocity3d").linvel.y = speed * ((up and up.value or 0) - (down and down.value or 0))
             end
         end
     end

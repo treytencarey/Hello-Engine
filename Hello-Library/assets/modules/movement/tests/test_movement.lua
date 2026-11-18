@@ -212,6 +212,30 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("walking landing")
 
     elseif phase == "walking landing" and clock > 1.5 then
+        key("ShiftLeft", "Pressed")
+        key("KeyW", "Pressed")
+        step("shift without run")
+
+    -- Shift is `run`: with no `run` set it changes nothing; set, the walk goes at it. Ground
+    -- friction keeps a body a little under the speed it is given.
+    elseif phase == "shift without run" and clock > 0.8 then
+        local v = named(world, "me"):get("Velocity3d").linvel
+        local speed = math.sqrt(v.x * v.x + v.z * v.z)
+        suite.assert_test("V14_without_run_shift_changes_nothing", speed > 5.5 and speed < 6.1,
+            string.format("speed %.2f", speed))
+        named(world, "me"):patch({ movement = { run = 10 } })
+        step("shift with run")
+
+    elseif phase == "shift with run" and clock > 0.8 then
+        local v = named(world, "me"):get("Velocity3d").linvel
+        local speed = math.sqrt(v.x * v.x + v.z * v.z)
+        suite.assert_test("V15_with_shift_held_and_run_set_it_walks_at_run", speed > 9.3 and speed < 10.1,
+            string.format("speed %.2f", speed))
+        key("KeyW", "Released")
+        key("ShiftLeft", "Released")
+        step("run landing")
+
+    elseif phase == "run landing" and clock > 0.5 then
         local me = named(world, "me")
         me:remove("input")
         step("no input")

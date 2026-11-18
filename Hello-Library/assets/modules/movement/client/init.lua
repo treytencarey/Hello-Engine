@@ -35,6 +35,7 @@ app:add_systems(First, {
                     left = { key = "KeyA" },
                     right = { key = "KeyD" },
                     jump = { key = "Space" },
+                    run = { key = "ShiftLeft" },
                 },
             },
         })
@@ -86,10 +87,10 @@ end):in_set("movement/copy")
 -- game's player can wait for its map's colliders, and a body made dynamic first falls through the
 -- map before it loads.
 
--- Walking: while a key is held, the horizontal velocity follows the keys, turned by the
--- camera's yaw. It polls while a key is held (ground friction would slow a single push). Letting go
--- of the last key stands it still; vertical velocity is left to gravity and jumps. Which way the body
--- faces is `facing`'s.
+-- Walking: while a key is held, the horizontal velocity follows the keys, turned by the camera's
+-- yaw, at `speed`, or at `run` while run (Shift) is held and the world set one. It polls while a key
+-- is held (ground friction would slow a single push). Letting go of the last key stands it still;
+-- vertical velocity is left to gravity and jumps. Which way the body faces is `facing`'s.
 app:add_systems(Update, {
     Query[{
         ["or"] = {
@@ -113,6 +114,7 @@ app:add_systems(Update, {
             "input/game/movement/right",
         },
         with = { "movement", "camera", Mut["Velocity3d"] },
+        optional = { "input/game/movement/run" },
     }],
     Query[{ with = { "core/net", "core/net/owns" } }],
 }, function(released, bodies, walkers, own)
@@ -138,7 +140,9 @@ app:add_systems(Update, {
             local along = Quat.mul_vec3(Quat.from_rotation_y(camera.yaw or 0),
                 Vec3.normalize_or_zero({ x = x, y = 0, z = z }))
             -- analog input moves slower; two keys at once no faster than one
-            local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
+            local speed = m.speed
+            if m.run ~= nil and e:has("input/game/movement/run") then speed = m.run end
+            local scale = speed * math.min(1, math.sqrt(x * x + z * z))
             e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
         end
     end
