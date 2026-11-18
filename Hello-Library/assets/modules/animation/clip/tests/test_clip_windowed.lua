@@ -1,4 +1,4 @@
--- --host (windowed: a headless run advances no clip)
+-- --host (windowed: playing over real frame time, as a viewer sees it)
 -- `animation/clip` playing over time, as a door's clip does: the fixture's walk clip, one second
 -- long, on the fixture model.
 --

@@ -1,7 +1,6 @@
 -- --host
 -- `animation` playing through `animation/clip` on a client, headless: what the character writes
--- on its model, and what the model's player is told. No clip advances here. The model is the
--- animation fixture.
+-- on its model, and what the model's player is told. The model is the animation fixture.
 --
 --   AP1 the model carries every clip the character has, idle at 1 and the rest at 0, looping
 --   AP2 walking fades walk in as idle fades out, and settles at walk alone

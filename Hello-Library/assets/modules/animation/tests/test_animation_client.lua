@@ -1,4 +1,4 @@
--- --host (windowed: a headless run has no AnimationPlugin, so no AnimationGraph)
+-- --host (windowed: playing over real frame time, through a reload, as a viewer sees it)
 -- `animation` on a client, with a fixture model: an animated node under an `Armature`.
 --
 --   AN1 each character gets its own model, a child holding its scene (`animation/model`)

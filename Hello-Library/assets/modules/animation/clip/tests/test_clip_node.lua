@@ -1,7 +1,7 @@
 -- --host
 -- A scene node the server drives, on a client, headless: the server's record (`animation/clip/node`)
 -- is spawned here as the net delivers it, and the node as `gltf/mod_registry` leaves a scene's, on
--- the animation fixture's model.
+-- the animation fixture's model. Clips advance headless, so a node plays on from where it is put.
 --
 --   CN1 a record arriving puts its speed on the node and its time in the node's seek, which the
 --       node's player takes
@@ -102,8 +102,10 @@ app:add_systems(Update, {
 
     elseif phase == "late" and (at("zz_late") ~= nil and clock > 0.3 or clock > 10) then
         local n = node("zz_late")
+        -- put at 0.4, it has played back since, at -1
+        local now = at("zz_late")
         T("CN3_a_node_arriving_after_its_record_takes_it", n ~= nil and n:get("animation/clip").speed == -1
-            and n:get("animation/clip/seek").to == 0.4 and math.abs((at("zz_late") or -1) - 0.4) < 1e-3, said("zz_late"))
+            and n:get("animation/clip/seek").to == 0.4 and now ~= nil and now < 0.4 and now >= 0, said("zz_late"))
         phase = "done"
         suite.finish("ANIMATION_CLIP_NODE")
     end

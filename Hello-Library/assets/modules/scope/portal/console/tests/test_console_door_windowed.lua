@@ -1,4 +1,4 @@
--- --host (windowed: a headless run advances no clip)
+-- --host (windowed: playing over real frame time, as a viewer sees it)
 -- A console's door over time on a client: its rig, as a map's (authored open, `animation/clip/seek`
 -- at `"end"`), plays the fixture's one-second clip from the server's record of it
 -- (`animation/clip/node`), spawned here as the net delivers it.

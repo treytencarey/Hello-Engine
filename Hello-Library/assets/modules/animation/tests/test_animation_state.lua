@@ -1,7 +1,7 @@
 -- --host
 -- `animation` on a client: the state it picks for characters whose body's velocity does not say
 -- how they move, and for one with no model. Headless: the scene's AnimationPlayer and its graph
--- exist, though no clip advances. The model is a fixture: an animated node under an `Armature`.
+-- exist, and its clips advance. The model is a fixture: an animated node under an `Armature`.
 --
 --   AS1 a character whose velocity reads still as its Transform moves walks: Rapier writes a
 --       kinematic copy's velocity as still on a frame holding two physics steps

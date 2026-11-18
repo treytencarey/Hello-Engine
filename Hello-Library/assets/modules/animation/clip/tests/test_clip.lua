@@ -1,7 +1,7 @@
 -- --host
--- `animation/clip` on a client, headless: the scene's AnimationPlayer and its graph exist, though no
--- clip advances, so what is checked is what the player is told to play. The model is the animation
--- fixture: an animated node under an `Armature`, its clips one second long.
+-- `animation/clip` on a client, headless: the scene's AnimationPlayer and its graph exist, and its
+-- clips advance, as on any side; what is checked is mostly what the player is told to play. The
+-- model is the animation fixture: an animated node under an `Armature`, its clips one second long.
 --
 --   CL1 missing fields get defaults: speed 1, holding its end
 --   CL2 the node's graph has a node per clip, and the scene's player gets it and plays the clip at
@@ -10,13 +10,13 @@
 --   CL4 a new weight and speed reach the running clips, and the graph is kept
 --   CL5 a weight of 0 stops its clip, and the graph is kept
 --   CL6 a clip taken out builds the graph again without it, and the player plays only the rest
---   CL7 a clip that starts backward starts from its start, which holds it there
+--   CL7 a clip that starts backward starts from its start, which holds it there, finished
 --   CL8 asked to repeat otherwise, a running clip starts again where it stands, in the new mode
 --   CL9 a clip that is not an asset path plays nothing
 --   CL10 a clip newly in `clips` starts at `animation/clip/seek`
 --   CL11 `animation/clip/seek` changing moves the playing clips, within their length
 --   CL12 a write to `animation/clip` alone moves nothing
---   CL13 `"end"` starts a clip at its end, a backward one too
+--   CL13 `"end"` starts a clip at its end, a backward one too, which then plays back from there
 --   CL14 a clip whose length is not known yet (its file still loading) goes to its end once it is
 --   CL15 a clip named by an animation of the node's scene's glTF plays it
 require("modules/core/init.lua")
@@ -159,8 +159,9 @@ app:add_systems(Update, {
 
     elseif phase == "backward" and clock > 0.3 then
         local j = playing(JUMP)
-        T("CL7_a_clip_starting_backward_starts_from_its_start", j ~= nil and j.speed == -1 and j.seek_time == 0,
-            j and string.format("speed %s at %s", j.speed, j.seek_time) or "not playing")
+        T("CL7_a_clip_starting_backward_starts_from_its_start", j ~= nil and j.speed == -1 and j.seek_time <= 0
+            and j.seek_time > -0.1 and j.completions >= 1,
+            j and string.format("speed %s at %s, %s completions", j.speed, j.seek_time, j.completions) or "not playing")
         set({ clips = { [IDLE] = 1, ["portal_open"] = 1 }, speed = 1, ["repeat"] = false })
         step("named")
 
@@ -203,8 +204,9 @@ app:add_systems(Update, {
 
     elseif phase == "seek_end" and clock > 0.3 then
         local j, w = playing(JUMP), playing(WALK)
+        -- each started at its end and has played back for at most the 0.3 s waited
         T("CL13_end_starts_a_clip_at_its_end_a_backward_one_too", j ~= nil and w ~= nil and j.speed == -1
-            and math.abs(j.seek_time - 1) < 1e-3 and math.abs(w.seek_time - 1) < 1e-3,
+            and j.seek_time > 0.6 and j.seek_time < 1 and w.seek_time > 0.6 and w.seek_time < 1,
             string.format("%s %s", tostring(j and j.seek_time), tostring(w and w.seek_time)))
         set({ clips = { [IDLE] = 1, [LATE] = 1 }, speed = 0 })
         step("seek_late")
