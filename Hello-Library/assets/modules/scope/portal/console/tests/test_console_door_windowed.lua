@@ -2,8 +2,9 @@
 -- A console's door over time on a client: its rig plays the fixture's one-second clip from the
 -- synced record, as a map's door plays its own.
 --
---   DW1 a pick opens the shut door to its end, and it stays open
---   DW2 a second pick closes it all the way, then opens it to its end again
+--   DW1 the door arrives standing open, at its clip's end, without playing the opening
+--   DW2 a pick closes it all the way, then opens it to its end again
+--   DW3 a second pick does the same
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -40,6 +41,7 @@ end)
 
 local phase, clock = "loading", 0
 local lowest
+local first_seen
 
 app:add_systems(Update, {
     World,
@@ -64,22 +66,32 @@ app:add_systems(Update, {
 
     if phase == "loading" then
         if a == nil and clock < 10 then return end
+        step("arrived")
+
+    elseif phase == "arrived" then
+        if a and first_seen == nil and a.seek_time > 0 then first_seen = a.seek_time end
+        if clock < 1 then return end
+        T("DW1_the_door_arrives_open_at_its_end_without_playing_the_opening", first_seen ~= nil and first_seen >= 1
+            and a ~= nil and a.seek_time >= 1, string.format("first at %s, %s", tostring(first_seen), said()))
         record(ROOT .. ":feature")
-        step("opening")
-
-    elseif phase == "opening" and clock > 2 then
-        T("DW1_a_pick_opens_the_shut_door_to_its_end", a ~= nil and a.seek_time >= 1 and a.completions >= 1, said())
-        record(ROOT .. ":other")
         lowest = 1
-        step("again")
+        step("first_pick")
 
-    elseif phase == "again" then
+    elseif phase == "first_pick" or phase == "second_pick" then
         if a then lowest = math.min(lowest, a.seek_time) end
         if clock < 3.5 then return end
-        T("DW2_a_second_pick_closes_it_all_the_way_then_opens_it_again", lowest <= 0.01 and a ~= nil and a.seek_time >= 1,
-            string.format("lowest %.3f, %s", lowest, said()))
-        phase = "done"
-        suite.finish("PORTAL_CONSOLE_DOOR_WINDOWED")
+        local ok = lowest <= 0.01 and a ~= nil and a.seek_time >= 1
+        local detail = string.format("lowest %.3f, %s", lowest, said())
+        if phase == "first_pick" then
+            T("DW2_a_pick_closes_it_all_the_way_then_opens_it_again", ok, detail)
+            record(ROOT .. ":other")
+            lowest = 1
+            step("second_pick")
+        else
+            T("DW3_a_second_pick_does_the_same", ok, detail)
+            phase = "done"
+            suite.finish("PORTAL_CONSOLE_DOOR_WINDOWED")
+        end
     end
 
     if phase ~= "done" and clock > 12 then

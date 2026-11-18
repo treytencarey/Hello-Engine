@@ -1,14 +1,13 @@
 -- --host
--- A console's door opening on a client, headless: its rig (the node above the door carrying
+-- A console's door on a client, headless: its rig (the node above the door carrying
 -- `animation/clip`, as a map's is) plays from the synced record. No clip advances headless, so where
 -- a clip stands is moved by the suite where time would move it.
 --
---   DR1 with no record, the door stays shut
---   DR2 a pick with the door shut opens it, holding the end it reaches
---   DR3 a pick with the door standing open closes it first
---   DR4 ...and once it is shut, it opens
---   DR5 a door whose record stood before it arrived (a client joining) is open: at its clip's end,
---       not played from the start
+--   DR1 a door arriving stands open, at its clip's end, with no record naming it
+--   DR2 a pick closes it from where it stands
+--   DR3 ...and once it is shut, it opens
+--   DR4 pointing it back at its authored target (the record going) closes and opens it too
+--   DR5 a door whose record stood before it arrived (a client joining) stands open at its end
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -94,7 +93,13 @@ app:add_systems(Update, {
     end
     local function said(name)
         local a = active(name)
-        return string.format("speed %s, %s", tostring(clip(name).speed), a and ("at " .. a.seek_time) or "not playing")
+        local c = clip(name)
+        return string.format("speed %s, seek_to %s, %s", tostring(c.speed), tostring(c.seek_to),
+            a and ("at " .. a.seek_time) or "not playing")
+    end
+    local function open_at_end(name)
+        local a, c = active(name), clip(name)
+        return c.speed == 1 and c.seek_to == "end" and c["repeat"] == false and a ~= nil and math.abs(a.seek_time - 1) < 1e-3
     end
     local function record(target)
         local r = world:query({ with = { "scope/portal/console/target" } })[1]
@@ -110,31 +115,36 @@ app:add_systems(Update, {
 
     if phase == "loading" then
         if active("zz_door") == nil and clock < 10 then return end
-        step("shut")
+        step("arrived")
 
-    elseif phase == "shut" and clock > 0.5 then
-        local a = active("zz_door")
-        T("DR1_with_no_record_the_door_stays_shut", clip("zz_door").speed == 0 and a ~= nil and a.seek_time == 0, said("zz_door"))
+    elseif phase == "arrived" and clock > 0.5 then
+        T("DR1_a_door_arriving_stands_open_at_its_clips_end", open_at_end("zz_door"), said("zz_door"))
         record(ROOT .. ":feature")
-        step("opening")
-
-    elseif phase == "opening" and clock > 0.3 then
-        T("DR2_a_pick_with_the_door_shut_opens_it", clip("zz_door").speed == 1 and clip("zz_door")["repeat"] == false,
-            said("zz_door"))
-        seeks.zz_door = 0.5
-        step("standing_open")
-
-    elseif phase == "standing_open" and clock > 0.3 then
-        record(ROOT .. ":other")
         step("closing")
 
     elseif phase == "closing" and clock > 0.3 then
-        T("DR3_a_pick_with_the_door_open_closes_it_first", clip("zz_door").speed == -1, said("zz_door"))
+        local a = active("zz_door")
+        T("DR2_a_pick_closes_it_from_where_it_stands", clip("zz_door").speed == -1 and clip("zz_door").seek_to == nil
+            and a ~= nil and math.abs(a.seek_time - 1) < 1e-3, said("zz_door"))
         seeks.zz_door = 0
         step("reopening")
 
     elseif phase == "reopening" and clock > 0.3 then
-        T("DR4_once_shut_it_opens", clip("zz_door").speed == 1, said("zz_door"))
+        T("DR3_once_shut_it_opens", clip("zz_door").speed == 1, said("zz_door"))
+        seeks.zz_door = 1
+        step("authored")
+
+    elseif phase == "authored" and clock > 0.3 then
+        for _, r in ipairs(world:query({ with = { "scope/portal/console/target" } })) do commands:entity(r:id()):despawn() end
+        step("authored_closing")
+
+    elseif phase == "authored_closing" and clock > 0.3 then
+        T("DR4_pointing_it_back_closes_it_too", clip("zz_door").speed == -1, said("zz_door"))
+        seeks.zz_door = 0
+        step("authored_reopening")
+
+    elseif phase == "authored_reopening" and clock > 0.3 then
+        T("DR4_and_opens_it", clip("zz_door").speed == 1, said("zz_door"))
         -- a door named by a record already standing, as a client joining finds it
         commands:spawn({
             ["scope/portal/console/target"] = { door = "zz_late", target = ROOT .. ":feature", at = "zz_late" },
@@ -144,9 +154,7 @@ app:add_systems(Update, {
         step("late")
 
     elseif phase == "late" and (active("zz_late") ~= nil and clock > 0.5 or clock > 10) then
-        local a = active("zz_late")
-        T("DR5_a_door_joined_late_is_open_at_its_clips_end", a ~= nil and math.abs(a.seek_time - 1) < 1e-3
-            and clip("zz_late").speed == 1, said("zz_late"))
+        T("DR5_a_door_joined_late_stands_open_at_its_end", open_at_end("zz_late"), said("zz_late"))
         phase = "done"
         suite.finish("PORTAL_CONSOLE_DOOR")
     end
