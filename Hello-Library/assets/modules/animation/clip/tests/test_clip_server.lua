@@ -1,8 +1,9 @@
 -- --host
 -- `animation/clip`'s server half on a world's server, headless: each animated scene node's place,
--- published in a synced record. The nodes are stood in as `gltf/mod_registry` leaves a scene's:
--- named, unsynced, their properties inserted. Where a node stands is written by the suite where
--- the server's source of it would.
+-- published in a synced record, and a replicated entity's in its own seek. The nodes are stood in
+-- as `gltf/mod_registry` leaves a scene's: named, unsynced, their properties inserted. A node with
+-- the fixture's scene plays its clip on the server's own AnimationPlayer; one without a player is
+-- published from its seek, which the suite writes.
 --
 --   SC1 each animated scene node gets one record, synced from the server, from where it stands
 --   SC2 a node standing still writes nothing
@@ -11,10 +12,13 @@
 --   SC5 a moving node's record carries where the node stands now
 --   SC6 a reload of the server half keeps one record a node
 --   SC7 a node gone takes its record
+--   SC8 a node with a player is published where its player really stands
+--   SC9 a replicated entity gets no record: its own seek is written, from its player
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 local Time = require("bevy::time::Time")
+local AssetServer = require("bevy::asset::AssetServer")
 
 local suite = helpers.create_suite("AnimationClipServerSuite")
 local T = suite.assert_test
@@ -24,8 +28,26 @@ local WALK = MODEL .. "-Walk.glb#Animation0"
 local IDLE = MODEL .. "-Idle.glb#Animation0"
 local SERVER = "assets/modules/animation/clip/server/init.lua"
 
-app:add_systems(Startup, { Commands }, function(commands)
+app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({
+        Name = "zz_real",
+        SceneRoot = asset_server:load(MODEL .. "-Idle.glb#Scene0"),
+        ["animation/clip"] = { clips = { [WALK] = 1 }, speed = 1 },
+        Transform = {},
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({
+        ["zz/replicated"] = {},
+        Name = "zz_moved",
+        SceneRoot = asset_server:load(MODEL .. "-Idle.glb#Scene0"),
+        ["animation/clip"] = { clips = { [WALK] = 1 }, speed = 1, ["repeat"] = true },
+        Transform = {},
+        ["core/net/sync"] = {
+            ["animation/clip"] = { authority = "server" },
+            ["animation/clip/seek"] = { authority = "server" },
+        },
+    })
     commands:spawn({
         Name = "zz_rig",
         ["animation/clip"] = { clips = { [WALK] = 1 }, speed = 0 },
@@ -103,6 +125,14 @@ app:add_systems(Update, {
         T("SC2_a_node_standing_still_writes_nothing", writes.zz_rig == 0, tostring(writes.zz_rig) .. " writes")
         T("SC3_a_moving_nodes_record_is_written_about_twice_a_second", writes.zz_fan >= 3 and writes.zz_fan <= 5,
             tostring(writes.zz_fan) .. " writes in 2 s")
+        -- a one-second clip, started 2 s ago and holding its end
+        T("SC8_a_node_with_a_player_is_published_where_its_player_stands", type(value("zz_real").time) == "number"
+            and value("zz_real").time > 0.95, said("zz_real"))
+        local moved = node("zz_moved")
+        local seek = moved and moved:get("animation/clip/seek")
+        T("SC9_a_replicated_entity_gets_no_record_its_own_seek_is_written_from_its_player", #records("zz_moved") == 0
+            and seek ~= nil and type(seek.to) == "number" and seek.to > 0 and seek.to < 1,
+            tostring(#records("zz_moved")) .. " records, seek " .. tostring(seek and seek.to))
         commands:entity(node("zz_rig"):id()):insert({ ["animation/clip"] = { clips = { [WALK] = 1 }, speed = -1 } })
         step("closing")
 
