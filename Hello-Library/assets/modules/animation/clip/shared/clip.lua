@@ -1,14 +1,6 @@
--- What `animation/clip` needs of a clip: the asset it names, and where a seek puts
--- it. Required by path; not a mod file.
+-- Where a seek puts a clip, for `animation/clip`. Required by path; not a mod file.
 
 local M = {}
-
---- The asset a clip names, or nil. An animation named in the node's own glTF resolves here once
---- a glTF's animations can be read; until then a name plays nothing.
-function M.resolve(clip)
-    if clip:find("#", 1, true) then return clip end
-    return nil
-end
 
 -- How far short of its length a clip's end is placed: Bevy wraps a clip standing at its length back
 -- to 0 when it does not move on (paused), so a door paused at its end showed shut (measured).

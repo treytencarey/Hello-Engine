@@ -18,6 +18,7 @@
 --   CL12 a write to `animation/clip` alone moves nothing
 --   CL13 `"end"` starts a clip at its end, a backward one too
 --   CL14 a clip whose length is not known yet (its file still loading) goes to its end once it is
+--   CL15 a clip named by an animation of the node's scene's glTF plays it
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -40,6 +41,13 @@ app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, 
         SceneRoot = asset_server:load(MODEL .. "-Idle.glb#Scene0"),
         Transform = {},
         ["animation/clip"] = { clips = { [WALK] = 1 } },
+    })
+    -- a scene whose glTF names its one animation `zz_open`
+    commands:spawn({
+        ["zz/named"] = {},
+        SceneRoot = asset_server:load("modules/animation/clip/tests/fixtures/named.gltf#Scene0"),
+        Transform = { translation = { x = 5, y = 0, z = 0 } },
+        ["animation/clip"] = { clips = { zz_open = 1 }, speed = 0 },
     })
 end)
 
@@ -206,6 +214,12 @@ app:add_systems(Update, {
         if not (l ~= nil and l.seek_time > 0) and clock < 5 then return end
         T("CL14_a_clip_whose_length_comes_later_goes_to_its_end_once_known", l ~= nil and math.abs(l.seek_time - 1) < 1e-3,
             l and tostring(l.seek_time) or "not playing")
+        local named = world:query({ with = { "zz/named" }, optional = { "animation/clip/graph" } })[1]
+        local g = named and named:get("animation/clip/graph")
+        local np = named and players:iter_many(world:descendants(named:id()))[1]
+        local a = g and np and g.nodes.zz_open and np.AnimationPlayer:animation(g.nodes.zz_open) or nil
+        T("CL15_a_clip_named_by_its_scene_s_gltf_plays_it", a ~= nil and a.weight == 1 and a.speed == 0,
+            g and ("node " .. tostring(g.nodes.zz_open) .. ", " .. (a and "playing" or "not playing")) or "no graph")
         phase = "done"
         suite.finish("ANIMATION_CLIP")
     end

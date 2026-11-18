@@ -2,10 +2,11 @@
 -- `animation/clip` plays its clips on the AnimationPlayer at that node or under it (Bevy's glTF
 -- loader puts the player on the animation's root node), each at its weight, all at one speed.
 --
--- A clip is an asset path, `<file>#Animation<N>`. A clip that newly has a weight starts at the
--- node's `animation/clip/seek`, or else from its start, which a negative speed holds; one that
--- keeps a weight plays on, taking the new weight and speed; one whose weight goes to 0, or that is
--- taken out, stops. `animation/clip/seek` arriving or changing moves every playing clip to it.
+-- A clip is an asset path, `<file>#Animation<N>`, or the name of an animation in the glTF the
+-- node's scene came from (the nearest `SceneRoot` at or above it). A clip that newly has a weight
+-- starts at the node's `animation/clip/seek`, or else from its start, which a negative speed
+-- holds; one that keeps a weight plays on, taking the new weight and speed; one whose weight goes
+-- to 0, or that is taken out, stops. `animation/clip/seek` arriving or changing moves every playing clip to it.
 --
 -- animation/clip/graph = {
 --     handle = <the node's AnimationGraph>,
@@ -17,25 +18,42 @@ local AssetServer = require("bevy::asset::AssetServer")
 local Assets = require("bevy::asset::Assets")
 local AnimationGraph = require("bevy::animation::graph::AnimationGraph")
 local AnimationClip = require("bevy::animation::AnimationClip")
+local Gltf = require("bevy::gltf::prelude::Gltf")
 local Clip = require("modules/animation/clip/shared/clip.lua")
 
-local resolve = Clip.resolve
+--- The handle a node's clip names, or nil: an asset path loads; any other name is an animation of
+--- the glTF the node's scene came from, its `SceneRoot`'s path without its label. A second answer
+--- says the name waits for that glTF to load. `with` holds `scenes` (a query naming
+--- `SceneRoot`), `gltfs` and `asset_server`.
+local function clip_handle(clip, node, with)
+    if clip:find("#", 1, true) then return with.asset_server:load(clip), false end
+    local root = with.scenes:iter_many({ node })[1] or with.scenes:iter_many(with.scenes:iter_ancestors(node))[1]
+    if root == nil then return nil, false end
+    local path = tostring(root:get("SceneRoot"):path()):gsub("#.*$", "")
+    local gltf = with.gltfs:get(with.asset_server:load(path))
+    if gltf == nil then return nil, true end
+    return gltf.named_animations and gltf.named_animations[clip] or nil, false
+end
 
 local unresolved_said = {}
 
---- The node's clips that resolve, in a stable order.
-local function resolved(clips)
-    local names = {}
+--- The node's clips that resolve, in a stable order, and their handles; and whether a name waits
+--- for its glTF to load.
+local function resolved(clips, node, with)
+    local names, handles, waits = {}, {}, false
     for clip in pairs(clips or {}) do
-        if resolve(clip) then
+        local handle, waiting = clip_handle(clip, node, with)
+        waits = waits or waiting
+        if handle then
             names[#names + 1] = clip
-        elseif not unresolved_said[clip] then
+            handles[clip] = handle
+        elseif not waiting and not unresolved_said[clip] then
             unresolved_said[clip] = true
-            print(string.format("[ANIMATION/CLIP] '%s' is not an asset path (<file>#Animation<N>): it plays nothing", clip))
+            print(string.format("[ANIMATION/CLIP] '%s' is neither an asset path (<file>#Animation<N>) nor an animation of its node's glTF: it plays nothing", clip))
         end
     end
     table.sort(names)
-    return names
+    return names, handles, waits
 end
 
 --- The AnimationPlayer a node plays on: its own, or the first under it, from a query naming it `Mut`.
@@ -49,12 +67,17 @@ end
 app:add_systems(PostUpdate, {
     Query[{ changed = { "animation/clip" }, optional = { "animation/clip/graph" } }],
     Query[{ with = { Mut["AnimationPlayer"] } }],
+    Query[{ with = { "SceneRoot" } }],
+    Res[Assets[Gltf]],
     Res[AssetServer],
     ResMut[Assets[AnimationGraph]],
     Commands,
-}, function(changed, players, asset_server, graphs, commands)
+}, function(changed, players, scenes, gltfs, asset_server, graphs, commands)
+    local with = { scenes = scenes, gltfs = gltfs, asset_server = asset_server }
     for _, e in ipairs(changed:iter()) do
-        local names = resolved(e:get("animation/clip").clips)
+        local names, handles, waits = resolved(e:get("animation/clip").clips, e:id(), with)
+        -- a name whose glTF has not loaded: written again, so its own edge tries it next frame
+        if waits then commands:entity(e:id()):insert({ ["animation/clip"] = e:get("animation/clip") }) end
         local built = (e:get("animation/clip/graph") or {}).nodes
         local same = built ~= nil
         for _, clip in ipairs(names) do
@@ -66,7 +89,7 @@ app:add_systems(PostUpdate, {
         if not same then
             local graph, nodes = AnimationGraph.new(), {}
             for _, clip in ipairs(names) do
-                nodes[clip] = graph:add_clip(asset_server:load(resolve(clip)), 1.0, graph.root)
+                nodes[clip] = graph:add_clip(handles[clip], 1.0, graph.root)
             end
             local handle = graphs:add(graph)
             -- `insert`, not `patch`: a patch merges into the old `nodes`, so a clip taken out
@@ -99,7 +122,7 @@ end):in_set("animation/clip/link"):after("animation/clip/graph")
 --- The node's clips on its player. A clip starting (newly weighted, first reaching the player, or
 --- a finished one started again) starts at the node's seek; with `seeking`, every playing clip
 --- moves to it. Answers false when the seek waits for a clip's length (its file not loaded yet).
-local function apply(e, player, clips, asset_server, seeking)
+local function apply(e, player, clips, with, seeking)
     local wanted = e:get("animation/clip")
     local seek = e:get("animation/clip/seek")
     local to = seek and seek.to
@@ -109,7 +132,8 @@ local function apply(e, player, clips, asset_server, seeking)
     for clip, index in pairs(e:get("animation/clip/graph").nodes) do
         local weight = (wanted.clips or {})[clip] or 0
         local active = player.AnimationPlayer:animation(index)
-        local asset = clips:get(asset_server:load(resolve(clip)))
+        local handle = clip_handle(clip, e:id(), with)
+        local asset = handle and clips:get(handle) or nil
         local duration = asset and asset.duration or nil
         local at = to ~= nil and Clip.place(to, duration) or nil
         if weight > 0 and to ~= nil and at == nil then placed = false end
@@ -149,10 +173,13 @@ app:add_systems(PostUpdate, {
     Query[{ added = { "AnimationGraphHandle" }, with = { "AnimationPlayer" } }],
     Query[{ with = { "animation/clip", "animation/clip/graph" }, optional = { "animation/clip/seek" } }],
     Query[{ with = { Mut["AnimationPlayer"], "AnimationGraphHandle" } }],
+    Query[{ with = { "SceneRoot" } }],
     Res[Assets[AnimationClip]],
+    Res[Assets[Gltf]],
     Res[AssetServer],
     Commands,
-}, function(changed, sought, linked, all, players, clips, asset_server, commands)
+}, function(changed, sought, linked, all, players, scenes, clips, gltfs, asset_server, commands)
+    local with = { scenes = scenes, gltfs = gltfs, asset_server = asset_server }
     local touched, seeking = {}, {}
     for _, e in ipairs(changed:iter()) do touched[#touched + 1] = e:id() end
     for _, e in ipairs(sought:iter()) do
@@ -167,7 +194,7 @@ app:add_systems(PostUpdate, {
     for _, e in ipairs(all:iter_many(touched)) do
         local player = not done[e:id()] and player_of(players, e:id())
         done[e:id()] = true
-        if player and not apply(e, player, clips, asset_server, seeking[e:id()] == true) then
+        if player and not apply(e, player, clips, with, seeking[e:id()] == true) then
             commands:entity(e:id()):insert({ ["animation/clip/seek"] = { to = e:get("animation/clip/seek").to } })
         end
     end
