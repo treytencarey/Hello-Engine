@@ -1,9 +1,10 @@
 -- --host (windowed: a headless run advances no clip)
--- A console's door over time on a client: its rig plays the fixture's one-second clip from the
--- synced record, as a map's door plays its own.
+-- A console's door over time on a client: its rig, as a map's (authored open, `animation/clip/seek`
+-- at `"end"`), plays the fixture's one-second clip from the server's record of it
+-- (`animation/clip/node`), spawned here as the net delivers it.
 --
 --   DW1 the door arrives standing open, at its clip's end, without playing the opening
---   DW2 a pick closes it all the way, then opens it to its end again
+--   DW2 the server closing it (a pick) closes it all the way, and opening it opens it to its end
 --   DW3 a second pick does the same
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
@@ -24,9 +25,11 @@ app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, 
     commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
     local rig = commands:spawn({
         ["zz/rig"] = {},
+        Name = "zz_rig",
         SceneRoot = asset_server:load(MODEL .. "-Idle.glb#Scene0"),
         Transform = {},
         ["animation/clip"] = { clips = { [CLIP] = 1 }, speed = 0 },
+        ["animation/clip/seek"] = { to = "end" },
         ["core/net/sync"] = false,
     }):id()
     commands:spawn({
@@ -40,8 +43,7 @@ app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, 
 end)
 
 local phase, clock = "loading", 0
-local lowest
-local first_seen
+local lowest, first_seen
 
 app:add_systems(Update, {
     World,
@@ -55,9 +57,10 @@ app:add_systems(Update, {
     local p = r and players:iter_many(players:iter_descendants(r:id()))[1]
     local a = p and p.AnimationPlayer:animation(r:get("animation/clip/graph").nodes[CLIP]) or nil
     local function said() return a and string.format("at %.3f, speed %s", a.seek_time, tostring(a.speed)) or "not playing" end
-    local function record(target)
-        local rec = world:query({ with = { "scope/portal/console/target" } })[1]
-        local value = { ["scope/portal/console/target"] = { door = "zz_door", target = target, at = "zz_door" } }
+    -- the server's record, as it publishes a pick: closing from where it stands, then opening from 0
+    local function publish(speed, time)
+        local rec = world:query({ with = { "animation/clip/node" } })[1]
+        local value = { ["animation/clip/node"] = { name = "zz_rig", speed = speed, time = time } }
         if rec then commands:entity(rec:id()):insert(value) else
             value["core/net/sync"] = false
             commands:spawn(value)
@@ -71,22 +74,27 @@ app:add_systems(Update, {
     elseif phase == "arrived" then
         if a and first_seen == nil and a.seek_time > 0 then first_seen = a.seek_time end
         if clock < 1 then return end
-        T("DW1_the_door_arrives_open_at_its_end_without_playing_the_opening", first_seen ~= nil and first_seen >= 1
-            and a ~= nil and a.seek_time >= 1, string.format("first at %s, %s", tostring(first_seen), said()))
-        record(ROOT .. ":feature")
+        T("DW1_the_door_arrives_open_at_its_end_without_playing_the_opening", first_seen ~= nil and first_seen >= 0.99
+            and a ~= nil and a.seek_time >= 0.99, string.format("first at %s, %s", tostring(first_seen), said()))
+        publish(-1, 1)
         lowest = 1
-        step("first_pick")
+        step("first_close")
 
-    elseif phase == "first_pick" or phase == "second_pick" then
+    elseif phase == "first_close" or phase == "second_close" then
         if a then lowest = math.min(lowest, a.seek_time) end
-        if clock < 3.5 then return end
+        if clock < 1.5 then return end
+        publish(1, 0)
+        step(phase == "first_close" and "first_open" or "second_open")
+
+    elseif phase == "first_open" or phase == "second_open" then
+        if clock < 1.5 then return end
         local ok = lowest <= 0.01 and a ~= nil and a.seek_time >= 1
         local detail = string.format("lowest %.3f, %s", lowest, said())
-        if phase == "first_pick" then
-            T("DW2_a_pick_closes_it_all_the_way_then_opens_it_again", ok, detail)
-            record(ROOT .. ":other")
+        if phase == "first_open" then
+            T("DW2_closing_closes_it_all_the_way_and_opening_opens_it_to_its_end", ok, detail)
+            publish(-1, 1)
             lowest = 1
-            step("second_pick")
+            step("second_close")
         else
             T("DW3_a_second_pick_does_the_same", ok, detail)
             phase = "done"

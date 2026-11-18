@@ -2,9 +2,18 @@
 -- only for a door this scene has, a console naming that door, and a target in this world's own
 -- repository; then it sets its own copy of the door, keeps one record per re-pointed door, which
 -- reaches every client, and answers the player. A door pointed back at its authored target is no
--- longer re-pointed: its record goes, and it keeps its authored `at`.
+-- longer re-pointed: its record goes, and it keeps its authored `at`. A pick, of any branch, also
+-- closes the door, on its rig (the nearest node at or above the door carrying `animation/clip`),
+-- from where it stands, and once it is shut opens it again; `animation/clip` publishes the rig to
+-- every client.
 
 local Door = require("modules/scope/portal/console/shared/door.lua")
+
+--- The node carrying the door's clip: the door's own, or its nearest ancestor's. Its query's
+--- `animation/clip` column is `Mut`.
+local function rig_of(rigs, door)
+    return rigs:iter_many_mut({ door })[1] or rigs:iter_many_mut(rigs:iter_ancestors(door))[1]
+end
 
 -- `scope/portal/console/user` is on the player, which everyone sees: the request and its answer
 -- reach the owner alone.
@@ -66,8 +75,9 @@ app:add_systems(Update, {
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
+    Query[{ with = { Mut["animation/clip"] } }],
     Commands,
-}, function(asking, doors, consoles, records, rows, commands)
+}, function(asking, doors, consoles, records, rows, rigs, commands)
     local me = rows:iter()[1]
     local root = me and me:get("core/world/status").scope_root
     for _, e in ipairs(asking:iter()) do
@@ -116,8 +126,36 @@ app:add_systems(Update, {
                     })
                 end
             end
+            local rig = rig_of(rigs, door:id())
+            if rig then rig:get_mut("animation/clip").speed = -1 end
             commands:entity(e:id()):insert({ ["scope/portal/console/response"] = { status = "done" } })
             print(string.format("[SCOPE/PORTAL/CONSOLE] %s now leads to %s", name, target))
+        end
+    end
+end):in_set("scope/portal/console/server")
+
+-- A door closed for a pick, shut: it opens again. Where the rig stands is what `animation/clip`
+-- published of it (`animation/clip/node`, by the rig's `Name`).
+app:add_systems(Update, {
+    Query[{
+        ["or"] = { added = { "animation/clip/node" }, changed = { "animation/clip/node" } },
+    }],
+    Query[{ with = { "scope/portal/console" } }],
+    Query[{ with = { "scope/portal", "Name" }, without = { "placement" } }],
+    Query[{ with = { Mut["animation/clip"] }, optional = { "Name" } }],
+}, function(published, consoles, doors, rigs)
+    local shut = {}
+    for _, r in ipairs(published:iter()) do
+        local node = r:get("animation/clip/node")
+        if node.speed < 0 and type(node.time) == "number" and node.time <= 0 then shut[node.name] = true end
+    end
+    if next(shut) == nil then return end
+    local named = {}
+    for _, c in ipairs(consoles:iter()) do named[c:get("scope/portal/console").door] = true end
+    for _, d in ipairs(doors:iter()) do
+        if named[d:get("Name").name] then
+            local rig = rig_of(rigs, d:id())
+            if rig and rig:has("Name") and shut[rig:get("Name").name] then rig:get_mut("animation/clip").speed = 1 end
         end
     end
 end):in_set("scope/portal/console/server")

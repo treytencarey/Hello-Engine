@@ -1,166 +1,115 @@
 -- --host
--- A console's door on a client, headless: its rig (the node above the door carrying
--- `animation/clip`, as a map's is) plays from the synced record. No clip advances headless, so where
--- a clip stands is moved by the suite where time would move it.
+-- A console's door on a world's server, headless: a pick drives the door's rig (the node above the
+-- door carrying `animation/clip`, as a map's is), which `animation/clip` publishes. The scene is
+-- stood in as `gltf/mod_registry` leaves it, and the owner's request is written on a player as the
+-- net delivers it. Where the rig stands is written by the suite where the server's source of it
+-- would.
 --
---   DR1 a door arriving stands open, at its clip's end, with no record naming it
---   DR2 a pick closes it from where it stands
---   DR3 ...and once it is shut, it opens
---   DR4 pointing it back at its authored target (the record going) closes and opens it too
---   DR5 a door whose record stood before it arrived (a client joining) stands open at its end
+--   DS1 the door stands open as authored, and its rig is published so
+--   DS2 a pick closes it from where it stands
+--   DS3 ...and once it is published shut, it opens
+--   DS4 a pick of its authored branch closes it too
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
-local AssetServer = require("bevy::asset::AssetServer")
+local Time = require("bevy::time::Time")
 
 local suite = helpers.create_suite("PortalConsoleDoorSuite")
 local T = suite.assert_test
 
--- This VM plays a client world.
-world_id = 7
+local ROOT = "github:zzdoors/world"
+local HERE = ROOT .. ":main"
+local AUTHORED = ROOT .. ":prologue"
+local CLIP = "modules/animation/tests/fixtures/Model-Walk.glb#Animation0"
 
-local MODEL = "modules/animation/tests/fixtures/Model"
-local CLIP = MODEL .. "-Walk.glb#Animation0"
-local ROOT = "github:zzdoor/world"
-
-local function spawn_door(commands, asset_server, name, x)
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({
+        ["core/world/status"] = { scope_key = HERE, scope_root = ROOT, mode = "server", status = "ready" },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
     local rig = commands:spawn({
-        ["zz/rig"] = { name = name },
-        SceneRoot = asset_server:load(MODEL .. "-Idle.glb#Scene0"),
-        Transform = { translation = { x = x, y = 0, z = 0 } },
+        Name = "zz_rig",
         ["animation/clip"] = { clips = { [CLIP] = 1 }, speed = 0 },
+        ["animation/clip/seek"] = { to = "end" },
+        Transform = {},
         ["core/net/sync"] = false,
     }):id()
     commands:spawn({
-        Name = name,
-        ["scope/portal"] = { target = ROOT .. ":prologue", at = "zz_arrival" },
-        Transform = {},
+        Name = "zz_door",
+        ["scope/portal"] = { target = AUTHORED, at = "zz_arrival" },
+        GltfExtras = { value = '{"scope/portal":{"target":"' .. AUTHORED .. '","at":"zz_arrival"}}' },
+        Transform = { translation = { x = 0, y = 0, z = -10 } },
         ChildOf = rig,
         ["core/net/sync"] = false,
     })
-    commands:spawn({ ["scope/portal/console"] = { door = name, at = name }, ["core/net/sync"] = false })
-end
-
-app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
-    spawn_door(commands, asset_server, "zz_door", 0)
+    commands:spawn({ ["scope/portal/console"] = { door = "zz_door", at = "zz_door" }, ["core/net/sync"] = false })
+    commands:spawn({ ["zz/player"] = {}, ["scope/portal/console/user"] = {}, ["core/net/sync"] = {} })
 end)
 
-local seeks = {}
-
--- Where time would move the clip: the suite seeks the rig's player.
-app:add_systems(Update, {
-    Query[{ with = { "zz/rig", "animation/clip/graph" } }],
-    Query[{ with = { Mut["AnimationPlayer"], "AnimationGraphHandle" } }],
-}, function(rigs, players)
-    for _, r in ipairs(rigs:iter()) do
-        local at = seeks[r:get("zz/rig").name]
-        if at ~= nil then
-            local p = players:iter_many_mut(players:iter_descendants(r:id()))[1]
-            if p then
-                p.AnimationPlayer:play(r:get("animation/clip/graph").nodes[CLIP], { seek_to = at })
-                seeks[r:get("zz/rig").name] = nil
-            end
-        end
-    end
-end):in_set("zz/console_door_seek"):before("scope/portal/console/client")
-
 local phase, clock = "loading", 0
+local asked = 0
 
 app:add_systems(Update, {
-    World,
-    Res[AssetServer],
-    Query[{ with = { "zz/rig" }, optional = { "animation/clip", "animation/clip/graph" } }],
-    Query[{ with = { "AnimationPlayer", "AnimationGraphHandle" } }],
+    Res[Time],
+    Query[{ with = { "Name", "animation/clip" }, optional = { "animation/clip/seek" } }],
+    Query[{ with = { "animation/clip/node" } }],
+    Query[{ with = { "zz/player" } }],
     Commands,
-}, function(world, asset_server, rigs, players, commands)
-    clock = clock + (world:delta_time() or 0)
+}, function(time, rigs, records, players, commands)
+    clock = clock + time:delta_secs()
     local function step(next_phase) phase, clock = next_phase, 0 end
-    local function rig(name)
-        for _, r in ipairs(rigs:iter()) do
-            if r:get("zz/rig").name == name then return r end
-        end
+    local rig
+    for _, r in ipairs(rigs:iter()) do
+        if r:get("Name").name == "zz_rig" then rig = r end
     end
-    local function clip(name)
-        local r = rig(name)
-        return r and r:get("animation/clip") or {}
+    local record
+    for _, r in ipairs(records:iter()) do
+        if r:get("animation/clip/node").name == "zz_rig" then record = r:get("animation/clip/node") end
     end
-    local function active(name)
-        local r = rig(name)
-        local p = r and players:iter_many(players:iter_descendants(r:id()))[1]
-        local graph = r and r:get("animation/clip/graph")
-        return p and graph and p.AnimationPlayer:animation(graph.nodes[CLIP]) or nil
+    local function said()
+        local s = rig and rig:get("animation/clip/seek")
+        return string.format("speed %s, seek %s, record %s", tostring(rig and rig:get("animation/clip").speed),
+            tostring(s and s.to), record and (tostring(record.speed) .. " at " .. tostring(record.time)) or "none")
     end
-    local function said(name)
-        local a = active(name)
-        local c = clip(name)
-        return string.format("speed %s, seek_to %s, %s", tostring(c.speed), tostring(c.seek_to),
-            a and ("at " .. a.seek_time) or "not playing")
-    end
-    local function open_at_end(name)
-        local a, c = active(name), clip(name)
-        return c.speed == 1 and c.seek_to == "end" and c["repeat"] == false and a ~= nil and math.abs(a.seek_time - 1) < 1e-3
-    end
-    local function record(target)
-        local r = world:query({ with = { "scope/portal/console/target" } })[1]
-        if r then
-            commands:entity(r:id()):insert({ ["scope/portal/console/target"] = { door = "zz_door", target = target, at = "zz_door" } })
-        else
-            commands:spawn({
-                ["scope/portal/console/target"] = { door = "zz_door", target = target, at = "zz_door" },
-                ["core/net/sync"] = false,
-            })
-        end
+    local function pick(target)
+        asked = asked + 1
+        local p = players:iter()[1]
+        commands:entity(p:id()):insert({ ["scope/portal/console/request"] = { door = "zz_door", target = target, n = asked } })
     end
 
     if phase == "loading" then
-        if active("zz_door") == nil and clock < 10 then return end
-        step("arrived")
-
-    elseif phase == "arrived" and clock > 0.5 then
-        T("DR1_a_door_arriving_stands_open_at_its_clips_end", open_at_end("zz_door"), said("zz_door"))
-        record(ROOT .. ":feature")
+        if record == nil and clock < 5 then return end
+        T("DS1_the_door_stands_open_as_authored_and_is_published_so", rig:get("animation/clip").speed == 0
+            and record ~= nil and record.speed == 0 and record.time == "end", said())
+        pick(ROOT .. ":feature")
         step("closing")
 
     elseif phase == "closing" and clock > 0.3 then
-        local a = active("zz_door")
-        T("DR2_a_pick_closes_it_from_where_it_stands", clip("zz_door").speed == -1 and clip("zz_door").seek_to == nil
-            and a ~= nil and math.abs(a.seek_time - 1) < 1e-3, said("zz_door"))
-        seeks.zz_door = 0
-        step("reopening")
+        T("DS2_a_pick_closes_it_from_where_it_stands", rig:get("animation/clip").speed == -1
+            and rig:get("animation/clip/seek").to == "end" and record.speed == -1, said())
+        commands:entity(rig:id()):insert({ ["animation/clip/seek"] = { to = 0 } })
+        step("shut")
 
-    elseif phase == "reopening" and clock > 0.3 then
-        T("DR3_once_shut_it_opens", clip("zz_door").speed == 1, said("zz_door"))
-        seeks.zz_door = 1
+    elseif phase == "shut" and clock > 1.0 then
+        T("DS3_once_published_shut_it_opens", rig:get("animation/clip").speed == 1, said())
+        commands:entity(rig:id()):insert({ ["animation/clip/seek"] = { to = "end" } })
+        commands:entity(rig:id()):insert({ ["animation/clip"] = { clips = { [CLIP] = 1 }, speed = 0 } })
+        step("standing")
+
+    elseif phase == "standing" and clock > 0.3 then
+        pick(AUTHORED)
         step("authored")
 
     elseif phase == "authored" and clock > 0.3 then
-        for _, r in ipairs(world:query({ with = { "scope/portal/console/target" } })) do commands:entity(r:id()):despawn() end
-        step("authored_closing")
-
-    elseif phase == "authored_closing" and clock > 0.3 then
-        T("DR4_pointing_it_back_closes_it_too", clip("zz_door").speed == -1, said("zz_door"))
-        seeks.zz_door = 0
-        step("authored_reopening")
-
-    elseif phase == "authored_reopening" and clock > 0.3 then
-        T("DR4_and_opens_it", clip("zz_door").speed == 1, said("zz_door"))
-        -- a door named by a record already standing, as a client joining finds it
-        commands:spawn({
-            ["scope/portal/console/target"] = { door = "zz_late", target = ROOT .. ":feature", at = "zz_late" },
-            ["core/net/sync"] = false,
-        })
-        spawn_door(commands, asset_server, "zz_late", 10)
-        step("late")
-
-    elseif phase == "late" and (active("zz_late") ~= nil and clock > 0.5 or clock > 10) then
-        T("DR5_a_door_joined_late_stands_open_at_its_end", open_at_end("zz_late"), said("zz_late"))
+        T("DS4_a_pick_of_its_authored_branch_closes_it_too", rig:get("animation/clip").speed == -1, said())
         phase = "done"
         suite.finish("PORTAL_CONSOLE_DOOR")
     end
 
-    if phase ~= "done" and clock > 12 then
-        T("DR0_reached_" .. phase, false, said("zz_door"))
+    if phase ~= "done" and clock > 10 then
+        T("DS0_reached_" .. phase, false, said())
         phase = "done"
         suite.finish("PORTAL_CONSOLE_DOOR")
     end
