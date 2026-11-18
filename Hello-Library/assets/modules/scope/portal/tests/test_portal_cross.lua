@@ -1,12 +1,24 @@
 -- --host
--- A crossing between two worlds, each its own isolated VM, as two worlds of one process are in
--- production: the source world's portal links to the target world's peer listener, a player walks
--- into it, and core's peer switch hands the player over. The target's client is a connection that
--- only watches until the handover lands, as core's switch leaves it; its `player/spawner` is real.
+-- Crossings between two worlds, each its own isolated VM, as two worlds of one process are in
+-- production: each world's portals link to the other's peer listener, a player walks into one, and
+-- core's peer switch hands the player over. A client's connection in a world it is not in only
+-- watches, until a hand-over lands there, as the client's own net leaves it; each world's
+-- `player/spawner` is real. The target's door the player comes out of has no target of its own,
+-- and leads the player back.
 --
 --   X1 the crossing timer the portal puts in `transfer_data` reaches the target world, which accepts
 --      `cooldown`
 --   X2 the player spawned there from the handover is cooling, the timer synced to its owner
+--   X3 ...and it has `scope/portal/from`: the world it came from and the door it came out of, synced
+--      to its owner
+--   X4 the door it came out of, which has no target, links back to that world at its own `at`
+--   X5 walking into that door hands the player back, arriving at the door it left by, where it
+--      stood at the other door, with `from` naming the world it came back from
+--   X6 ...and the link back goes once no player of that world names it: its handed player's mirror
+--      keeps it, as the link carries the hand-over, until the player is back another way
+--   X7 crossing through portals that are not doors, the player arrives with no `from`: in a world
+--      it was spawned in from the hand-over, and back in the world whose entity it was, which still
+--      held the `from` of its last arrival
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
@@ -15,14 +27,42 @@ local T = suite.assert_test
 
 local HERE = "github:zzportalx/here:main"
 local OTHER = "github:zzportalx/other:main"
--- What the target world accepts from a peer, as a world's boot declares it.
-local ACCEPT = { "Transform", "cooldown" }
+-- What each world accepts from a peer, as a world's boot declares it.
+local ACCEPT = { "Transform", "cooldown", "scope/portal/from" }
 
 local DEFAULTS = {
     s_hosted = false, s_handed = false, s_dbg = "", walk = false,
     t_timer = -1, t_cooling = false, t_synced = false,
+    t_from = "", t_from_synced = false, t_back = false, t_links = -1, t_owned = false, move = false, walk_back = false,
+    s_back = false, s_at = "", s_from = "", s_cooling = false, s_plain = false, walk_plain = false,
+    t_plain = false, walk_home = false,
 }
 local ts = helpers.shared_state("ScopePortalCrossState", DEFAULTS)
+
+-- Shared by both worlds' fixtures: the client's connection watches while it owns no player here,
+-- until a hand-over brings a new place in its `synced_state`.
+local WATCH = [=[
+local function place_of(state)
+    local t = state and state.Transform and state.Transform.translation
+    return t and string.format("%.2f,%.2f,%.2f", t.x, t.y, t.z) or ""
+end
+local had, seen = false, ""
+local function watch(commands, c, owned)
+    local connection = c:get("core/net/connection")
+    local now = place_of(connection.synced_state)
+    local observe = connection.observer
+    if owned ~= nil then
+        had, observe = true, false
+    elseif had then
+        had, seen, observe = false, now, true
+    elseif observe and now ~= "" and now ~= seen then
+        observe = false
+    end
+    if observe ~= connection.observer then
+        commands:entity(c:id()):entry("core/net/connection"):and_modify(function(conn) conn.observer = observe end)
+    end
+end
+]=]
 
 helpers.make_fixture("modules/test_fixtures/gen_portal_cross_source.lua", [=[
 require("modules/core/net/server/init.lua")
@@ -34,6 +74,7 @@ local Net = require("modules/core/net/shared/net.lua")
 
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalCrossState", boot.DEFAULTS)
+]=] .. WATCH .. [=[
 
 app:add_systems(Startup, { World, Commands }, function(world, commands)
     -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
@@ -44,7 +85,8 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
         ["core/net/sync"] = false,
     })
     -- The client's connection, as the world net spawns one: it owns what the client owns here.
-    local c31 = commands:spawn({ ["core/net/connection"] = { client_id = 31 }, ["core/net/sync"] = false, ChildOf = wn:id() }):id()
+    local c31 = commands:spawn({ ["core/net/connection"] = { client_id = 31 }, ["core/net/sync"] = false, ChildOf = wn:id(),
+        ["zz/px/connection"] = {} }):id()
     -- A world states its scope to a peer through its own listener.
     commands:spawn({
         ["core/net/peer/listen"] = { name = "zzpx_s_peer", port = 15498, scope_key = boot.HERE, world_port = 15495 },
@@ -52,12 +94,24 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
         ["core/net/sync"] = false,
     })
     commands:spawn({ ["core/net/peer/expose"] = { components = "all" }, ["core/net/sync"] = false })
+    commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
+    -- This world's own row, which names it to its portals.
+    commands:spawn({
+        ["core/world/status"] = { scope_key = boot.HERE, mode = "server", status = "ready", ports = { world = 15495, peer = 15498 } },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
     commands:spawn({
         ["core/world/status"] = { scope_key = boot.OTHER, mode = "server", status = "ready",
             ports = { world = 15496, peer = 15497 } },
         ["core/net/sync"] = false,
     })
-    commands:spawn({ ["scope/portal"] = { target = boot.OTHER }, ["core/net/sync"] = false, ["zz/px/portal"] = {} })
+    commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
+    commands:spawn({ ["scope/portal"] = { target = boot.OTHER }, Transform = { translation = { x = -6, y = 0, z = 0 } },
+        ["core/net/sync"] = false, ["zz/px/portal"] = {} })
+    -- A map's door, leading to the target's door `zz_e`.
+    commands:spawn({ ["scope/portal"] = { target = boot.OTHER, at = "zz_e" }, Name = "zz_d",
+        Transform = { translation = { x = 5, y = 0, z = 0 } }, ["core/net/sync"] = false, ["zz/px/door"] = {} })
     commands:spawn({
         player = { client_id = 31, spawn_index = 0 },
         Transform = { translation = { x = 2, y = 0, z = 1 } },
@@ -65,28 +119,54 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
         ["core/net/peer/share"] = { stable_id = "player_31" },
         ["core/net/sync"] = { Transform = { authority = "server", reliable = false } },
         ["core/script/owner"] = false,
-        ["zz/px/player"] = {},
     })
 end)
 
-local walked = false
+local walked, walked_plain = false, false
 app:add_systems(Update, {
+    Query[{ with = { "zz/px/connection", "core/net/connection" } }],
+    Query[{
+        with = { "zz/px/door" },
+        optional = { "scope/portal/hosted", "CollidingEntities3d" },
+    }],
     Query[{
         with = { "zz/px/portal" },
         optional = { "scope/portal/hosted", "CollidingEntities3d" },
     }],
     Query[{
-        with = { "zz/px/player" },
-        optional = { "core/net/peer/mirror" },
+        with = { "player", "Transform" },
+        optional = { "core/net/peer/mirror", "core/net/owner", "scope/portal/from", "scope/portal/cooling" },
     }],
     Commands,
-}, function(portals, players, commands)
-    local portal, player = portals:iter()[1], players:iter()[1]
-    ts.s_hosted = portal ~= nil and portal:has("scope/portal/hosted") and portal:has("CollidingEntities3d")
-    ts.s_handed = player ~= nil and player:has("core/net/peer/mirror")
-    ts.s_dbg = "portal=" .. tostring(portal ~= nil) .. " hosted=" .. tostring(portal and portal:has("scope/portal/hosted")) .. " ce=" .. tostring(portal and portal:has("CollidingEntities3d"))
-    if ts.walk and not walked and portal ~= nil and player ~= nil then
+}, function(connections, doors, portals, players, commands)
+    local c = connections:iter()[1]
+    local door, portal = doors:iter()[1], portals:iter()[1]
+    local player, any = nil, nil
+    for _, p in ipairs(players:iter()) do
+        any = any or p
+        if c ~= nil and p:get("core/net/owner") == c:id() and not p:has("core/net/peer/mirror") then player = p end
+    end
+    if c ~= nil then watch(commands, c, player) end
+    ts.s_hosted = door ~= nil and door:has("scope/portal/hosted") and door:has("CollidingEntities3d")
+    ts.s_plain = portal ~= nil and portal:has("scope/portal/hosted") and portal:has("CollidingEntities3d")
+    ts.s_handed = player == nil and any ~= nil
+    ts.s_dbg = "door=" .. tostring(door ~= nil) .. " hosted=" .. tostring(door and door:has("scope/portal/hosted")) .. " ce=" .. tostring(door and door:has("CollidingEntities3d"))
+    ts.s_back = player ~= nil
+    if player ~= nil then
+        local at = player:get("Transform").translation
+        local from = player:get("scope/portal/from")
+        ts.s_at = string.format("%.2f,%.2f,%.2f", at.x, at.y, at.z)
+        ts.s_from = from and (tostring(from.target) .. "|" .. tostring(from.door)) or ""
+        ts.s_cooling = player:has("scope/portal/cooling")
+    end
+    if ts.walk and not walked and door ~= nil and player ~= nil then
         walked = true
+        commands:entity(door:id()):insert({
+            collision_trigger = { entered = { player:id() }, exited = {}, inside = { player:id() } },
+        })
+    end
+    if ts.walk_plain and not walked_plain and portal ~= nil and player ~= nil then
+        walked_plain = true
         commands:entity(portal:id()):insert({
             collision_trigger = { entered = { player:id() }, exited = {}, inside = { player:id() } },
         })
@@ -103,9 +183,10 @@ local helpers = require("modules/core/test_helpers.lua")
 
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalCrossState", boot.DEFAULTS)
+]=] .. WATCH .. [=[
 
 app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({
+    local wn = commands:spawn({
         ["core/world/net"] = { mode = "server", name = "zzpx_t", port = 15496 },
         ["core/net"] = { mode = "server", name = "zzpx_t", port = 15496 },
         ["core/net/sync"] = false,
@@ -115,23 +196,45 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["core/net/peer"] = {},
         ["core/net/sync"] = false,
     })
+    commands:spawn({ ["core/net/peer/expose"] = { components = "all" }, ["core/net/sync"] = false })
     commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
+    commands:spawn({
+        ["core/world/status"] = { scope_key = boot.OTHER, mode = "server", status = "ready", ports = { world = 15496, peer = 15497 } },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({
+        ["core/world/status"] = { scope_key = boot.HERE, mode = "server", status = "ready",
+            ports = { world = 15495, peer = 15498 } },
+        ["core/net/sync"] = false,
+    })
     commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
     commands:spawn({
         ["core/net/connection"] = { client_id = 31, observer = true },
         ["core/net/sync"] = false,
         ["zz/px/connection"] = {},
+        ChildOf = wn:id(),
     })
+    -- The door the source's door leads to: no target of its own, and `at` naming the source's door.
+    commands:spawn({ ["scope/portal"] = { at = "zz_d" }, Name = "zz_e",
+        Transform = { translation = { x = 0, y = 0, z = -6 } }, ["core/net/sync"] = false, ["zz/px/entry"] = {} })
+    -- A portal home that is not a door.
+    commands:spawn({ ["scope/portal"] = { target = boot.HERE }, Transform = { translation = { x = 9, y = 0, z = 9 } },
+        ["core/net/sync"] = false, ["zz/px/home"] = {} })
 end)
 
+local walked, walked_home = false, false
 app:add_systems(Update, {
     Query[{ with = { "zz/px/connection", "core/net/connection" } }],
     Query[{
         with = { "player", "core/net/owner" },
-        optional = { "scope/portal/cooling", "cooldown", "core/net/sync" },
+        optional = { "scope/portal/cooling", "cooldown", "core/net/sync", "scope/portal/from", "core/net/peer/mirror" },
     }],
+    Query[{ with = { "zz/px/entry" }, optional = { "CollidingEntities3d" } }],
+    Query[{ with = { "zz/px/home" }, optional = { "scope/portal/hosted", "CollidingEntities3d" } }],
+    Query[{ with = { "core/net/peer/link", "ChildOf" }, optional = { "core/net/peer/link/state" } }],
     Commands,
-}, function(connections, players, commands)
+}, function(connections, players, entries, homes, links, commands)
     local c = connections:iter()[1]
     local connection = c and c:get("core/net/connection")
     local state = connection and connection.synced_state
@@ -139,22 +242,56 @@ app:add_systems(Update, {
     local timer = timers["scope/portal/cooling"]
     if timer ~= nil and ts.t_timer < 0 then
         ts.t_timer = timer.remaining or 0
-        commands:entity(c:id()):entry("core/net/connection"):and_modify(function(conn) conn.observer = false end)
     end
+    local entry, home = entries:iter()[1], homes:iter()[1]
+    ts.t_plain = home ~= nil and home:has("scope/portal/hosted") and home:has("CollidingEntities3d")
+    local owned = nil
     for _, p in ipairs(players:iter()) do
-        if c ~= nil and p:get("core/net/owner") == c:id() then
-            local sync = p:get("core/net/sync")
-            ts.t_cooling = p:has("scope/portal/cooling")
-            ts.t_synced = type(sync) == "table" and sync.cooldown ~= nil and sync.cooldown.target == "owner"
+        if c ~= nil and p:get("core/net/owner") == c:id() and not p:has("core/net/peer/mirror") then owned = p end
+    end
+    if c ~= nil then watch(commands, c, owned) end
+    ts.t_owned = owned ~= nil
+    if owned ~= nil then
+        local sync = owned:get("core/net/sync")
+        local from = owned:get("scope/portal/from")
+        ts.t_cooling = owned:has("scope/portal/cooling")
+        ts.t_synced = type(sync) == "table" and sync.cooldown ~= nil and sync.cooldown.target == "owner"
+        ts.t_from = from and (tostring(from.target) .. "|" .. tostring(from.door)) or ""
+        local entry_sync = type(sync) == "table" and sync["scope/portal/from"] or nil
+        ts.t_from_synced = entry_sync ~= nil and entry_sync.target == "owner" and entry_sync.authority == "server"
+    end
+    local count, back = 0, false
+    for _, l in ipairs(links:iter()) do
+        if entry ~= nil and l:get("ChildOf") == entry:id() then
+            count = count + 1
+            local cfg, st = l:get("core/net/peer/link"), l:get("core/net/peer/link/state")
+            back = back or (cfg.name == "peer_to_" .. boot.HERE .. "@zz_e" and cfg.at == "zz_d" and cfg.scope_key == boot.HERE
+                and st ~= nil and st.welcomed == true)
         end
+    end
+    ts.t_links, ts.t_back = count, back
+    if ts.move and owned ~= nil and not walked then
+        commands:entity(owned:id()):insert({ Transform = { translation = { x = 0, y = 0, z = -5 } } })
+    end
+    if ts.walk_back and not walked and owned ~= nil and entry ~= nil then
+        walked = true
+        commands:entity(entry:id()):insert({
+            collision_trigger = { entered = { owned:id() }, exited = {}, inside = { owned:id() } },
+        })
+    end
+    if ts.walk_home and not walked_home and owned ~= nil and home ~= nil then
+        walked_home = true
+        commands:entity(home:id()):insert({
+            collision_trigger = { entered = { owned:id() }, exited = {}, inside = { owned:id() } },
+        })
     end
 end):in_set("zz/px_target")
 ]=])
 
 helpers.spawn_vm("modules/test_fixtures/gen_portal_cross_target.lua",
-    { DEFAULTS = DEFAULTS, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
+    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
 helpers.spawn_vm("modules/test_fixtures/gen_portal_cross_source.lua",
-    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER }, { headless = true })
+    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
 
 local steps, at, t, mark = {}, 1, 0, 0
 local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act } end
@@ -170,6 +307,33 @@ end)
 step(within(5, function() return ts.t_cooling and ts.t_synced end), function()
     T("X2_the_player_spawned_there_is_cooling_the_timer_synced_to_its_owner", ts.t_cooling and ts.t_synced,
         string.format("cooling=%s synced=%s", tostring(ts.t_cooling), tostring(ts.t_synced)))
+end)
+step(within(5, function() return ts.t_from ~= "" and ts.t_from_synced end), function()
+    T("X3_it_has_where_it_came_from_and_the_door_it_came_out_of_synced_to_its_owner",
+        ts.t_from == HERE .. "|zz_e" and ts.t_from_synced, ts.t_from .. " synced=" .. tostring(ts.t_from_synced))
+end)
+step(within(10, function() return ts.t_back end), function()
+    T("X4_the_door_it_came_out_of_links_back_at_its_own_at", ts.t_back and ts.t_links == 1,
+        "links=" .. tostring(ts.t_links))
+end)
+step(within(6, function() return not ts.t_cooling end), function() ts.move = true end)
+step(after(0.5), function() ts.walk_back = true end)
+step(within(10, function() return ts.s_back and ts.s_from ~= "" end), function()
+    T("X5_walking_in_hands_it_back_arriving_at_the_door_it_left_by", ts.s_back and ts.s_at == "5.00,0.00,1.00"
+        and ts.s_from == OTHER .. "|zz_d", string.format("back=%s at=%s from=%s", tostring(ts.s_back), ts.s_at, ts.s_from))
+end)
+step(within(6, function() return not ts.s_cooling and ts.s_plain end), function() ts.walk_plain = true end)
+step(within(10, function() return ts.t_owned and not ts.s_back end), function()
+    T("X7_through_a_portal_not_a_door_it_arrives_with_no_from", ts.t_owned and ts.t_from == "",
+        string.format("owned=%s from=%s", tostring(ts.t_owned), ts.t_from))
+end)
+step(within(5, function() return ts.t_links == 0 end), function()
+    T("X6_the_link_back_goes_once_no_player_of_that_world_names_it", ts.t_links == 0, "links=" .. tostring(ts.t_links))
+end)
+step(within(6, function() return not ts.t_cooling and ts.t_plain end), function() ts.walk_home = true end)
+step(within(10, function() return ts.s_back and not ts.t_owned end), function()
+    T("X7_back_in_the_world_whose_entity_it_was_it_has_no_from", ts.s_back and ts.s_from == "",
+        string.format("back=%s from=%s", tostring(ts.s_back), ts.s_from))
 end)
 
 local done = false

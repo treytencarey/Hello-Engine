@@ -2,8 +2,8 @@
 -- stands in its target too, leading back (the server half); any other is one-ended, the way back
 -- being the other world's own portal. On both sides a dropped portal is a fixed ball of radius 1.2
 -- that says who walks into it (`collision_trigger`); one still being placed is none of that. A door
--- without `target` leads nowhere until one is set (a console's re-point): no link, no crossing, no
--- view.
+-- without `target` leads nowhere until one is set (a console's re-point): no view, and it hands over
+-- only a player who came out of it, back the way it came (`scope/portal/from`).
 --
 -- scope/portal = {
 --     target = <the scope key of the world it leads to; absent, the portal leads nowhere>,
@@ -19,6 +19,11 @@
 --
 -- scope/portal/cooling = {}: on a player handed in from another world, for 3 s, while it may not
 -- cross again. It is a `cooldown` timer that crosses with the player from the portal it took.
+--
+-- scope/portal/from = {
+--     target = <the scope key of the world the player came from>,
+--     door = <the Name of the door here it came out of>,
+-- }: on a player handed in through a door, written by the server, synced to its owner
 
 local Collider = require("bevy_rapier3d::geometry::Collider")
 local ReadRapierContext = require("bevy_rapier3d::plugin::ReadRapierContext")

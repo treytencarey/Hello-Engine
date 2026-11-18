@@ -29,6 +29,8 @@
 --       no ask
 --   C10 ...and walking out and back in asks one
 --   C16 a door without `target` asks nothing when walked into
+--   C17 ...unless this client's player came out of it: then it predicts the way back, to the world the
+--       player came from, at the door's own `at`
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -50,6 +52,7 @@ local NOWHERE = "github:zzportalc/nowhere:main"
 local REMOTE = "github:zzportalc/remote:main"
 local STALE = "github:zzportalc/stale:main"
 local LATE = "github:zzportalc/late:main"
+local ORIGIN = "github:zzportalc/origin:main"
 local CLIENT_SOURCE = "assets/modules/scope/portal/client/init.lua"
 
 -- This client's world net, unconnected: what the client owns here is in its `core/net/owns`.
@@ -145,6 +148,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:spawn({ player = { client_id = 7 }, ["core/net/owner"] = world_net, ["core/net/sync"] = false,
             Transform = { translation = { x = 3, y = 1, z = 4 }, rotation = Quat.from_rotation_y(0.5) },
             camera = { yaw = 1.3, pitch = -0.1, distance = 6, height = 2 },
+            ["scope/portal/from"] = { target = ORIGIN, door = "zz_entry" },
             ["zz/pc/h"] = { name = "me" } })
         -- This client's player once, handed over since, as the switch will find it.
         commands:spawn({ player = { client_id = 7 }, ["core/net/owner"] = world_net, ["core/net/sync"] = false,
@@ -166,11 +170,14 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:spawn({ ["scope/portal"] = { at = "zz_arrival" }, Name = "zz_door_none",
             Transform = { translation = { x = -1, y = 0, z = 2 } },
             ["core/net/sync"] = false, ["zz/pc/p"] = { name = "none" } })
+        commands:spawn({ ["scope/portal"] = { at = "zz_back" }, Name = "zz_entry",
+            Transform = { translation = { x = -1, y = 0, z = -2 } },
+            ["core/net/sync"] = false, ["zz/pc/p"] = { name = "entry" } })
         step("spawned")
 
     -- The trigger mod writes its first `collision_trigger` once its sensor parts land, which would
     -- overwrite a walk written before it: walk once every portal has them, and they have settled.
-    elseif phase == "spawned" and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 6 then
+    elseif phase == "spawned" and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 7 then
         step("settling")
 
     elseif phase == "settling" and clock > 0.5 then
@@ -180,6 +187,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         walk(commands, world, "c4", { "them" })
         walk(commands, world, "door", { "me" })
         walk(commands, world, "none", { "me" })
+        walk(commands, world, "entry", { "me" })
         step("walked")
 
     elseif phase == "walked" and clock > 0.3 then
@@ -200,6 +208,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("C3_a_portal_to_this_world_asks_none", p3 + n3 == 0, "")
         local p16, n16 = asks(world, nil)
         T("C16_a_door_without_target_asks_nothing", p16 + n16 == 0, string.format("predicted=%d plain=%d", p16, n16))
+        local pb, nb, _, back = asks(world, ORIGIN)
+        T("C17_its_player_s_own_way_back_predicts_the_world_it_came_from_at_the_door_s_at", pb == 1 and nb == 0
+            and back.at == "zz_back", string.format("predicted=%d plain=%d at=%s", pb, nb, tostring(back and back.at)))
         local p4, n4 = asks(world, THIRD)
         T("C4_a_remote_player_walking_in_asks_none", p4 + n4 == 0, "")
         -- The player at (3, 1, 4) is (2, 1, 2) from the door, which is (-2, 1, 2) in the door's
@@ -286,7 +297,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "cooling" and #world:query({ with = { "zz/pc/h", "scope/portal/cooling" } }) == 1
         and named(world, "zz/pc/p", "c5") ~= nil
-        and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 7 and clock > 0.5 then
+        and #world:query({ with = { "zz/pc/p", "CollidingEntities3d" } }) == 8 and clock > 0.5 then
         walk(commands, world, "c5", { "me" })
         step("cooled_walk")
 

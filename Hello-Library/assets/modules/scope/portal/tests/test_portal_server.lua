@@ -31,6 +31,13 @@
 --   P28 a door without `target` gets no link and hands nobody over who walks into it
 --   P29 ...given a target, it gets its door link
 --   P30 ...and its target taken away again, the link goes
+--   P31 a door crossing puts `scope/portal/from` in `transfer_data`: this world, and the door it
+--       lands at; a crossing through a portal that is not a door puts an empty one
+--   P32 a door without `target` links back to each world its players came from through it, at its
+--       own `at`; none to an origin not running here
+--   P33 ...walking into it hands a player back to where it came from, on that link; a player that
+--       came another way crosses nothing, and one from an origin not running is released
+--   P34 ...and the link back goes when no player names it
 --   P20 with real physics: a hosted portal dropped where a player stands reads it inside and hands
 --       it nobody over, as only walking in counts
 --   P21 ...nor a player spawned inside it, as one spawns inside a door
@@ -91,7 +98,7 @@ local function near(a, b) return type(a) == "number" and math.abs(a - b) < 1e-3 
 
 -- Core's switch takes `core/net/peer/switch` off in the same frame when it finds no peer for the
 -- target, so what the portal asked for is read on its edge, right after the portal's systems.
-local switched, carried, via, crossed = {}, {}, {}, {}
+local switched, carried, via, crossed, from = {}, {}, {}, {}, {}
 app:add_systems(Update, {
     Query[{
         added = { "core/net/peer/switch" },
@@ -107,6 +114,7 @@ app:add_systems(Update, {
         local share = r:get("core/net/peer/share") or {}
         local timers = share.transfer_data and share.transfer_data.cooldown or {}
         carried[name] = timers["scope/portal/cooling"] and timers["scope/portal/cooling"].remaining
+        from[name] = share.transfer_data and share.transfer_data["scope/portal/from"]
     end
 end):in_set("zz/portal_switch_seen"):after("scope/portal/server")
 
@@ -175,6 +183,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             commands:spawn({ ["scope/portal"] = { target = FOURTH, at = "zz_arrival" }, Name = "zz_door4",
                 Transform = { translation = { x = -8, y = 0, z = 3 } },
                 ["core/net/sync"] = false, ["zz/portal/p"] = { name = "door_4" } })
+            commands:spawn({ ["scope/portal"] = { at = "zz_arrival" }, Name = "zz_entry",
+                Transform = { translation = { x = 8, y = 0, z = -3 } },
+                ["core/net/sync"] = false, ["zz/portal/p"] = { name = "entry" } })
             commands:spawn({ ["scope/portal"] = { at = "zz_arrival" }, Name = "zz_door_none",
                 Transform = { translation = { x = -8, y = 0, z = -3 } },
                 ["core/net/sync"] = false, ["zz/portal/p"] = { name = "door_none" } })
@@ -241,12 +252,17 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             for _, h in ipairs({
                 { "h7", 17, true, false }, { "h8", 18, true, false }, { "hm", 19, true, true }, { "hn", 20, false, false },
                 { "hp", 25, true, false }, { "hdo", 26, true, false }, { "hd4", 27, true, false }, { "hz", 28, true, false },
+                -- Handed in through a door: where from, and the door here they came out of.
+                { "hb", 29, true, false, { target = OTHER, door = "zz_entry" } },
+                { "hx", 30, true, false, { target = OTHER, door = "zz_door" } },
+                { "ht", 32, true, false, { target = THIRD, door = "zz_entry" } },
             }) do
                 commands:spawn({
                     player = { client_id = h[2], spawn_index = 0 },
                     ["core/net/owner"] = connection(commands, h[2]),
                     ["core/net/peer/share"] = h[3] and { stable_id = "player_" .. h[2] } or nil,
                     ["core/net/peer/mirror"] = h[4] and { stable_id = "player_" .. h[2] } or nil,
+                    ["scope/portal/from"] = h[5],
                     ["core/net/sync"] = false,
                     ["zz/portal/h"] = { name = h[1] },
                 })
@@ -279,6 +295,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         walk("door_o", "hdo")
         walk("door_4", "hd4")
         walk("door_none", "hz")
+        local back = { id("hb"), id("hx"), id("ht") }
+        commands:entity(named(world, "zz/portal/p", "entry"):id()):insert({
+            collision_trigger = { entered = back, exited = {}, inside = back },
+        })
         step("walked")
 
     elseif phase == "walked" and clock > 0.3 then
@@ -298,6 +318,33 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("P28_a_door_without_target_gets_no_link_and_hands_nobody_over", crossed.hz == nil
             and #links(world, nil, true) == 0 and not none:has("scope/portal/hosted"), tostring(switched.hz))
         commands:entity(none:id()):insert({ ["scope/portal"] = { target = OTHER, at = "zz_arrival" } })
+        local fd, fp = from.hdo or {}, from.h7
+        T("P31_a_door_crossing_carries_where_from_and_the_door_it_lands_at", fd.target == HERE and fd.door == "zz_arrival",
+            tostring(fd.target) .. " " .. tostring(fd.door))
+        T("P31_a_crossing_through_a_portal_not_a_door_carries_an_empty_one", type(fp) == "table" and next(fp) == nil,
+            tostring(fp))
+        local entry = named(world, "zz/portal/p", "entry")
+        local backs, wrong = {}, 0
+        for _, l in ipairs(world:query({ with = { "core/net/peer/link", "ChildOf" } })) do
+            if l:get("ChildOf") == entry:id() then
+                local cfg = l:get("core/net/peer/link")
+                if cfg.scope_key == OTHER and cfg.name == "peer_to_" .. OTHER .. "@zz_entry" and cfg.at == "zz_arrival" then
+                    backs[#backs + 1] = cfg
+                else
+                    wrong = wrong + 1
+                end
+            end
+        end
+        T("P32_a_door_without_target_links_back_to_where_its_players_came_from_at_its_own_at", #backs == 1 and wrong == 0,
+            string.format("back links=%d others=%d", #backs, wrong))
+        T("P33_walking_in_hands_a_player_back_on_that_link", switched.hb == OTHER and via.hb == "peer_to_" .. OTHER .. "@zz_entry",
+            tostring(switched.hb) .. " " .. tostring(via.hb))
+        T("P33_a_player_that_came_another_way_crosses_nothing", crossed.hx == nil, tostring(switched.hx))
+        T("P33_one_from_an_origin_not_running_is_released", switched.ht == THIRD, tostring(switched.ht))
+        for _, name in ipairs({ "hb", "ht" }) do
+            local h = named(world, "zz/portal/h", name)
+            if h ~= nil then commands:entity(h:id()):try_remove("scope/portal/from") end
+        end
         local ends, kept = 0, false
         for _, e in ipairs(world:query({ with = { "scope/portal/return", "scope/portal" } })) do
             local back = e:get("scope/portal")
@@ -350,6 +397,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             none_link = none_link or l:get("core/net/peer/link").name == "peer_to_" .. OTHER .. "@zz_door_none"
         end
         T("P29_given_a_target_it_gets_its_door_link", none_link, "")
+        local still = 0
+        for _, l in ipairs(world:query({ with = { "core/net/peer/link", "ChildOf" } })) do
+            if l:get("ChildOf") == named(world, "zz/portal/p", "entry"):id() then still = still + 1 end
+        end
+        T("P34_the_link_back_goes_when_no_player_names_it", still == 0, tostring(still) .. " links")
         commands:entity(named(world, "zz/portal/p", "door_none"):id()):insert({ ["scope/portal"] = { at = "zz_arrival" } })
         step("cooled")
 

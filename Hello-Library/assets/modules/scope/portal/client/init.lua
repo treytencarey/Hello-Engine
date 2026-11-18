@@ -29,7 +29,7 @@ app:add_systems(Update, {
     Query[{
         with = { "player", "core/net/owner", "GlobalTransform" },
         without = { "scope/portal/cooling" },
-        optional = { "camera" },
+        optional = { "camera", "scope/portal/from" },
     }],
     Query[{
         with = { "core/world/status", "WorldShared" },
@@ -46,9 +46,13 @@ app:add_systems(Update, {
         local portal = p:get("scope/portal")
         local entered = p:get("collision_trigger").entered or {}
         local door = portal.at ~= nil and p:has("Name") and p:has("GlobalTransform")
-        if not watching and portal.target ~= nil and portal.target ~= scope then
+        if not watching then
             for _, player in ipairs(players:iter_many(entered)) do
                 if not mine(own, player) then goto next_player end
+                -- A door without a target leads this player back where it came from through it.
+                local from = portal.target == nil and door and player:get("scope/portal/from") or nil
+                local to = portal.target or (from ~= nil and from.door == p:get("Name").name and from.target or nil)
+                if to == nil or to == scope then goto next_player end
                 local body = player.GlobalTransform:compute_transform()
                 local t = body
                 if door then t = player.GlobalTransform:reparented_to(p:id()) end
@@ -61,7 +65,7 @@ app:add_systems(Update, {
                 look.pitch = camera.pitch or 0
                 commands:spawn({
                     ["core/world/flip"] = {
-                        scope = portal.target,
+                        scope = to,
                         predicted = {
                             at = door and portal.at or nil,
                             place = {
@@ -77,7 +81,7 @@ app:add_systems(Update, {
                     ["core/net/sync"] = false,
                     ["core/script/owner"] = false,
                 })
-                print(string.format("[SCOPE/PORTAL] walked into %s: predicting the crossing%s", portal.target,
+                print(string.format("[SCOPE/PORTAL] walked into %s: predicting the crossing%s", to,
                     door and (" through door '" .. p:get("Name").name .. "'") or ""))
                 ::next_player::
             end

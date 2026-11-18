@@ -14,11 +14,40 @@ local Vec3 = require("bevy::math::Vec3")
 
 -- A door is a portal with `at` on a named node: it fits this world to the target at the place
 -- `at` names there, and has its own link. Every other portal to a target shares the identity
--- link, which places nothing.
-local function door_link(p, portal)
-    if portal.target ~= nil and portal.at ~= nil and p:has("Name") then
-        return "peer_to_" .. portal.target .. "@" .. p:get("Name").name
+-- link, which places nothing. A door without a target has a link to each world its players came
+-- from through it (`to`).
+local function door_link(p, portal, to)
+    local target = to or portal.target
+    if target ~= nil and portal.at ~= nil and p:has("Name") then
+        return "peer_to_" .. target .. "@" .. p:get("Name").name
     end
+end
+
+-- A door without a target leads a player back where it came from through it.
+local function way_back(p, portal, player)
+    local from = portal.target == nil and portal.at ~= nil and p:has("Name") and player:get("scope/portal/from") or nil
+    if from ~= nil and from.target ~= nil and from.door == p:get("Name").name then return from.target end
+end
+
+local function link_at(commands, p, name, target, row, at)
+    local t = p.GlobalTransform:compute_transform()
+    commands:spawn({
+        ["core/net/peer/link"] = {
+            name = name,
+            port = row.ports.peer,
+            scope_key = target,
+            server_addr = "127.0.0.1",
+            at = at,
+            frame = {
+                translation = { x = t.translation.x, y = t.translation.y, z = t.translation.z },
+                rotation = { x = t.rotation.x, y = t.rotation.y, z = t.rotation.z, w = t.rotation.w },
+                scale = { x = t.scale.x, y = t.scale.y, z = t.scale.z },
+            },
+        },
+        ["core/net/sync"] = false,
+        ["core/script/owner"] = false,
+        ChildOf = p:id(),
+    })
 end
 
 -- The links to each target a placed portal names that runs as a server in this process: its row,
@@ -27,7 +56,9 @@ end
 -- next run gives the target's link to another portal still naming it. One link per door, its
 -- child, carrying the door's `at` and its world transform (`frame`), which core places what
 -- crosses by; a transform read before the door's first propagation is the identity, so the frame
--- follows the door's `GlobalTransform` changes. A link outlives a reload of this file: one spawned
+-- follows the door's `GlobalTransform` changes. A door without a target has such a link to each
+-- world a player here came from through it (`scope/portal/from`), while one does. A link outlives a
+-- reload of this file: one spawned
 -- again leaves `hosted` off until it is welcomed, and every return end there and back would go and
 -- come back with it, the target's link back here too.
 app:add_systems(Update, {
@@ -42,10 +73,24 @@ app:add_systems(Update, {
         without = { "WorldMirror" },
     }],
     Query[{ with = { Mut["core/net/peer/link"], "ChildOf" } }],
+    Query[{ with = { "player", "scope/portal/from" }, optional = { "core/net/owner", "core/net/peer/mirror" } }],
     Commands,
-}, function(portals, rows, mine_rows, links, commands)
+}, function(portals, rows, mine_rows, links, arrived, commands)
     local me = mine_rows:iter()[1]
     local mine = me and me:get("core/world/status").scope_key
+    -- door Name -> the worlds its players came from
+    local back = {}
+    for _, a in ipairs(arrived:iter()) do
+        local from = a:get("scope/portal/from")
+        -- A player of this world's just handed back still names it: the link carries the hand-over,
+        -- and the player's mirror here, until the world it went to says where it came from.
+        local ours = a:has("core/net/owner") and not a:has("core/net/peer/mirror")
+            or (a:has("core/net/peer/mirror") and a:get("core/net/peer/mirror").was_source == true)
+        if ours and from.target ~= nil and from.target ~= mine and from.door ~= nil then
+            back[from.door] = back[from.door] or {}
+            back[from.door][from.target] = true
+        end
+    end
     local running, named = {}, {}
     for _, r in ipairs(rows:iter()) do
         local row = r:get("core/world/status")
@@ -70,9 +115,13 @@ app:add_systems(Update, {
                 keep = row ~= nil and named[cfg.scope_key] and not linked[cfg.name]
                     and cfg.port == row.ports.peer
                     and cfg.name == "peer_to_127.0.0.1_" .. tostring(row.ports.world or row.port)
-            else
+            elseif portal.target ~= nil then
                 keep = row ~= nil and portal.target ~= mine and cfg.name == door and not linked[cfg.name]
                     and cfg.at == portal.at and cfg.scope_key == portal.target and cfg.port == row.ports.peer
+            else
+                local origins = parent:has("Name") and back[parent:get("Name").name] or {}
+                keep = row ~= nil and origins[cfg.scope_key] and cfg.name == door_link(parent, portal, cfg.scope_key)
+                    and not linked[cfg.name] and cfg.at == portal.at and cfg.port == row.ports.peer
             end
             if keep then
                 linked[cfg.name] = true
@@ -117,26 +166,20 @@ app:add_systems(Update, {
                 tostring(row.ports.peer)))
         elseif row ~= nil and door ~= nil and target ~= mine and not linked[door] and p:has("GlobalTransform") then
             linked[door] = true
-            local t = p.GlobalTransform:compute_transform()
-            commands:spawn({
-                ["core/net/peer/link"] = {
-                    name = door,
-                    port = row.ports.peer,
-                    scope_key = target,
-                    server_addr = "127.0.0.1",
-                    at = portal.at,
-                    frame = {
-                        translation = { x = t.translation.x, y = t.translation.y, z = t.translation.z },
-                        rotation = { x = t.rotation.x, y = t.rotation.y, z = t.rotation.z, w = t.rotation.w },
-                        scale = { x = t.scale.x, y = t.scale.y, z = t.scale.z },
-                    },
-                },
-                ["core/net/sync"] = false,
-                ["core/script/owner"] = false,
-                ChildOf = p:id(),
-            })
+            link_at(commands, p, door, target, row, portal.at)
             print(string.format("[SCOPE/PORTAL] %s runs here: linking door %s to its place '%s'", target, door,
                 portal.at))
+        elseif target == nil and portal.at ~= nil and p:has("Name") and p:has("GlobalTransform") then
+            for origin in pairs(back[p:get("Name").name] or {}) do
+                local from_row = running[origin]
+                local name = door_link(p, portal, origin)
+                if from_row ~= nil and not linked[name] then
+                    linked[name] = true
+                    link_at(commands, p, name, origin, from_row, portal.at)
+                    print(string.format("[SCOPE/PORTAL] %s runs here: linking door %s back to its place '%s'", origin,
+                        name, portal.at))
+                end
+            end
         end
     end
 end):in_set("scope/portal/server")
@@ -153,8 +196,16 @@ end):in_set("scope/portal/server")
             with = { "scope/portal" },
             without = { "placement" },
         }],
-    }, function(touched, moved)
-        return not (touched:is_empty() and moved:is_empty())
+        -- a player's way back arriving, going, or leaving with the player
+        Query[{
+            ["or"] = {
+                added = { "scope/portal/from", "core/net/peer/mirror" },
+                changed = { "scope/portal/from" },
+                removed = { "scope/portal/from", "core/net/owner" },
+            },
+        }],
+    }, function(touched, moved, ways)
+        return not (touched:is_empty() and moved:is_empty() and ways:is_empty())
     end)
 
 -- `scope/portal` was taken off an entity that stays: its links and its return end go. A despawned
@@ -342,7 +393,8 @@ end):in_set("scope/portal/server")
 -- core sends the player's state to the target's server and demotes it here to a mirror, which has
 -- no `core/net/owner` and matches nothing here again. Not linked, core releases the switch and the
 -- player stays, until its client watches here and its spawner takes it away. The player takes a
--- 3 s crossing timer with it, in what crosses with it (`transfer_data`, which the target keeps only
+-- 3 s crossing timer and where it came from (`scope/portal/from`, through a door) with it, in what
+-- crosses with it (`transfer_data`, which the target keeps only
 -- if it accepts `cooldown`), so it does not bounce straight back through a portal where it
 -- arrives; a cooling player is skipped here.
 app:add_systems(Update, {
@@ -355,6 +407,7 @@ app:add_systems(Update, {
     Query[{
         with = { "player", "core/net/owner", "core/net/peer/share" },
         without = { "core/net/peer/mirror", "WorldMirror", "scope/portal/cooling" },
+        optional = { "scope/portal/from" },
     }],
     Query[{ with = { "core/net/peer/link" } }],
     Query[{
@@ -374,25 +427,70 @@ app:add_systems(Update, {
         local portal = p:get("scope/portal")
         local target = portal.target
         local entered = p:get("collision_trigger").entered or {}
-        local link = door_link(p, portal) or (target ~= nil and identity[target] or nil)
-        if target ~= nil and target ~= mine then
-            for _, player in ipairs(players:iter_many(entered)) do
+        local door = portal.at ~= nil and p:has("Name")
+        for _, player in ipairs(players:iter_many(entered)) do
+            local to = target or way_back(p, portal, player)
+            local link = door_link(p, portal, to) or (to ~= nil and identity[to] or nil)
+            if to ~= nil and to ~= mine then
+                -- Written on every crossing, an empty one through a portal that is not a door: the share
+                -- keeps its `transfer_data`, and a world the player comes back to keeps what it had.
+                local from = door and mine ~= nil and { target = mine, door = portal.at } or {}
                 commands:entity(player:id()):insert({
-                    ["core/net/peer/switch"] = { target_scope = target, link = link },
+                    ["core/net/peer/switch"] = { target_scope = to, link = link },
                 })
                 commands:entity(player:id()):entry("core/net/peer/share"):and_modify(function(share)
                     local carried = share.transfer_data or {}
                     local timers = carried.cooldown or {}
                     timers["scope/portal/cooling"] = { remaining = 3 }
                     carried.cooldown = timers
+                    carried["scope/portal/from"] = from
                     share.transfer_data = carried
                 end)
                 print(string.format("[SCOPE/PORTAL] client %s walks into %s: handing the player over on %s",
-                    tostring(player:get("player").client_id), target, tostring(link)))
+                    tostring(player:get("player").client_id), to, tostring(link)))
             end
         end
     end
 end):in_set("scope/portal/server")
+
+-- A player spawned from a hand-over (`player/spawner`, from its connection's `synced_state`) gets
+-- where it came from. One a returning player's mirror took back has it set by core.
+app:add_systems(Update, {
+    Query[{ added = { "player" }, with = { "core/net/owner" }, without = { "core/net/peer/mirror" } }],
+    Query[{ with = { "core/net/connection" } }],
+    Commands,
+}, function(arrived, connections, commands)
+    for _, p in ipairs(arrived:iter()) do
+        local c = connections:get(p:get("core/net/owner"))
+        local state = c and c:get("core/net/connection").synced_state
+        local from = state and state["scope/portal/from"]
+        if type(from) == "table" and from.target ~= nil then
+            commands:entity(p:id()):insert({ ["scope/portal/from"] = { target = from.target, door = from.door } })
+        end
+    end
+end):in_set("scope/portal/from"):before("scope/portal/server")
+
+-- `scope/portal/from` reaches the player's owner, whose client predicts the way back; an empty one
+-- (the player came another way) goes.
+app:add_systems(Update, {
+    Query[{
+        ["or"] = { added = { "scope/portal/from" }, changed = { "scope/portal/from" } },
+        with = { "player", "core/net/owner" },
+        optional = { "core/net/sync" },
+    }],
+    Commands,
+}, function(players, commands)
+    for _, p in ipairs(players:iter()) do
+        local empty = p:get("scope/portal/from").target == nil
+        local entity = commands:entity(p:id())
+        if empty then entity:remove("scope/portal/from") end
+        if type(p:get("core/net/sync")) == "table" then
+            entity:entry("core/net/sync"):and_modify(function(sync)
+                sync["scope/portal/from"] = (not empty) and { authority = "server", target = "owner" } or nil
+            end)
+        end
+    end
+end):in_set("scope/portal/from"):before("scope/portal/server")
 
 return {
     relationships = {
