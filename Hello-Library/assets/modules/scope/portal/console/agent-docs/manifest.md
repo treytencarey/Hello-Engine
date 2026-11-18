@@ -1,5 +1,5 @@
 ---
-depends_on: [scope/portal, core/net, core/world, player, input, ui/style, vault/github/branches]
+depends_on: [scope/portal, core/net, core/world, player, input, ui/style, vault/github/branches, animation/clip]
 conflicts_with: []
 exposes: [scope/portal/console, scope/portal/console/user, scope/portal/console/request, scope/portal/console/response, scope/portal/console/target, scope/portal/console/state, scope/portal/console/camera, scope/portal/console/view, scope/portal/console/row]
 ---
@@ -44,6 +44,9 @@ A console beside a scene's door, which re-points the door at another branch of t
 | Update (client) | `scope/portal/console/client` | While a name field is open: keys type into it; Backspace takes a character, Enter makes the branch, Escape closes the field and gives game input back |
 | Update (client) | `scope/portal/console/client` | On a new branch's load changing: ready, re-point the door at it, the load goes, the field closes and game input comes back; failed, the load goes and the screen says why |
 | Update (client) | `scope/portal/console/client` | On this client's own player's `portal_console/press` added: a ray from its eye through the cursor (along the eye's forward when there is none); if the first thing within 3 m is a console's screen, Bevy's picking gets a move and a press at that pixel of its image |
+| Update (client) | `scope/portal/console/client` | On a record arriving, changing or going while the door's rig already plays here: the rig's `speed` is -1 if its clip stands open at all (closing first), else 1, holding the end it reaches |
+| Update (client) | `scope/portal/console/client` | Polls the consoles' doors' rigs: one closing (`speed` below 0) that is shut opens (`speed = 1`) |
+| Update (client) | `scope/portal/console/client` | On a rig's player given its graph, for a door a record names: seek each of its clips to its end and set `speed = 1`, so a client that joins sees the door open, not opening |
 | Update (client) | `scope/portal/console/client` | On its `portal_console/press` removed: the same ray; on a screen, a release there |
 
 ## Use
@@ -65,6 +68,9 @@ The branch list is the console's `vault/github/branches = { owner, name }` ask, 
 
 ## Notes
 
+- A door's animation is the clip of its rig: the nearest node at or above the door carrying `animation/clip` (in the prologue map, `portal_rig` around `exit_portal`), as `{ clips = { ["<map>#Animation<N>"] = 1 }, speed = 0 }` from Blender. A door without one is only re-pointed. Each client plays it from the record: a pick closes the door if it stands open at all, then opens it; a door with no record stays shut. Pointing the door back at its authored target takes the record away, which plays the same on the clients there, while a client joining later finds no record and a shut door.
+- The door's clips are read and sought on the rig's AnimationPlayer through the rig's `animation/clip/graph`, as `animation/clip` has no field for a place in a clip.
+
 - A door's authored value is read from its own `GltfExtras`, the custom properties `gltf/mod_registry` turned into its `scope/portal` (`shared/door.lua`). A door no scene authored has none, so a record that goes leaves it where it was.
 - Each side spawns its own copy of the scene, so the record names the door by its `Name`, the one identity the two copies share. The record is not a portal: the view never reads it, and the door keeps its one `scope/portal` on each side, whose change the view and the server's links already follow.
 - The request is only a door's name and a target; everything else is checked against what the server holds. Each player's crossing still loads the target through their own root.
@@ -76,4 +82,5 @@ The branch list is the console's `vault/github/branches = { owner, name }` ask, 
 - The name field takes letters, digits, `-`, `.`, `_` and `/`, up to 100 characters.
 - The screen goes with its mesh's camera; the screen's entities otherwise go with the mod, when its last console goes.
 - Suites, headless: `test_console_server.lua` (the request, the refusals, the record, the door's scene written again); `test_console_client.lua` (the record re-points the door copy, its change follows, its removal restores the authored value, a late door takes its record); `test_console_net.lua` (over a real connection: the owner's request reaches the server, the owner hears done, and the record reaches the owner and a client that joined after it was made); `test_console_screen.lua` (the screen, with the mesh's `Aabb` written in Bevy's place and the rows clicked through Bevy's click: the binding, the screen built from the mesh, the list asked, refused and shown, a branch re-pointed, the name field typed into, Create's load and the re-point once it is ready, a screen's mesh gone and the last console gone).
-- Suite, windowed: `test_console_windowed.lua` (a real mesh: its `Aabb` read and the screen sized and laid out from it, the image drawn unlit, the UV assumption, a click on a row through the real pick, and nothing past 3 m).
+- Suite, headless: `test_console_door.lua` (the door's rig, with where its clip stands moved by the suite: shut with no record, a pick opening it, a pick closing an open door first and opening it once shut, and a door joined late open at its end).
+- Suites, windowed: `test_console_door_windowed.lua` (over time: a pick opens the door to its end; a second closes it all the way and opens it again) and `test_console_windowed.lua` (a real mesh: its `Aabb` read and the screen sized and laid out from it, the image drawn unlit, the UV assumption, a click on a row through the real pick, and nothing past 3 m).

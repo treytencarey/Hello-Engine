@@ -22,6 +22,8 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local Assets = require("bevy::asset::Assets")
+local AssetServer = require("bevy::asset::AssetServer")
+local AnimationClip = require("bevy::animation::AnimationClip")
 local Image = require("bevy::image::Image")
 local StandardMaterial = require("bevy::pbr::StandardMaterial")
 local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
@@ -655,3 +657,123 @@ app:add_systems(Update, {
         end
     end
 end):in_set("scope/portal/console/client")
+
+-- The door's own animation, on the nearest node at or above the door carrying `animation/clip` (a
+-- map's rig around its door), played on each client from the record. A pick closes the door if it
+-- stands open at all, then opens it; a door with no record stays shut. A client that joins where a
+-- record already stands sees the door open: its clip is set at its end, not played.
+
+--- The node carrying the door's clip: the door's own, or its nearest ancestor's. Its query's
+--- `animation/clip` column is `Mut`.
+local function rig_of(rigs, door)
+    return rigs:iter_many_mut({ door })[1] or rigs:iter_many_mut(rigs:iter_ancestors(door))[1]
+end
+
+--- The rig's AnimationPlayer once it has its graph, and how far along its clips stand (the
+--- furthest of them). Its query names `AnimationPlayer` (`Mut` to seek).
+local function opened(players, rig)
+    local player = players:iter_many({ rig:id() })[1] or players:iter_many(players:iter_descendants(rig:id()))[1]
+    local graph = rig:get("animation/clip/graph")
+    if player == nil or graph == nil then return nil, nil end
+    local at = 0
+    for _, index in pairs(graph.nodes) do
+        local active = player.AnimationPlayer:animation(index)
+        if active then at = math.max(at, active.seek_time) end
+    end
+    return player, at
+end
+
+-- A pick, live: the record arriving, changing or going while the door's clip already plays here.
+app:add_systems(Update, {
+    Query[{
+        ["or"] = {
+            added = { "scope/portal/console/target" },
+            changed = { "scope/portal/console/target" },
+            removed = { "scope/portal/console/target" },
+        },
+        optional = { "scope/portal/console/target" },
+    }],
+    Query[{ with = { "scope/portal", "Name" }, without = { "placement" } }],
+    Query[{ with = { Mut["animation/clip"] }, optional = { "animation/clip/graph" } }],
+    Query[{ with = { "AnimationPlayer", "AnimationGraphHandle" } }],
+}, function(picked, doors, rigs, players)
+    local named = {}
+    for _, r in ipairs(picked:iter()) do
+        local record = r:get("scope/portal/console/target")
+        if record ~= nil then named[record.door] = true end
+    end
+    if next(named) == nil then return end
+    for _, d in ipairs(doors:iter()) do
+        if named[d:get("Name").name] then
+            local rig = rig_of(rigs, d:id())
+            local player, at = nil, nil
+            if rig then player, at = opened(players, rig) end
+            if player ~= nil then
+                local clip = rig:get_mut("animation/clip")
+                clip.speed = at > 0 and -1 or 1
+                clip["repeat"] = false
+            end
+        end
+    end
+end):in_set("scope/portal/console/client")
+
+-- Closing for a pick: once shut, it opens. Moving, so it polls the doors' rigs while one closes.
+app:add_systems(Update, {
+    Query[{ with = { "scope/portal", "Name" }, without = { "placement" } }],
+    Query[{ with = { "scope/portal/console" } }],
+    Query[{ with = { Mut["animation/clip"] }, optional = { "animation/clip/graph" } }],
+    Query[{ with = { "AnimationPlayer", "AnimationGraphHandle" } }],
+}, function(doors, consoles, rigs, players)
+    local named = {}
+    for _, c in ipairs(consoles:iter()) do named[c:get("scope/portal/console").door] = true end
+    for _, d in ipairs(doors:iter()) do
+        if named[d:get("Name").name] then
+            local rig = rig_of(rigs, d:id())
+            if rig and rig:get("animation/clip").speed < 0 then
+                local player, at = opened(players, rig)
+                if player ~= nil and at <= 0 then rig:get_mut("animation/clip").speed = 1 end
+            end
+        end
+    end
+end):in_set("scope/portal/console/client"):run_if({
+    Query[{ with = { "scope/portal/console" } }],
+}, function(consoles)
+    return not consoles:is_empty()
+end)
+
+-- Joining where a record stands: when the door's clip first has its player, the door is open, at
+-- the end of its clip.
+app:add_systems(Update, {
+    Query[{ added = { "AnimationGraphHandle" }, with = { "AnimationPlayer" } }],
+    Query[{ with = { "scope/portal/console/target" } }],
+    Query[{ with = { "scope/portal", "Name" }, without = { "placement" } }],
+    Query[{ with = { Mut["animation/clip"], "animation/clip/graph" } }],
+    Query[{ with = { Mut["AnimationPlayer"], "AnimationGraphHandle" } }],
+    Res[Assets[AnimationClip]],
+    Res[AssetServer],
+}, function(linked, records, doors, rigs, players, clips, asset_server)
+    local named = {}
+    for _, r in ipairs(records:iter()) do named[r:get("scope/portal/console/target").door] = true end
+    local fresh = {}
+    for _, p in ipairs(linked:iter()) do fresh[p:id()] = true end
+    for _, d in ipairs(doors:iter()) do
+        if named[d:get("Name").name] then
+            local rig = rig_of(rigs, d:id())
+            local player = rig and (players:iter_many_mut({ rig:id() })[1]
+                or players:iter_many_mut(players:iter_descendants(rig:id()))[1])
+            if player ~= nil and fresh[player:id()] then
+                for clip, index in pairs(rig:get("animation/clip/graph").nodes) do
+                    local asset = clips:get(asset_server:load(clip))
+                    player.AnimationPlayer:play(index, { seek_to = asset and asset.duration or 0 })
+                end
+                local c = rig:get_mut("animation/clip")
+                c.speed = 1
+                c["repeat"] = false
+            end
+        end
+    end
+end):in_set("scope/portal/console/client"):run_if({
+    Query[{ added = { "AnimationGraphHandle" }, with = { "AnimationPlayer" } }],
+}, function(linked)
+    return not linked:is_empty()
+end)
