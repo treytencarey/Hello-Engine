@@ -195,7 +195,7 @@ local function panels(world)
     })
 end
 local function camera_of(world, panel)
-    return world:query({ iter_many = world:descendants(panel:id()), with = { "vr/ui_panels/camera", "Camera" } })[1]
+    return world:query({ iter_many = world:descendants(panel:id()), with = { "ui/screen/camera", "Camera" } })[1]
 end
 local function laser(world)
     return world:query({ with = { "vr/pointer/laser" }, optional = { "Visibility" } })[1]
@@ -396,7 +396,7 @@ step(after(1.5), function(world, commands)
     commands:entity(me(world):id()):remove("vr/ui_panels")
 end)
 step(after(0.5), function(world)
-    T("VU13_removal_takes_the_panels", #panels(world) == 0 and #world:query({ with = { "vr/ui_panels/camera" } }) == 0, tostring(#panels(world)))
+    T("VU13_removal_takes_the_panels", #panels(world) == 0 and #world:query({ with = { "ui/screen/camera" } }) == 0, tostring(#panels(world)))
     T("VU13_and_the_containers_camera", not container(world):has("UiTargetCamera"), "")
 end)
 

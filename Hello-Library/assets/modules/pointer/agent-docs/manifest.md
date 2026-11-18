@@ -20,7 +20,7 @@ A ray turned into Bevy's picking on a screen, for this client's own player. When
   | `long_press_tolerance` | pixels it may move and still count as still | 15 |
 
 - `pointer/ray = { origin, direction }`, on the player: the ray in world space, written by its source and taken off by it. Other mods read it (`vr/grabbable`, `placement`).
-- `pointer/target = { image, width, height }`: on a mesh showing a render-target image, added and removed by the mod that makes the mesh (`ui/screen`, `vr/ui_panels`). Only these answer the ray.
+- `pointer/target = { image, width, height }`: on a mesh showing a render-target image, added and removed by the mod that makes the mesh, usually `ui/screen`. Only these answer the ray. Being a part of `pointer`, it is taken off every entity when the last source goes; `ui/screen` gives its own back.
 - `pointer/hovered = { x, y }`: on the target the ray is on, in its image's pixels. Exists while hovered.
 - `pointer/press = { at, x, y, long }`, on the player while a press that began on a target is held: when it was pressed (`at`, absent once it moved too far for a long press), where on the target, and whether the long press was sent.
 

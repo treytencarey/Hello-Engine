@@ -3,12 +3,16 @@
 -- out no UI, so the container's `ComputedNode` is written here in the layout's place; that the
 -- panel is drawn and picked is `test_vr_ui_panels_windowed.lua`.
 --
---   VUP1 a container with a size gets one panel, linked to it, carrying the pointer's and the grip's
---        targets, with a camera child the container draws into
+--   VUP1 a container with a size gets one panel, linked to it, a `ui/screen` of its size carrying the
+--        pointer's and the grip's targets, with the screen's camera child the container draws into,
+--        and the screen's own root empty and passing the pointer through
 --   VUP2 placed in front of the right hand, nearer by the container's z index, its front to the head
---   VUP3 a new size resizes the same panel and its pointer target, and takes its old Aabb off
+--   VUP3 a new size resizes the same panel, its pointer target and the screen's root, and takes its
+--        old Aabb off
 --   VUP4 hidden with the container, its camera stopped; shown again in front of where the hand is now
 --   VUP5 a reload rebuilds one panel, drawn by its new camera
+--   VUP7 the pointer's last source gone, its parts go from every entity: the screen gives its
+--        pointer target back
 --   VUP6 removal takes the panels and the container's camera
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
@@ -41,6 +45,7 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
         ["zz/me"] = {},
         ["vr/input"] = {},
         ["vr/ui_panels"] = {},
+        ["vr/pointer"] = {},
         input = {},
         ["core/net/owner"] = world_net,
         ["core/net/sync"] = false,
@@ -70,7 +75,7 @@ local function panels(world)
     })
 end
 local function camera_of(world, panel)
-    return world:query({ iter_many = world:descendants(panel:id()), with = { "vr/ui_panels/camera", "Camera", "Camera2d" } })[1]
+    return world:query({ iter_many = world:descendants(panel:id()), with = { "ui/screen/camera", "Camera", "Camera2d" } })[1]
 end
 local function near(a, b) return Vec3.distance(a, b) < 1e-3 end
 local function show(v) return v and string.format("%.3f %.3f %.3f", v.x, v.y, v.z) or "nil" end
@@ -81,7 +86,9 @@ local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act }
 local function after(seconds) return function() return t - mark > seconds end end
 
 step(function(world)
-    return #panels(world) == 1
+    local panel = panels(world)[1]
+    -- the screen's camera comes a frame after the panel, and the container is pointed at it then
+    return panel ~= nil and camera_of(world, panel) ~= nil and container(world):has("UiTargetCamera")
 end, function(world, commands)
     local panel = panels(world)[1]
     local c = container(world)
@@ -96,6 +103,10 @@ end, function(world, commands)
     local cam = camera_of(world, panel)
     T("VUP1_the_container_draws_into_its_camera", cam ~= nil and c:get("UiTargetCamera") == cam:id() and cam:get("Camera").order == -200,
         tostring(c:get("UiTargetCamera")))
+    local roots = world:query({ with = { "ui/screen/root", "UiTargetCamera" }, optional = { "Children", "Pickable" } })
+    local root = roots[1]
+    T("VUP1_the_screen_s_own_root_is_empty_and_passes_the_pointer_through", #roots == 1 and root:get("UiTargetCamera") == cam:id()
+        and #(root:get("Children") or {}) == 0 and root:get("Pickable").is_hoverable == false, tostring(#roots))
     local placed = panel:get("Transform")
     -- 0.6 nearer by 100 * 0.0003, straight on from the head through the hand
     T("VUP2_placed_in_front_of_the_hand", near(placed.translation, { x = 0, y = 1.2, z = -0.87 }), show(placed.translation))
@@ -116,6 +127,8 @@ step(after(0.3), function(world, commands)
         tostring(#panels(world)) .. " " .. tostring(p.width))
     T("VUP3_and_its_pointer_target", panel:get("pointer/target").width == 420, "")
     T("VUP3_drawn_by_the_same_camera", container(world):get("UiTargetCamera") == state.camera, "")
+    local root = world:query({ with = { "ui/screen/root", "Node" } })[1]
+    T("VUP3_and_the_screen_s_root", root ~= nil and root:get("Node").width.Px == 420, root and tostring(root:get("Node").width.Px) or "none")
     T("VUP3_its_old_aabb_taken_off_for_bevy_to_compute_again", not panel:has("Aabb"), "")
     commands:entity(container(world):id()):insert({ Node = { display = "None" } })
 end)
@@ -146,10 +159,15 @@ step(after(1.0), function(world, commands)
     local cam = list[1] and camera_of(world, list[1])
     T("VUP5_a_reload_rebuilds_one_panel", #list == 1 and list[1]:id() ~= state.panel, tostring(#list))
     T("VUP5_drawn_by_its_new_camera", cam ~= nil and cam:id() ~= state.camera and container(world):get("UiTargetCamera") == cam:id(), "")
+    commands:entity(me(world):id()):remove("vr/pointer")
+end)
+step(after(0.5), function(world, commands)
+    local target = panels(world)[1]:get("pointer/target")
+    T("VUP7_the_screen_gives_its_pointer_target_back", target ~= nil and target.width == 420, tostring(target))
     commands:entity(me(world):id()):remove("vr/ui_panels")
 end)
 step(after(0.5), function(world)
-    T("VUP6_removal_takes_the_panels", #panels(world) == 0 and #world:query({ with = { "vr/ui_panels/camera" } }) == 0, tostring(#panels(world)))
+    T("VUP6_removal_takes_the_panels", #panels(world) == 0 and #world:query({ with = { "ui/screen/camera" } }) == 0, tostring(#panels(world)))
     T("VUP6_and_the_containers_camera", not container(world):has("UiTargetCamera"), "")
 end)
 

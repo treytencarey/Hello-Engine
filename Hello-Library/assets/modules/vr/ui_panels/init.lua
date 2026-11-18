@@ -1,6 +1,7 @@
--- The sidebar as a panel in the world for this client's own player in VR. Its container is drawn
--- into an image by a camera of its own, and the image is shown on a mesh that the pointer can
--- point at and the grip can carry. Each time the sidebar opens, the panel is placed in front of
+-- The sidebar as a panel in the world for this client's own player in VR. The panel is a mesh
+-- carrying `ui/screen`, which draws UI into an image on it, by a camera of its own, and makes it a
+-- pointer target; the sidebar's container is pointed at that camera, and the screen's own root is
+-- left empty. The grip can carry it. Each time the sidebar opens, the panel is placed in front of
 -- the right hand again, facing the head.
 --
 -- vr/ui_panels = {
@@ -8,23 +9,17 @@
 --     distance = <metres in front of the hand>,
 --     min_distance = <the least it comes to>,
 --     z_index_scale = <metres nearer for each step of the container's GlobalZIndex>,
---     camera_order = <the panel camera's order>,
 -- }
 --
 -- vr/ui_panels/panel = {
 --     entity = <the container>,
 --     width, height = <pixels of its image>,
---     image = <the image handle>,
 -- }: on the mesh
 --
 -- vr/ui_panels/panels: a container's panels, kept by the engine
---
--- vr/ui_panels/camera = {}: the camera drawing the container, a child of the mesh
 
 local Assets = require("bevy::asset::Assets")
-local Image = require("bevy::image::Image")
 local Mesh = require("bevy::mesh::Mesh")
-local StandardMaterial = require("bevy::pbr::StandardMaterial")
 local Plane3d = require("bevy::math::primitives::Plane3d")
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
@@ -67,16 +62,10 @@ app:add_systems(First, {
         with = { "vr/ui_panels", "vr/input/pose" },
     }],
     Query[{ with = { "vr/ui_panels", "vr/input/pose" } }],
-    Query[{
-        with = { Mut["vr/ui_panels/panel"], Mut["pointer/target"] },
-        optional = { "Children" },
-    }],
-    Query[{ with = { "vr/ui_panels/camera", Mut["Camera"] } }],
-    ResMut[Assets[Image]],
+    Query[{ with = { Mut["vr/ui_panels/panel"] } }],
     ResMut[Assets[Mesh]],
-    ResMut[Assets[StandardMaterial]],
     Commands,
-}, function(changed, containers, arrived, players, panels, cameras, images, meshes, materials, commands)
+}, function(changed, containers, arrived, players, panels, meshes, commands)
     local player = players:iter()[1]
     local touched = changed:iter()
     if not arrived:is_empty() then
@@ -89,47 +78,44 @@ app:add_systems(First, {
         local built = panel and panel:get("vr/ui_panels/panel")
         if player ~= nil and w > 0 and h > 0 and (built == nil or built.width ~= w or built.height ~= h) then
             local cfg = player:get("vr/ui_panels")
-            local image = images:add(Image.new_target_texture(w, h, "bgra8unorm-srgb"))
             local mesh = meshes:add(Plane3d.new({ x = 0, y = 0, z = 1 }, { x = w * cfg.pixels_to_meters / 2, y = h * cfg.pixels_to_meters / 2 }))
-            local material = materials:add({ base_color_texture = image, unlit = true })
             if panel == nil then
                 local at, facing = in_front(player:get("vr/input/pose"), cfg, c:get("GlobalZIndex") or 0)
-                local camera = commands:spawn({
-                    ["vr/ui_panels/camera"] = {},
-                    Camera2d = {},
-                    Camera = { order = cfg.camera_order, target = { Image = image } },
-                }):id()
                 commands:spawn({
-                    ["vr/ui_panels/panel"] = { entity = c:id(), width = w, height = h, image = image },
-                    ["pointer/target"] = { image = image, width = w, height = h },
+                    ["vr/ui_panels/panel"] = { entity = c:id(), width = w, height = h },
+                    ["ui/screen"] = { width = w, height = h },
                     ["vr/grabbable/target"] = { face = true },
                     Mesh3d = mesh,
-                    ["MeshMaterial3d<StandardMaterial>"] = material,
                     Transform = { translation = at, rotation = facing },
                     Visibility = "Visible",
-                }):add_child(camera)
-                commands:entity(c:id()):insert({ UiTargetCamera = { entity = camera } })
+                })
             else
                 local p = panel:get_mut("vr/ui_panels/panel")
-                p.width, p.height, p.image = w, h, image
-                local target = panel:get_mut("pointer/target")
-                target.width, target.height, target.image = w, h, image
+                p.width, p.height = w, h
                 -- Bevy computes a mesh's `Aabb` only while it has none, and the ray cast and culling
                 -- read it, so the new mesh's is computed again.
-                commands:entity(panel:id()):insert({
-                    Mesh3d = mesh,
-                    ["MeshMaterial3d<StandardMaterial>"] = material,
-                })
+                commands:entity(panel:id()):insert({ Mesh3d = mesh, ["ui/screen"] = { width = w, height = h } })
                 commands:entity(panel:id()):remove("Aabb")
-                for _, cam in ipairs(cameras:iter_many_mut(panel:get("Children") or {})) do
-                    cam:get_mut("Camera").target = { Image = image }
-                end
             end
         elseif panel == nil and c:has("UiTargetCamera") then
             commands:entity(c:id()):remove("UiTargetCamera")
         end
     end
 end):in_set("vr/ui_panels/build")
+
+-- The panel's screen camera, once `ui/screen` made it: the container draws through it.
+app:add_systems(First, {
+    Query[{ added = { "ui/screen/camera" }, with = { "ChildOf" } }],
+    Query[{ with = { "vr/ui_panels/panel" } }],
+    Commands,
+}, function(cameras, panels, commands)
+    for _, cam in ipairs(cameras:iter()) do
+        local panel = panels:iter_many({ cam:get("ChildOf") })[1]
+        if panel ~= nil then
+            commands:entity(panel:get("vr/ui_panels/panel").entity):insert({ UiTargetCamera = { entity = cam:id() } })
+        end
+    end
+end):in_set("vr/ui_panels/target")
 
 -- A hidden panel stops its camera, and answers no pointer, as the ray only meets what is seen.
 app:add_systems(First, {
@@ -143,7 +129,7 @@ app:add_systems(First, {
         with = { "vr/ui_panels/panel", Mut["Visibility"], Mut["Transform"] },
         optional = { "Children" },
     }],
-    Query[{ with = { "vr/ui_panels/camera", Mut["Camera"] } }],
+    Query[{ with = { "ui/screen/camera", Mut["Camera"] } }],
 }, function(containers, players, panels, cameras)
     local player = players:iter()[1]
     for _, c in ipairs(containers:iter()) do
@@ -189,7 +175,6 @@ return {
             distance = 0.6,
             min_distance = 0.35,
             z_index_scale = 0.0003,
-            camera_order = -200,
         },
     },
     relationships = {
