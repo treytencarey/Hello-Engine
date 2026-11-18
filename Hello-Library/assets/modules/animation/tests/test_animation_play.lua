@@ -108,4 +108,4 @@ app:add_systems(Update, {
         phase = "done"
         suite.finish("ANIMATION_PLAY")
     end
-end):in_set("zz/animation_play_suite"):after("animation/play")
+end):in_set("zz/animation_play_suite"):after("animation/state")

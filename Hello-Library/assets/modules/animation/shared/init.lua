@@ -7,13 +7,19 @@
 -- animation = {
 --     model = <path prefix of the model's files; absent, nothing is drawn or played>,
 --     scene = <suffix of the file and label of its scene>,
---     clips = { idle = <suffix>, walk = <suffix>, jump = <suffix>, fall = <suffix>, ... },
+--     clips = { idle = <suffix>, walk = <suffix>, jump = <suffix>, fall = <suffix>, run = <suffix>, ... },
 --     walk_speed = <m/s at which the walk clip plays at its own speed>,
+--     run_speed = <m/s at which the run clip plays at its own speed>,
 --     offset = { x = <metres>, y = <metres>, z = <metres> },
 -- }
 --
 -- animation/action = { state = <a clip's name>, speed = <playback speed> }: written by
 -- another mod; while present it is played instead of the motion's state.
+--
+-- A state's clip may be a set of directions instead of one suffix:
+-- { { angle = 0, clip = <suffix> }, { angle = 45, clip = <suffix> }, ... }, its angles in degrees
+-- clockwise from forward, seen from above. The two nearest the angle between where the character
+-- faces and where it moves play, each as near as the angle lies to it.
 
 return {
     defaults = {
@@ -26,6 +32,7 @@ return {
                 fall = "-Jump.glb#Animation0",
             },
             walk_speed = 6,
+            run_speed = 6,
             offset = { x = 0, y = -0.9, z = 0 },
         },
     },
