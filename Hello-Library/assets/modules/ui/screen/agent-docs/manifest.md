@@ -40,5 +40,5 @@ commands:spawn({ Node = {...}, ChildOf = root })
 
 - `pointer/target` is a part of `pointer`: when the pointer's last source goes (the player gone), the registry takes it off every entity, and the screen builds again to have it back, with a new image.
 - The camera and root come a frame after `ui/screen` is added. A mod pointing its own root at the camera reacts to the camera's added edge.
-- The image's pixels are the pointer's: picking on the screen shares one pixel space with every root its camera draws.
-- Suites: `vr/ui_panels/tests/test_vr_ui_panels.lua` (headless: the camera, the root empty and passing the pointer through, the size, the target given back, removal) and `vr/ui_panels/tests/test_vr_ui_panels_windowed.lua` (drawn and picked through a root of another mod).
+- Every UI in the world shares one pixel space for the pointer: window UI at the same pixel (a HUD's bar) can take what was meant for the screen, so a screen's UI keeps clear of it (the console keeps 64 px clear on the left).
+- Suites: `vr/ui_panels/tests/test_vr_ui_panels.lua` (headless: the camera, the root empty and passing the pointer through, the size, the target given back, removal); `vr/ui_panels/tests/test_vr_ui_panels_windowed.lua` (drawn and picked through a root of another mod); `scope/portal/console/tests/test_console_screen.lua` and `test_console_windowed.lua` (UI under the screen's own root, sized from a real mesh, and taken off with its console).

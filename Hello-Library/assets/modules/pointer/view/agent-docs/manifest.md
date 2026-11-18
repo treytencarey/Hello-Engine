@@ -25,4 +25,4 @@ It writes `pointer/ray` from the player's eye (`camera/3d/eye`): along the view'
 
 - In game input the cursor is hidden and confined, not centred: it keeps a place of its own and drifts with the mouse, so it is not aimed through.
 - In a world VM the camera draws into an image the size of the window's physical pixels, so the cursor is read in those. `viewport_to_world` fails while the camera has no target size, and the view's centre is used then.
-- Suite: `vr/pointer/tests/test_vr_pointer.lua` (the base it brings, and its ray along the eye with the cursor hidden).
+- Suites: `vr/pointer/tests/test_vr_pointer.lua` (the base it brings, and its ray along the eye with the cursor hidden); `scope/portal/console/tests/test_console_windowed.lua` (the eye's ray working a console's screen in a window).

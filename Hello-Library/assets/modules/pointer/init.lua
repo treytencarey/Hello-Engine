@@ -1,13 +1,14 @@
 -- A ray turned into Bevy's picking on a screen, for this client's own player. When the first thing
--- the player's `pointer/ray` meets is a pointer target, Bevy's picking hears it as the mouse pointer
--- on that target's image: it moves there, scrolls, presses, and a long press is a right click. A
--- ray source writes the ray and has `pointer` as its base: `pointer/view` is the desktop's (the
--- view's centre, or the cursor), `vr/pointer` the VR controller's. While the ray is on a target
--- the wheel is the screen's: the camera does not zoom.
+-- the player's `pointer/ray` meets is a pointer target within `range`, Bevy's picking hears it as
+-- the mouse pointer on that target's image: it moves there, scrolls, presses, and a long press is a
+-- right click. A ray source writes the ray and has `pointer` as its base: `pointer/view` is the
+-- desktop's (the view's centre, or the cursor), `vr/pointer` the VR controller's. While the ray is on
+-- a target the wheel is the screen's: the camera does not zoom.
 --
 -- pointer = {
 --     long_press = <seconds a press is held still to be a right click>,
 --     long_press_tolerance = <pixels it may move and still count as still>,
+--     range = <metres: a target further along the ray is not met>,
 -- }
 --
 -- pointer/ray = { origin = { x, y, z }, direction = { x, y, z } }: in world space, by the source
@@ -106,7 +107,7 @@ app:add_systems(Update, {
                 return players:root_ancestor(entity) ~= me
             end,
         })[1]
-        if hit ~= nil and not targets:contains(hit.entity) then
+        if hit ~= nil and (not targets:contains(hit.entity) or hit.ray_mesh_hit.distance > e:get("pointer").range) then
             hit = nil
         end
         local was = hovered:iter()[1]
@@ -225,6 +226,7 @@ return {
         pointer = {
             long_press = 0.5,
             long_press_tolerance = 15,
+            range = 3,
         },
     },
 }

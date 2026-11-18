@@ -1,8 +1,8 @@
 -- The client half of a console: this client's copy of a door follows the server's record of its
 -- re-point, and goes back to its authored value when the record goes. Each side spawns its own copy
 -- of the scene, so the door's `Name` is what the record names. The console's screen is this
--- client's own, drawn as the VR panels are: its node's mesh shows an image a camera of the console
--- draws its UI into. The player points at it with the mouse, and lists, picks or makes a branch.
+-- client's own: its node's mesh carries `ui/screen`, and the rows go under the screen's root. The
+-- player points at it with `pointer`, and lists, picks or makes a branch.
 --
 -- scope/portal/console/state = {
 --     listed = <whether root has answered the branch list>,
@@ -11,23 +11,13 @@
 --     typing = <the new branch's name while its field is open>,
 -- }: on the console node, this client only
 --
--- scope/portal/console/camera = { image }: the camera drawing the screen, a child of the screen's mesh;
--- the image it draws into, kept here as a handle read back from the material does not build a
--- `PointerInput`
--- scope/portal/console/view = {}: the screen's UI root, drawn by that camera
 -- scope/portal/console/row = { target } | { new = true } | {}: a row that acts when clicked: a
 -- branch, "New branch" (or "Create" while the field is open), or "List branches"
 
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
-local Assets = require("bevy::asset::Assets")
-local Image = require("bevy::image::Image")
-local StandardMaterial = require("bevy::pbr::StandardMaterial")
-local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
-local PointerInput = require("bevy::picking::pointer::PointerInput")
 local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
-local Quat = require("bevy::math::Quat")
 local bevy = require("bevy::prelude")
 local Door = require("modules/scope/portal/console/shared/door.lua")
 
@@ -178,101 +168,22 @@ app:add_systems(First, {
     end
 end):in_set("scope/portal/console/client")
 
--- The click is bound on this client's own player in both modes: game input while the player walks,
--- UI input while the name field is open.
-app:add_systems(First, {
-    Query[{ with = { "core/net", "core/net/owns" } }],
-    Query[{ with = { "player", "input" } }],
-    Commands,
-}, function(own, players, commands)
-    for _, n in ipairs(own:iter()) do
-        for _, p in ipairs(players:iter_many(n:get("core/net/owns"))) do
-            for _, mode in ipairs({ "input/game", "input/ui" }) do
-                commands:entity(p:id()):entry(mode):or_default():and_modify(function(bindings)
-                    bindings.portal_console = { press = { button = "Left" } }
-                end)
-            end
-        end
-    end
-end):in_set("scope/portal/console/client"):run_if({
-    Query[{ added = { "scope/portal/console" } }],
-    Query[{
-        ["or"] = {
-            added = { "input", "core/net/owns" },
-            changed = { "core/net/owns" },
-        },
-    }],
-}, function(consoles, owners)
-    return not (consoles:is_empty() and owners:is_empty())
-end)
-
--- The last console gone: the click is unbound, from an `input` still there.
-app:add_systems(First, {
-    Query[{ removed = { "scope/portal/console" } }],
-    Query[{ with = { "scope/portal/console" } }],
-    Query[{ with = { "core/net", "core/net/owns" } }],
-    Query[{ with = { "player", "input" } }],
-    Commands,
-}, function(removed, consoles, own, players, commands)
-    for _, _ in ipairs(removed:iter()) do
-        if consoles:is_empty() then
-            for _, n in ipairs(own:iter()) do
-                for _, p in ipairs(players:iter_many(n:get("core/net/owns"))) do
-                    for _, mode in ipairs({ "input/game", "input/ui" }) do
-                        commands:entity(p:id()):entry(mode):and_modify(function(bindings)
-                            bindings.portal_console = nil
-                        end)
-                    end
-                end
-            end
-        end
-        break
-    end
-end):in_set("scope/portal/console/client")
-
--- The screen: once the console's mesh has its `Aabb` (Bevy computes it after the mesh loads), an
--- image of its size, a camera drawing into it, the UI root on that camera, and the image unlit on
--- the mesh. The UI root is a root of its own: a UI node under the scene would not be laid out.
+-- The screen: once the console's mesh has its `Aabb` (Bevy computes it after the mesh loads), a
+-- `ui/screen` of its size.
 app:add_systems(Update, {
     Query[{ with = { "scope/portal/console" } }],
     Query[{
         with = { "Mesh3d", "Aabb", "GlobalTransform" },
-        optional = { "Children" },
+        optional = { "ui/screen" },
     }],
-    Query[{ with = { "scope/portal/console/camera" } }],
-    ResMut[Assets[Image]],
-    ResMut[Assets[StandardMaterial]],
     Commands,
-}, function(consoles, meshes, cameras, images, materials, commands)
+}, function(consoles, meshes, commands)
     for _, c in ipairs(consoles:iter()) do
         local mesh = meshes:iter_many({ c:id() })[1] or meshes:iter_many(meshes:iter_descendants(c:id()))[1]
-        if mesh ~= nil and cameras:iter_many(mesh:get("Children") or {})[1] == nil then
+        if mesh ~= nil and not mesh:has("ui/screen") then
             local w, h = screen_size(mesh)
             if w > 0 and h > 0 then
-                local image = images:add(Image.new_target_texture(w, h, "bgra8unorm-srgb"))
-                local camera = commands:spawn({
-                    ["scope/portal/console/camera"] = { image = image },
-                    Camera2d = {},
-                    Camera = { order = -210, target = { Image = image } },
-                    ChildOf = mesh:id(),
-                }):id()
-                commands:spawn({
-                    ["scope/portal/console/view"] = {},
-                    Node = {
-                        width = { Px = w },
-                        height = { Px = h },
-                        flex_direction = "Column",
-                        row_gap = { Px = 8 },
-                        -- Every UI in the world shares one pixel space for the pointer, so the
-                        -- rows keep clear of the HUD's left bar.
-                        padding = { left = { Px = 64 }, right = { Px = 16 }, top = { Px = 16 }, bottom = { Px = 16 } },
-                    },
-                    ["ui/style"] = { background = "bg" },
-                    UiTargetCamera = { entity = camera },
-                })
-                commands:entity(mesh:id()):insert({
-                    ["MeshMaterial3d<StandardMaterial>"] = materials:add({ base_color_texture = image, unlit = true }),
-                })
+                commands:entity(mesh:id()):insert({ ["ui/screen"] = { width = w, height = h } })
             end
         end
     end
@@ -283,31 +194,49 @@ end):in_set("scope/portal/console/client"):run_if({
     return not (consoles:is_empty() and bounds:is_empty())
 end)
 
--- A screen's camera gone (its scene written again, or the console taken off): its UI root goes too.
-app:add_systems(Update, {
-    Query[{ removed = { "scope/portal/console/camera" } }],
-    Query[{ with = { "scope/portal/console/view", "UiTargetCamera" } }],
-    Query[{ with = { "scope/portal/console/camera" } }],
+-- A console taken off a node that stays: its mesh's screen goes.
+app:add_systems(First, {
+    Query[{ removed = { "scope/portal/console" } }],
+    Query[{ with = { "ui/screen" } }],
     Commands,
-}, function(removed, views, cameras, commands)
-    for _, _ in ipairs(removed:iter()) do
-        for _, v in ipairs(views:iter()) do
-            if not cameras:contains(v:get("UiTargetCamera")) then
-                commands:entity(v:id()):try_despawn()
-            end
+}, function(removed, screens, commands)
+    for _, c in ipairs(removed:iter()) do
+        if commands:get_entity(c:id()) ~= nil then
+            local mesh = screens:iter_many({ c:id() })[1] or screens:iter_many(screens:iter_descendants(c:id()))[1]
+            if mesh ~= nil then commands:entity(mesh:id()):try_remove("ui/screen") end
         end
-        break
     end
 end):in_set("scope/portal/console/client")
+
+-- The screen's root, once `ui/screen` made it: the console's column on its background.
+app:add_systems(Update, {
+    Query[{ added = { "ui/screen/root" }, with = { "UiTargetCamera", Mut["Node"] } }],
+    Query[{ with = { "ui/screen/camera" } }],
+    Query[{ with = { "scope/portal/console" } }],
+    Commands,
+}, function(roots, cameras, consoles, commands)
+    for _, r in ipairs(roots:iter_mut()) do
+        local camera = r:get("UiTargetCamera")
+        if cameras:contains(camera) and consoles:iter_many(consoles:iter_ancestors(camera))[1] ~= nil then
+            local node = r:get_mut("Node")
+            node.flex_direction = "Column"
+            node.row_gap = { Px = 8 }
+            -- Every UI in the world shares one pixel space for the pointer, so the rows keep clear of
+            -- the HUD's left bar.
+            node.padding = { left = { Px = 64 }, right = { Px = 16 }, top = { Px = 16 }, bottom = { Px = 16 } }
+            commands:entity(r:id()):insert({ ["ui/style"] = { background = "bg" } })
+        end
+    end
+end):in_set("scope/portal/console/root"):before("scope/portal/console/client")
 
 -- The rows, rebuilt whole from the console's state and its door when either changes. A rebuild takes
 -- the buttons the pointer may be on, which a click does not mind.
 app:add_systems(Update, {
     Query[{
-        with = { "scope/portal/console/view", "UiTargetCamera" },
+        with = { "ui/screen/root", "UiTargetCamera" },
         optional = { "Children" },
     }],
-    Query[{ with = { "scope/portal/console/camera" } }],
+    Query[{ with = { "ui/screen/camera" } }],
     Query[{ with = { "scope/portal/console", "scope/portal/console/state" } }],
     Query[{ with = { "scope/portal", "Name" }, without = { "placement" } }],
     Query[{ with = { "core/world/load", "WorldShared" }, without = { "WorldMirror" } }],
@@ -422,7 +351,7 @@ app:add_systems(Update, {
         end
     end
 end):in_set("scope/portal/console/client"):run_if({
-    Query[{ added = { "scope/portal/console/view" } }],
+    Query[{ added = { "ui/screen/root" } }],
     Query[{ changed = { "scope/portal/console/state" } }],
     Query[{ changed = { "scope/portal" }, with = { "Name" } }],
     Query[{
@@ -552,117 +481,6 @@ app:add_systems(Update, {
                     c:get_mut("scope/portal/console/state").error = tostring(ask.reason or "failed")
                 end
             end
-        end
-    end
-end):in_set("scope/portal/console/client")
-
--- Pointing: a click casts a ray from this player's eye through the cursor (the eye's forward while
--- the cursor is held), and if the first thing within 3 m is a console's screen, Bevy's picking hears
--- the mouse at that pixel of its image. A world VM's camera draws into an image the size of the
--- window's physical pixels, so the cursor is read in those. The player and what hangs under it
--- never stand in the way. The mouse pointer is reused: a pointer of its own would be
--- `PointerId::Custom`, which Lua cannot build.
-local function aimed(ray_cast, p, own, eyes, windows, screens, cameras)
-    local mine = false
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(n:get("core/net/owns")) do
-            mine = mine or e == p:id()
-        end
-    end
-    local eye = mine and eyes:iter_many(p:get("Children") or {})[1] or nil
-    if eye == nil then return nil end
-    local ray
-    local window = windows:iter()[1]
-    local cursor = window and window.Window:physical_cursor_position() or nil
-    -- It fails while the camera has no target size yet.
-    local ok, seen = pcall(function() return cursor ~= nil and eye.Camera:viewport_to_world(cursor) or nil end)
-    if ok and seen then
-        -- A `Dir3` may read back as its one field.
-        ray = { origin = seen.origin, direction = seen.direction[1] or seen.direction }
-    else
-        local t = eye.GlobalTransform:compute_transform()
-        ray = { origin = t.translation, direction = Quat.mul_vec3(t.rotation, { x = 0, y = 0, z = -1 }) }
-    end
-    local me = p:id()
-    local hit = ray_cast:cast_ray(ray, {
-        visibility = "Visible",
-        filter = function(entity)
-            return screens:root_ancestor(entity) ~= me
-        end,
-    })[1]
-    local screen = hit and screens:get(hit.entity) or nil
-    local uv = hit and hit.ray_mesh_hit.uv or nil
-    local camera = screen and cameras:iter_many(screen:get("Children") or {})[1] or nil
-    local image = camera and camera:get("scope/portal/console/camera").image
-    if image == nil or uv == nil or hit.ray_mesh_hit.distance > 3 then return nil end
-    local w, h = screen_size(screen)
-    return { target = { Image = image }, position = { x = uv.x * w, y = uv.y * h } }
-end
-
--- The button down moves the mouse there and presses; up releases. Bevy clicks on a release only
--- what the pointer hovered the frame before, so the three in one frame would click nothing.
-app:add_systems(Update, {
-    MeshRayCast,
-    Query[{
-        ["or"] = {
-            added = { "input/game/portal_console/press", "input/ui/portal_console/press" },
-        },
-        with = { "player" },
-        optional = { "Children" },
-    }],
-    Query[{ with = { "core/net", "core/net/owns" } }],
-    Query[{ with = { "camera/3d/eye", "Camera", "GlobalTransform" } }],
-    Query[{ with = { "Window" } }],
-    Query[{
-        with = { "Mesh3d", "Aabb", "GlobalTransform", "MeshMaterial3d<StandardMaterial>" },
-        optional = { "Children" },
-    }],
-    Query[{ with = { "scope/portal/console/camera" } }],
-    bevy.MessageWriter[PointerInput],
-}, function(ray_cast, pressed, own, eyes, windows, screens, cameras, pointer)
-    for _, p in ipairs(pressed:iter()) do
-        local location = aimed(ray_cast, p, own, eyes, windows, screens, cameras)
-        if location ~= nil then
-            pointer:write({ pointer_id = "Mouse", location = location, action = { Move = { delta = { x = 0.001, y = 0.001 } } } })
-            pointer:write({ pointer_id = "Mouse", location = location, action = { Press = "Primary" } })
-        end
-    end
-end):in_set("scope/portal/console/client")
-
-app:add_systems(Update, {
-    MeshRayCast,
-    Query[{
-        ["or"] = {
-            removed = { "input/game/portal_console/press", "input/ui/portal_console/press" },
-        },
-    }],
-    Query[{ with = { "player" }, optional = { "Children" } }],
-    Query[{ with = { "core/net", "core/net/owns" } }],
-    Query[{ with = { "camera/3d/eye", "Camera", "GlobalTransform" } }],
-    Query[{ with = { "Window" } }],
-    Query[{
-        with = { "Mesh3d", "Aabb", "GlobalTransform", "MeshMaterial3d<StandardMaterial>" },
-        optional = { "Children" },
-    }],
-    Query[{ with = { "scope/portal/console/camera" } }],
-    bevy.MessageWriter[PointerInput],
-}, function(ray_cast, released, players, own, eyes, windows, screens, cameras, pointer)
-    for _, r in ipairs(released:iter()) do
-        local p = players:iter_many({ r:id() })[1]
-        local location = p and aimed(ray_cast, p, own, eyes, windows, screens, cameras)
-        if location ~= nil then
-            pointer:write({ pointer_id = "Mouse", location = location, action = { Release = "Primary" } })
-        end
-        -- The pointer leaves the screen, off the image's edge: Bevy's picking presses what the pointer
-        -- hovers, and only a move moves it. In game input the hidden cursor sends no move, so the
-        -- mouse's own next click would land on the row it was left on.
-        local camera = p and cameras:iter()[1]
-        if camera ~= nil then
-            pointer:write({
-                pointer_id = "Mouse",
-                location = { target = { Image = camera:get("scope/portal/console/camera").image }, position = { x = -1, y = -1 } },
-                action = { Move = { delta = { x = -0.001, y = -0.001 } } },
-            })
         end
     end
 end):in_set("scope/portal/console/client")

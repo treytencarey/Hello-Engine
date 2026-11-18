@@ -1,8 +1,8 @@
 -- --host (windowed: the screen's mesh bounds, its layout and the mouse pick need a window)
 -- A console's screen on a client, with a real mesh, Bevy's bounds and layout, and the real pick.
 -- The player's eye is stood in by a camera with `camera/3d/eye`, 2 m in front of the screen, looking
--- straight at it; a click is a left button through `input`, as the mouse's is. Run with the mouse
--- off the window: a cursor over it aims the ray through the cursor instead.
+-- straight at it; a click is a left button through `input`, as the mouse's is, and the wheel is
+-- `input`'s synthetic wheel.
 --
 --   WS1 the mesh's `Aabb` is read: the image is sized from it at 0.0008 m a pixel (1000 x 750 for a
 --       0.8 m x 0.6 m screen), and the UI root is laid out at that size
@@ -13,6 +13,9 @@
 --   WS4 a click 4 m away, past the 3 m reach, asks nothing
 --   WS5 the mouse's own click after that, as Bevy's picking writes it for the real button with the
 --       aim off the screen, clicks nothing on it: the pointer has left the screen's image
+--   WS6 the wheel on the screen scrolls the row under the pointer
+--   WS7 and while on the screen the wheel is not the camera's: the third-person zoom gets none of it,
+--       and gets it again once the aim is off the screen
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -24,6 +27,9 @@ local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
 local Net = require("modules/core/net/shared/net.lua")
 local bevy = require("bevy::prelude")
 local PointerInput = require("bevy::picking::pointer::PointerInput")
+local On = require("bevy::ecs::prelude::On")
+local Pointer = require("bevy::picking::prelude::Pointer")
+local Scroll = require("bevy::picking::prelude::Scroll")
 
 local suite = helpers.create_suite("PortalConsoleWindowedSuite")
 local T = suite.assert_test
@@ -84,7 +90,13 @@ local function asks(world)
 end
 
 local function view(world)
-    return world:query({ with = { "scope/portal/console/view" }, optional = { "ComputedNode", "Node" } })[1]
+    return world:query({ with = { "ui/screen/root" }, optional = { "ComputedNode", "Node" } })[1]
+end
+
+local function row(world, label)
+    for _, r in ipairs(world:query({ with = { "scope/portal/console/row", "Text" } })) do
+        if r:get("Text") == label then return r end
+    end
 end
 
 -- The eye is the player's child and the player stands at the origin, so its local place is its place.
@@ -105,20 +117,34 @@ app:add_systems(First, { World }, function(world)
     if c ~= nil then world:write_message("input/synthetic_mouse_button", c) end
 end):in_set("zz/console_windowed/clicks")
 
+local wheel = 0
+app:add_systems(First, { World }, function(world)
+    if wheel > 0 then
+        wheel = wheel - 1
+        world:write_message("input/synthetic_mouse_wheel", { x = 0, y = 1 })
+    end
+end):in_set("zz/console_windowed/wheel")
+
+
+local zoomed, scrolled = false, false
+app:add_systems(Update, { Query[{ with = { "zz/player", "input/game/third_person/zoom" } }] }, function(zooming)
+    if not zooming:is_empty() then zoomed = true end
+end):in_set("zz/console_windowed/zoom")
+
 -- The real button, as `bevy_picking`'s mouse input writes it: a press and a release of the mouse
 -- pointer, which picking sends to what the pointer hovers. Where it says it is doesn't matter to
 -- a press; the screen's image is a location Lua can build.
 local mouse = {}
 app:add_systems(First, {
-    Query[{ with = { "scope/portal/console/camera" } }],
+    Query[{ with = { "zz/screen", "pointer/target" } }],
     bevy.MessageWriter[PointerInput],
-}, function(cameras, pointer)
+}, function(screens, pointer)
     local action = table.remove(mouse, 1)
-    local cam = cameras:iter()[1]
-    if action == nil or cam == nil then return end
+    local screen = screens:iter()[1]
+    if action == nil or screen == nil then return end
     pointer:write({
         pointer_id = "Mouse",
-        location = { target = { Image = cam:get("scope/portal/console/camera").image }, position = { x = -10, y = -10 } },
+        location = { target = { Image = screen:get("pointer/target").image }, position = { x = -10, y = -10 } },
         action = action,
     })
 end):in_set("zz/console_windowed/mouse")
@@ -135,6 +161,8 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
             player = { client_id = 1 },
             input = {},
             ["input/mode"] = { mode = "input/game" },
+            -- the zoom as `camera/third_person` binds it
+            ["input/game"] = { third_person = { zoom = { scroll = true } } },
             ["core/net/owner"] = own_net,
             Transform = {},
             Visibility = "Visible",
@@ -160,7 +188,7 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
         T("WS1_and_the_ui_root_is_laid_out_at_that_size", laid ~= nil and math.abs(laid.size.x - 1000) < 1
             and math.abs(laid.size.y - 750) < 1, laid and (tostring(laid.size.x) .. "x" .. tostring(laid.size.y)) or "none")
         local mesh = world:query({ with = { "zz/screen", "MeshMaterial3d<StandardMaterial>" } })[1]
-        local cam = world:query({ with = { "scope/portal/console/camera", "Camera" } })[1]
+        local cam = world:query({ with = { "ui/screen/camera", "Camera" } })[1]
         local material = mesh and materials:get(mesh:get("MeshMaterial3d<StandardMaterial>"))
         T("WS2_the_screen_draws_the_camera_s_image_unlit", material ~= nil and material.unlit == true
             and material.base_color_texture ~= nil and cam ~= nil and cam:get("Camera").target ~= nil,
@@ -196,6 +224,36 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
     elseif phase == "mouse_clicked" and clock > 1 then
         T("WS5_the_mouse_s_own_click_off_the_screen_clicks_nothing_on_it", #asks(world) == 0,
             tostring(#asks(world)) .. " asks: the pointer still hovers the row")
+        for _, a in ipairs(asks(world)) do commands:entity(a:id()):despawn() end
+        aim(commands, ROW_PIXEL, 2)
+        local r = row(world, "List branches")
+        if r ~= nil then
+            commands:entity(r:id()):observe(On[Pointer[Scroll]], {}, function()
+                scrolled = true
+            end)
+        end
+        step("observed")
+
+    elseif phase == "observed" and clock > 0.3 then
+        zoomed, scrolled = false, false
+        wheel = 5
+        step("wheel")
+
+    elseif phase == "wheel" and clock > 1 then
+        T("WS6_the_wheel_on_the_screen_scrolls_the_row_under_the_pointer", scrolled)
+        T("WS7_while_on_the_screen_the_wheel_does_not_zoom", not zoomed)
+        commands:entity(eye):insert({
+            Transform = { translation = { x = SCREEN_AT.x + 3, y = SCREEN_AT.y, z = SCREEN_AT.z + 2 }, rotation = { x = 0, y = 0, z = 0, w = 1 } },
+        })
+        step("away")
+
+    elseif phase == "away" and clock > 0.5 then
+        zoomed = false
+        wheel = 5
+        step("away_wheel")
+
+    elseif phase == "away_wheel" and clock > 1 then
+        T("WS7_and_off_the_screen_the_zoom_has_the_wheel_again", zoomed)
         phase = "done"
         suite.finish("PORTAL_CONSOLE_WINDOWED")
     end

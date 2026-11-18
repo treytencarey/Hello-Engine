@@ -4,9 +4,10 @@
 -- triggering Bevy's click on them; that the screen is drawn, sized from its real mesh, and picked by
 -- the mouse is `test_console_windowed.lua`. Root's branch list and the load are answered by hand.
 --
---   P0 the click is bound on this client's own player, in game input and in UI input
---   P1 the screen: an image sized from the mesh at 0.0008 m a pixel, a camera drawing into it, a
---      child of the mesh with its marker, and the UI root on that camera
+--   P0 the console binds no click of its own: the click is `pointer`'s, on this client's own player,
+--      in game input and in UI input
+--   P1 the screen: a `ui/screen` on the mesh, sized from it at 0.0008 m a pixel, its camera a child
+--      of the mesh, and its root on that camera, styled as the console's column
 --   P2 before any ask, "Points to <branch>" and "List branches"; a click asks root for this world's
 --      repository's branches, under the console
 --   P3 a refused list says why, and "List branches" stays
@@ -15,8 +16,8 @@
 --   P6 "New branch" opens the name field and gives the player UI input; typing writes the name
 --   P7 Create asks root to load the new branch's world; once it is ready the door is re-pointed at
 --      it, the load goes, the field closes and game input comes back
---   P8 a screen's mesh gone, its UI root goes, and the click stays while a console does; the last
---      console gone, the click is unbound
+--   P8 a screen's mesh gone, its UI root goes; the last console taken off a node that stays, its
+--      mesh's screen goes: `ui/screen`, its camera and its root
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -105,8 +106,11 @@ local function console_of(world)
     return world:query({ with = { "scope/portal/console" }, optional = { "scope/portal/console/state", "Children" } })[1]
 end
 
+local function roots(world)
+    return world:query({ with = { "ui/screen/root" }, optional = { "UiTargetCamera", "Node", "Children" } })
+end
 local function view(world)
-    return world:query({ with = { "scope/portal/console/view" }, optional = { "UiTargetCamera", "Node", "Children" } })[1]
+    return roots(world)[1]
 end
 
 -- The screen's texts in order, and its rows by label.
@@ -156,18 +160,26 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:entity(screen):insert({ Aabb = { center = { x = 0, y = 0, z = 0 }, half_extents = { x = 0.4, y = 0.3, z = 0 } } })
         step("built")
 
-    elseif phase == "built" and (view(world) ~= nil and #texts > 0 or clock > 5) then
+    -- the pointer binds when its source arrives on the player, which may come after the screen
+    elseif phase == "built" and (view(world) ~= nil and #texts > 0 and me(world) ~= nil
+        and (me(world):get("input/ui") or {}).pointer ~= nil or clock > 5) then
         local p = me(world)
         local game, ui = p:get("input/game") or {}, p:get("input/ui") or {}
-        T("P0_the_click_is_bound_in_game_and_ui_input", game.portal_console ~= nil and game.portal_console.press.button == "Left"
-            and ui.portal_console ~= nil and ui.portal_console.press.button == "Left")
-        local cam = world:query({ iter_many = world:descendants(screen), with = { "scope/portal/console/camera", "Camera", "Camera2d", "ChildOf" } })[1]
+        T("P0_the_console_binds_no_click_of_its_own", game.portal_console == nil and ui.portal_console == nil)
+        T("P0_the_click_is_the_pointer_s_in_game_and_ui_input", game.pointer ~= nil and game.pointer.press.button == "Left"
+            and ui.pointer ~= nil and ui.pointer.press.button == "Left")
+        local mesh = world:query({ iter_many = { screen }, with = { "ui/screen" } })[1]
+        local size = mesh and mesh:get("ui/screen")
+        local cam = world:query({ iter_many = world:descendants(screen), with = { "ui/screen/camera", "Camera", "Camera2d", "ChildOf" } })[1]
         local v = view(world)
         local node = v and v:get("Node")
-        T("P1_a_camera_with_its_marker_is_a_child_of_the_mesh", cam ~= nil and cam:get("ChildOf") == screen)
-        T("P1_the_ui_root_is_on_that_camera", v ~= nil and cam ~= nil and v:get("UiTargetCamera") == cam:id())
-        T("P1_the_image_is_sized_from_the_mesh_at_0_0008_m_a_pixel", node ~= nil and node.width.Px == 1000 and node.height.Px == 750,
-            node and (tostring(node.width.Px) .. "x" .. tostring(node.height.Px)) or "no node")
+        T("P1_a_ui_screen_sized_from_the_mesh_at_0_0008_m_a_pixel", size ~= nil and size.width == 1000 and size.height == 750,
+            size and (tostring(size.width) .. "x" .. tostring(size.height)) or "no ui/screen")
+        T("P1_its_camera_is_a_child_of_the_mesh", cam ~= nil and cam:get("ChildOf") == screen)
+        T("P1_its_root_is_on_that_camera", v ~= nil and cam ~= nil and v:get("UiTargetCamera") == cam:id())
+        T("P1_the_root_is_the_console_s_column_at_the_image_s_size", node ~= nil and node.width.Px == 1000 and node.height.Px == 750
+            and node.flex_direction == "Column" and node.padding.left.Px == 64,
+            node and (tostring(node.width.Px) .. "x" .. tostring(node.height.Px) .. " " .. tostring(node.flex_direction)) or "no node")
         T("P2_before_any_ask_points_to_and_list_branches", texts[1] == "Points to prologue" and rows["List branches"] ~= nil, said(world))
         click(commands, rows["List branches"])
         step("listing")
@@ -238,26 +250,38 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             tostring(r.target))
         T("P7_and_the_field_closes_with_game_input_back", (console_of(world):get("scope/portal/console/state") or {}).typing == nil
             and mode.mode == "input/game", tostring(mode.mode))
-        -- A second console, with no screen, so the mod stays loaded when the first goes: with its last
-        -- carrier gone, the mod unloads and takes its own entities with it.
-        commands:spawn({ ["zz/spare"] = {}, ["scope/portal/console"] = { door = "zz_door", at = "zz_door" },
-            ["core/net/sync"] = false })
+        -- A second console with a screen of its own, so the mod stays loaded when the first goes.
+        local spare = commands:spawn({ ["zz/spare"] = {}, ["scope/portal/console"] = { door = "zz_door", at = "zz_door" },
+            Transform = { translation = { x = -2, y = 1, z = -2 } }, ["core/net/sync"] = false }):id()
+        commands:spawn({
+            ["zz/spare_screen"] = {},
+            Mesh3d = world:query({ iter_many = { screen }, with = { "Mesh3d" } })[1]:get("Mesh3d"),
+            Transform = {},
+            Aabb = { center = { x = 0, y = 0, z = 0 }, half_extents = { x = 0.4, y = 0.3, z = 0 } },
+            ChildOf = spare,
+            ["core/net/sync"] = false,
+        })
         step("held")
 
-    elseif phase == "held" and clock > 0.3 then
+    elseif phase == "held" and (#roots(world) == 2 or clock > 5) then
         commands:entity(screen):despawn()
         step("removed")
 
-    elseif phase == "removed" and (view(world) == nil or clock > 5) then
-        local game = me(world):get("input/game") or {}
-        T("P8_a_screen_gone_its_ui_root_goes_and_the_click_stays_while_a_console_does", view(world) == nil
-            and game.portal_console ~= nil)
-        for _, c in ipairs(world:query({ with = { "scope/portal/console" } })) do commands:entity(c:id()):despawn() end
+    elseif phase == "removed" and (#roots(world) == 1 or clock > 5) then
+        local left = roots(world)[1]
+        local spare_cam = world:query({ with = { "ui/screen/camera", "ChildOf" } })[1]
+        T("P8_a_screen_s_mesh_gone_its_ui_root_goes", #roots(world) == 1 and spare_cam ~= nil
+            and left:get("UiTargetCamera") == spare_cam:id(), tostring(#roots(world)))
+        for _, c in ipairs(world:query({ with = { "scope/portal/console" } })) do
+            commands:entity(c:id()):remove("scope/portal/console")
+        end
         step("last")
 
     elseif phase == "last" and clock > 0.5 then
-        local game, ui = me(world):get("input/game") or {}, me(world):get("input/ui") or {}
-        T("P8_the_last_console_gone_the_click_is_unbound", game.portal_console == nil and ui.portal_console == nil)
+        local spare = world:query({ with = { "zz/spare_screen" }, optional = { "ui/screen", "pointer/target" } })[1]
+        T("P8_the_last_console_taken_off_its_mesh_s_screen_goes", spare ~= nil and not spare:has("ui/screen")
+            and not spare:has("pointer/target") and #world:query({ with = { "ui/screen/camera" } }) == 0 and #roots(world) == 0,
+            tostring(spare and spare:has("ui/screen")) .. " " .. tostring(#roots(world)))
         phase = "done"
         suite.finish("PORTAL_CONSOLE_SCREEN")
     end
