@@ -1,10 +1,11 @@
 -- A player in VR: this composer names the stack. It gives a player `vr`, which says when its
--- client is in VR, and swaps its camera and how it turns while that lasts. Until then it does
+-- client is in VR, and swaps its camera and how it faces while that lasts. Until then it does
 -- nothing, so a player with no headset keeps its desktop camera. The camera is synced, so the choice
 -- is the server's, and it costs one round trip in third person at the start.
 --
 -- A camera mod replaces the one it finds under the same base, across levels too, keeping
--- `camera`: adding one is the whole swap.
+-- `camera`: adding one is the whole swap. A facing variant is swapped by hand, as the server
+-- carries no `facing` for the registry to swap it under.
 
 app:add_systems(First, {
     Query[{
@@ -29,10 +30,12 @@ app:add_systems(First, {
     Commands,
 }, function(entered, commands)
     for _, e in ipairs(entered:iter()) do
-        commands:entity(e:id()):patch({
+        local player = commands:entity(e:id())
+        player:patch({
             ["camera/vr"] = {},
-            movement = { face = "look" },
+            ["facing/camera"] = {},
         })
+        player:remove("facing/velocity")
     end
 end):in_set("player/vr/enter")
 
@@ -49,7 +52,8 @@ app:add_systems(First, {
         local player = commands:entity(e:id())
         player:patch({ ["camera/third_person"] = {} })
         if e:has("movement") then
-            player:patch({ movement = { face = "velocity" } })
+            player:remove("facing/camera")
+            player:patch({ ["facing/velocity"] = {} })
         end
     end
 end):in_set("player/vr/leave")
@@ -79,7 +83,8 @@ app:add_systems(First, {
                 player:remove("camera/vr")
             end
             if e:has("movement") then
-                player:patch({ movement = { face = "velocity" } })
+                player:remove("facing/camera")
+                player:patch({ ["facing/velocity"] = {} })
             end
         end
     end

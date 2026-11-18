@@ -28,6 +28,7 @@ app:add_systems(First, {
         commands:entity(e:id()):insert_if_new({
             ["camera/third_person"] = {},
             movement = {},
+            ["facing/velocity"] = {},
             animation = {},
             ["abilities/fireball"] = {},
             ["abilities/grenade"] = {},
@@ -125,6 +126,8 @@ app:add_systems(First, {
         any_of = {
             "camera/third_person",
             "movement",
+            "facing/velocity",
+            "facing/camera",
             "animation",
             "abilities/fireball",
             "abilities/grenade",
@@ -146,6 +149,8 @@ app:add_systems(First, {
         commands:entity(e:id()):remove(
             "camera/third_person",
             "movement",
+            "facing/velocity",
+            "facing/camera",
             "animation",
             "abilities/fireball",
             "abilities/grenade",

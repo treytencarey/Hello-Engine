@@ -10,8 +10,9 @@
 --   PV4  the camera swaps on both sides, across base levels: third person and its eye go, `camera` stays
 --   PV5  `camera/vr`'s tuning crosses whole; this client binds and has a rig and a mirror
 --   PV6  another player's copy gets none of it
---   PV7  the body faces where the head looks, standing
---   PV8  the left stick walks, at its strength, where the head looks, and the rig follows
+--   PV7  the head turns the camera, and standing, the body holds still
+--   PV8  the left stick walks, at its strength, where the head looks, the body turns to face the look
+--        while it walks, and the rig follows
 --   PV9  poses stopping: `vr/active` goes on both sides, the desktop camera, eye and bindings return,
 --        and a stick still held lets go
 --   PV10 poses returning: the same again, one mirror
@@ -107,7 +108,7 @@ app:add_systems(Update, {
     ts.srv_ready = true
     local me = world:query({
         with = { "player", "core/net/owner" },
-        optional = { "player/vr", "vr", "vr/active", "camera", "camera/vr", "camera/3d", "camera/third_person", "movement", "core/net/sync" },
+        optional = { "player/vr", "vr", "vr/active", "camera", "camera/vr", "camera/3d", "camera/third_person", "movement", "facing/velocity", "facing/camera", "core/net/sync" },
     })[1]
     ts.s_player = me ~= nil
     if me ~= nil then
@@ -118,7 +119,7 @@ app:add_systems(Update, {
         ts.s_camera_vr = me:has("camera/vr")
         ts.s_camera_3d = me:has("camera/3d")
         ts.s_third = me:has("camera/third_person")
-        ts.s_face = (me:get("movement") or {}).face
+        ts.s_face = me:has("facing/camera") and "look" or me:has("facing/velocity") and "velocity" or nil
         ts.s_synced = (me:get("core/net/sync") or {})["vr/active"] ~= nil
         if ts.take_off_stack and me:has("player/vr") then
             commands:entity(me:id()):remove("player/vr")
@@ -206,6 +207,8 @@ app:add_systems(Update, {
             "camera/3d",
             "camera/third_person",
             "movement",
+            "facing/velocity",
+            "facing/camera",
             "VmXrRig",
             "input/game",
             "input/game/movement/forward",
@@ -235,7 +238,7 @@ app:add_systems(Update, {
         ts.c_bound_camera_vr = game.camera_vr ~= nil
         ts.c_bound_third = game.third_person ~= nil
         ts.c_turn_speed = (me:get("camera/vr") or {}).turn_speed
-        ts.c_face = (me:get("movement") or {}).face
+        ts.c_face = me:has("facing/camera") and "look" or me:has("facing/velocity") and "velocity" or nil
         ts.c_yaw = (me:get("camera") or {}).yaw
         local forward = me:get("input/game/movement/forward")
         ts.c_forward = forward and forward.value or false
@@ -285,6 +288,7 @@ local function close(a, b, within) return type(a) == "number" and math.abs(a - b
 -- What the headset says this frame: nothing until a step gives it.
 local raw, pose = nil, nil
 local x_before = 0
+local front_before = { x = 0, z = 1 }
 local function look(yaw)
     pose = {
         hmd_position = { x = 0, y = 1.6, z = 0 },
@@ -357,13 +361,14 @@ step(after(1.0), function()
     suite.assert_test("PV5_its_tuning_crosses_whole", ts.c_turn_speed == 2, tostring(ts.c_turn_speed))
     suite.assert_test("PV6_a_copy_keeps_its_camera_and_hears_vr_active", ts.o_camera_vr and ts.o_active and not ts.o_local, "")
     suite.assert_test("PV6_and_gets_no_rig_controllers_or_binding", not ts.o_rig and not ts.o_vr_input and not ts.o_bound, "")
+    front_before = { x = ts.c_front_x, z = ts.c_front_z }
     look(math.pi / 2)
 end)
 step(after(1.0), function()
     -- A quarter to the left: a look along -X.
     suite.assert_test("PV7_yaw_is_the_heads", close(ts.c_yaw, math.pi / 2), tostring(ts.c_yaw))
-    suite.assert_test("PV7_the_body_faces_it_standing", close(ts.c_front_x, -1) and close(ts.c_front_z, 0),
-        string.format("%.3f %.3f", ts.c_front_x, ts.c_front_z))
+    suite.assert_test("PV7_standing_the_body_holds_still", close(ts.c_front_x, front_before.x) and close(ts.c_front_z, front_before.z),
+        string.format("%.3f %.3f, before %.3f %.3f", ts.c_front_x, ts.c_front_z, front_before.x, front_before.z))
     x_before = ts.c_x
     raw = { left_stick_y = 0.5 }
 end)
@@ -372,7 +377,7 @@ step(after(1.0), function()
     suite.assert_test("PV8_the_stick_is_the_walk_key_at_its_strength", close(ts.c_forward, strength, 0.01), tostring(ts.c_forward))
     suite.assert_test("PV8_it_walks_where_the_head_looks", close(ts.c_vx, -6 * strength, 0.1) and close(ts.c_vz, 0, 0.1),
         string.format("%.3f %.3f", ts.c_vx, ts.c_vz))
-    suite.assert_test("PV8_the_body_faces_the_look_not_a_new_way", close(ts.c_front_x, -1) and close(ts.c_front_z, 0),
+    suite.assert_test("PV8_walking_the_body_faces_the_look", close(ts.c_front_x, -1) and close(ts.c_front_z, 0),
         string.format("%.3f %.3f", ts.c_front_x, ts.c_front_z))
     suite.assert_test("PV8_the_rig_follows", ts.c_x < x_before - 1 and close(ts.c_rig_x, ts.c_x, 0.2),
         string.format("%s %s", tostring(ts.c_x), tostring(ts.c_rig_x)))

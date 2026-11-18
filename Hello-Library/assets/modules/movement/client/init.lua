@@ -1,4 +1,4 @@
--- The client half: the owner's player walks, jumps and turns; others' players follow their
+-- The client half: the owner's player walks and jumps; others' players follow their
 -- synced Transform. Input is the `input/game.movement` group: an action is held while its
 -- component exists. This client's own player is one in its own nets' `core/net/owns`: an owner
 -- can come after the player, so both edges count.
@@ -87,11 +87,10 @@ end):in_set("movement/copy")
 -- map before it loads.
 
 -- Walking: while a key is held, the horizontal velocity follows the keys, turned by the
--- camera's yaw, and the player turns to face that way. It polls while a key is held (ground
--- friction would slow a single push). Letting go of the last key stands it still; vertical
--- velocity is left to gravity and jumps.
+-- camera's yaw. It polls while a key is held (ground friction would slow a single push). Letting go
+-- of the last key stands it still; vertical velocity is left to gravity and jumps. Which way the body
+-- faces is `facing`'s.
 app:add_systems(Update, {
-    Res[Time],
     Query[{
         ["or"] = {
             removed = {
@@ -113,10 +112,10 @@ app:add_systems(Update, {
             "input/game/movement/left",
             "input/game/movement/right",
         },
-        with = { "movement", "camera", Mut["Velocity3d"], Mut["Transform"] },
+        with = { "movement", "camera", Mut["Velocity3d"] },
     }],
     Query[{ with = { "core/net", "core/net/owns" } }],
-}, function(time, released, bodies, walkers, own)
+}, function(released, bodies, walkers, own)
     -- A released key stops its body here (only the edge is read), and the keys still held
     -- are walked below. A body that despawned has no row in `bodies`.
     local stopped = {}
@@ -126,12 +125,10 @@ app:add_systems(Update, {
     for _, e in ipairs(bodies:iter_many_mut(stopped)) do
         e:patch({ Velocity3d = { linvel = { x = 0, z = 0 } } })
     end
-    local dt = time:delta_secs()
     for _, n in ipairs(own:iter()) do
         for _, e in ipairs(walkers:iter_many_mut(n:get("core/net/owns"))) do
             local m = e:get("movement")
             local camera = e:get("camera")
-            local rotation = e:get("Transform").rotation
             local forward = e:get("input/game/movement/forward")
             local backward = e:get("input/game/movement/backward")
             local left = e:get("input/game/movement/left")
@@ -143,47 +140,9 @@ app:add_systems(Update, {
             -- analog input moves slower; two keys at once no faster than one
             local scale = m.speed * math.min(1, math.sqrt(x * x + z * z))
             e:patch({ Velocity3d = { linvel = { x = along.x * scale, z = along.z * scale } } })
-            -- opposite keys cancel out: no direction to face
-            if m.face ~= "look" and (x ~= 0 or z ~= 0) then
-                e:patch({
-                    Transform = {
-                        rotation = Quat.slerp(rotation,
-                            Quat.from_rotation_arc({ x = 0, y = 0, z = 1 }, along),
-                            math.min(1, m.turn * dt)),
-                    },
-                })
-            end
         end
     end
 end):in_set("movement/walk")
-
--- Facing where its camera looks: standing or walking, so it polls. A body's front is +Z and a
--- look's is -Z, hence the half turn.
-app:add_systems(Update, {
-    Res[Time],
-    Query[{
-        with = { "movement", "camera", Mut["Transform"] },
-    }],
-    Query[{ with = { "core/net", "core/net/owns" } }],
-}, function(time, bodies, own)
-    local dt = time:delta_secs()
-    for _, n in ipairs(own:iter()) do
-        for _, e in ipairs(bodies:iter_many_mut(n:get("core/net/owns"))) do
-            local m = e:get("movement")
-            if m.face == "look" then
-                local camera = e:get("camera")
-                local rotation = e:get("Transform").rotation
-                e:patch({
-                    Transform = {
-                        rotation = Quat.slerp(rotation,
-                            Quat.from_rotation_y((camera.yaw or 0) + math.pi),
-                            math.min(1, m.turn * dt)),
-                    },
-                })
-            end
-        end
-    end
-end):in_set("movement/face")
 
 -- Polls: standing on something is a short ray down from the origin, past the feet, that
 -- skips the player's own body, cast through Rapier's `ReadRapierContext`.

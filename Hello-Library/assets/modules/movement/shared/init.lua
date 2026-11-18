@@ -1,5 +1,5 @@
 -- Walking and jumping. The owning client moves its own body from input, relative to where
--- its camera looks, and turns it to face where it goes; every other client eases its copy
+-- its camera looks; every other client eases its copy
 -- toward the synced Transform. The owner drives the Transform, as there is no client prediction
 -- yet, so the server runs no movement. Missing fields get
 -- defaults when it is added.
@@ -7,10 +7,8 @@
 -- movement = {
 --     speed = <metres per second>,
 --     jump = <metres per second upward>,
---     turn = <how fast it turns to face where it goes, per second>,
 --     ground = <metres from its origin to just below its feet>,
 --     smoothing = <how fast another client's copy follows, per second>,
---     face = <"velocity", where it goes, or "look", where its camera looks>,
 -- }
 --
 -- movement/grounded: on the owner's client while it stands on something.
@@ -35,10 +33,8 @@ return {
         movement = {
             speed = 6,
             jump = 5,
-            turn = 10,
             ground = 1,
             smoothing = 10,
-            face = "velocity",
         },
     },
     ["core/net/sync"] = {

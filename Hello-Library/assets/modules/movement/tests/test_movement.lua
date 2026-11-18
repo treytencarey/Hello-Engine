@@ -63,6 +63,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:spawn({
             ["zz/name"] = { name = "me" },
             movement = {},
+            ["facing/velocity"] = {},
             camera = { yaw = math.pi / 2 },
             input = {},
             ["input/mode"] = { mode = "input/game" },
@@ -94,7 +95,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local m = me:get("movement")
         local keys = me:get("input/game").movement
         suite.assert_test("V1_missing_fields_get_defaults",
-            m.speed == 6 and m.jump == 5 and m.turn == 10 and m.ground == 1 and m.smoothing == 10, "")
+            m.speed == 6 and m.jump == 5 and m.ground == 1 and m.smoothing == 10, "")
         suite.assert_test("V2_the_owner_binds_its_movement_keys",
             keys ~= nil and keys.forward.key == "KeyW" and keys.jump.key == "Space", "")
         suite.assert_test("V3_standing_on_the_floor_is_grounded", me:has("movement/grounded"), "")
