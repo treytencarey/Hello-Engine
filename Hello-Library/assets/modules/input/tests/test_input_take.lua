@@ -7,6 +7,8 @@
 --   IT3 removing the taking binding gives the key back
 --   IT4 two taking bindings of one key both fire, and the other still does not
 --   IT5 removing the taking binding while its key is held gives the key back at once
+--   IT6 a taking scroll binding takes the wheel: it fires and the mode's other scroll binding does not
+--   IT7 removing it gives the wheel back
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -16,7 +18,7 @@ local Net = require("modules/core/net/shared/net.lua")
 local suite = helpers.create_suite("InputTakeSuite")
 local T = suite.assert_test
 
-local plain = { zz_plain = { esc = { key = "Escape" }, pick = { button = "Left" } } }
+local plain = { zz_plain = { esc = { key = "Escape" }, pick = { button = "Left" }, zoom = { scroll = true } } }
 local function with(extra)
     local bindings = { zz_plain = plain.zz_plain }
     for group, actions in pairs(extra) do
@@ -55,11 +57,22 @@ local function player(world)
             "input/ui/zz_take/esc",
             "input/ui/zz_take/pick",
             "input/ui/zz_also/esc",
+            "input/ui/zz_plain/zoom",
+            "input/ui/zz_take/wheel",
         },
     })[1]
 end
 
-local keys, buttons = {}, {}
+-- A scroll action is there only on the frames the wheel turns, so each frame says what it saw.
+local seen = {}
+app:add_systems(Update, { World }, function(world)
+    local p = player(world)
+    if p == nil then return end
+    seen.plain = seen.plain or p:has("input/ui/zz_plain/zoom")
+    seen.take = seen.take or p:has("input/ui/zz_take/wheel")
+end):in_set("zz/input_take_seen")
+
+local keys, buttons, wheels = {}, {}, {}
 local steps, at, t, mark = {}, 1, 0, 0
 local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act } end
 local function after(seconds) return function() return t - mark > seconds end end
@@ -104,9 +117,28 @@ step(after(0.3), function(world, commands)
     T("IT4_and_the_other_still_does_not", not p:has("input/ui/zz_plain/esc"), "")
     commands:entity(p:id()):insert({ ["input/ui"] = with({}) })
 end)
-step(after(0.3), function(world)
+step(after(0.3), function(world, commands)
     T("IT5_removed_while_held_the_key_is_back_at_once", player(world):has("input/ui/zz_plain/esc"), "")
     key("Released")
+    commands:entity(player(world):id()):insert({
+        ["input/ui"] = with({ zz_take = { wheel = { scroll = true, take = true } } }),
+    })
+end)
+step(after(0.3), function()
+    seen = {}
+    wheels[#wheels + 1] = { x = 0, y = 2 }
+end)
+step(after(0.3), function(world, commands)
+    T("IT6_a_taking_scroll_binding_takes_the_wheel", seen.take == true and not seen.plain,
+        string.format("take %s plain %s", tostring(seen.take), tostring(seen.plain)))
+    commands:entity(player(world):id()):insert({ ["input/ui"] = with({}) })
+end)
+step(after(0.3), function()
+    seen = {}
+    wheels[#wheels + 1] = { x = 0, y = 2 }
+end)
+step(after(0.3), function()
+    T("IT7_without_it_the_wheel_is_back", seen.plain == true, tostring(seen.plain))
 end)
 
 local done = false
@@ -115,11 +147,13 @@ app:add_systems(Update, {
     Commands,
     bevy.MessageWriter["input/synthetic_key"],
     bevy.MessageWriter["input/synthetic_mouse_button"],
-}, function(world, commands, write_key, write_button)
+    bevy.MessageWriter["input/synthetic_mouse_wheel"],
+}, function(world, commands, write_key, write_button, write_wheel)
     t = t + world:delta_time()
     for _, m in ipairs(keys) do write_key:write(m) end
     for _, m in ipairs(buttons) do write_button:write(m) end
-    keys, buttons = {}, {}
+    for _, m in ipairs(wheels) do write_wheel:write(m) end
+    keys, buttons, wheels = {}, {}, {}
     if done then
         return
     end

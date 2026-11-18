@@ -1,5 +1,7 @@
 -- The client half: what only this client's own player needs while it is in VR. Its controllers
--- are read here and nowhere else, so they are never synced.
+-- are read here and nowhere else, so they are never synced. The controller's ray (`vr/pointer`)
+-- takes the place of the desktop's (`pointer/view`, which `player` adds), as both have
+-- `pointer` as their base, and the desktop's comes back when VR ends.
 
 app:add_systems(First, {
     Query[{
@@ -14,6 +16,7 @@ app:add_systems(First, {
 }, function(entered, own, commands)
     for _, e in ipairs(entered:iter()) do
         if own:contains(e:get("core/net/owner")) then
+            commands:entity(e:id()):remove("pointer/view")
             commands:entity(e:id()):insert_if_new({
                 ["vr/input"] = {},
                 ["vr/pointer"] = {},
@@ -32,7 +35,7 @@ app:add_systems(First, {
             removed = { "vr/active", "player/vr" },
         },
     }],
-    Query[{ with = { "vr/input" } }],
+    Query[{ with = { "vr/input" }, optional = { "player" } }],
     Commands,
 }, function(left, parts, commands)
     local gone = {}
@@ -41,5 +44,6 @@ app:add_systems(First, {
     end
     for _, e in ipairs(parts:iter_many(gone)) do
         commands:entity(e:id()):remove("vr/input", "vr/pointer", "vr/grabbable", "vr/ui_panels")
+        if e:has("player") then commands:entity(e:id()):insert_if_new({ ["pointer/view"] = {} }) end
     end
 end):in_set("player/vr/local_removed")

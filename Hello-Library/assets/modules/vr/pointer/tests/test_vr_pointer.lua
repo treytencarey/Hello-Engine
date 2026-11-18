@@ -1,14 +1,17 @@
 -- --host
--- `vr/pointer` and `vr/grabbable` on this client's own player, fed the poses the engine's VR plugin
--- writes. What needs a view is in `vr/ui_panels/tests/test_vr_ui_panels_windowed.lua`: a ray meets
--- only what a view sees, and a headless run has none.
+-- The ray sources of `pointer` and `vr/grabbable` on this client's own player: `vr/pointer`, fed the
+-- poses the engine's VR plugin writes, and `pointer/view`, the desktop's. What needs a view is in
+-- `vr/ui_panels/tests/test_vr_ui_panels_windowed.lua`: a ray meets only what a view sees, and a
+-- headless run has none.
 --
---   VP1 each binds its group in `input/ui`
+--   VP1 `vr/pointer` brings `pointer`, its base, which binds its group in `input/game` and
+--       `input/ui`; the grip binds its own
 --   VP2 the ray starts at the right hand and is turned in the hand's own frame by `yaw` and `pitch`
 --   VP3 with no turn it is the hand's forward, and a changed `vr/pointer` applies at once
 --   VP4 one laser, a child of the player, hidden while nothing is hovered
 --   VP5 a reload keeps one laser and the bindings, and the ray still follows the hand
 --   VP6 removal takes the bindings, the ray and the laser; removed with `input`, no binding comes back
+--   VP7 `pointer/view` brings `pointer` too, and with the cursor hidden its ray is the eye's forward
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -31,6 +34,22 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
         ["core/net"] = { mode = "client", name = "zzvrp" },
         ["core/net/sync"] = false,
     }):id()
+    local desk = commands:spawn({
+        ["zz/carrier"] = { name = "desk" },
+        ["pointer/view"] = {},
+        input = {},
+        ["input/mode"] = { mode = "input/game" },
+        ["core/net/owner"] = world_net,
+        ["core/net/sync"] = false,
+        Transform = {},
+    }):id()
+    commands:spawn({
+        ["camera/3d/eye"] = {},
+        Camera3d = {},
+        Camera = { order = 0, is_active = false },
+        Transform = { translation = { x = 0, y = 1.6, z = 0 }, rotation = Quat.from_rotation_y(0.4) },
+        ChildOf = desk,
+    })
     for _, name in ipairs({ "me", "together" }) do
         commands:spawn({
             ["zz/carrier"] = { name = name },
@@ -49,7 +68,7 @@ end)
 local function carrier(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/carrier" },
-        optional = { "vr/pointer", "vr/pointer/ray", "input/ui", "Children" },
+        optional = { "pointer", "vr/pointer", "pointer/ray", "input/ui", "input/game", "Children" },
     })) do
         if e:get("zz/carrier").name == name then
             return e
@@ -73,14 +92,23 @@ local function after(seconds) return function() return t - mark > seconds end en
 
 step(function(world)
     local me = carrier(world, "me")
-    return me ~= nil and me:has("vr/pointer/ray") and #lasers(world, me) == 1
+    -- the base loads a frame or so after its source, and binds then
+    return me ~= nil and me:has("pointer/ray") and #lasers(world, me) == 1 and (me:get("input/ui") or {}).pointer ~= nil
 end, function(world, commands)
     local me = carrier(world, "me")
-    local ui = me:get("input/ui")
-    T("VP1_the_pointer_binds_press_and_scroll",
-        ui.vr_pointer ~= nil and ui.vr_pointer.press.button == "Left" and ui.vr_pointer.scroll.scroll == true, "")
+    local ui, game = me:get("input/ui"), me:get("input/game") or {}
+    T("VP1_vr_pointer_brings_its_base_which_binds_press_and_scroll_in_both_modes", me:has("pointer")
+        and ui.pointer ~= nil and ui.pointer.press.button == "Left" and ui.pointer.scroll.scroll == true
+        and game.pointer ~= nil and game.pointer.press.button == "Left",
+        string.format("base %s, ui %s, game %s", tostring(me:has("pointer")), tostring(ui.pointer ~= nil), tostring(game.pointer ~= nil)))
+    local desk = carrier(world, "desk")
+    local ray = desk and desk:get("pointer/ray")
+    local forward = Quat.mul_vec3(Quat.from_rotation_y(0.4), { x = 0, y = 0, z = -1 })
+    T("VP7_pointer_view_brings_its_base_and_casts_the_eye_s_forward_with_the_cursor_hidden", desk ~= nil and desk:has("pointer")
+        and ray ~= nil and close(ray.direction, forward) and close(ray.origin, { x = 0, y = 1.6, z = 0 }),
+        ray and (show(ray.origin) .. " / " .. show(ray.direction)) or "no ray")
     T("VP1_the_grip_binds_grab", ui.vr_grabbable ~= nil and ui.vr_grabbable.grab.key == "KeyG", "")
-    local ray = me:get("vr/pointer/ray")
+    ray = me:get("pointer/ray")
     T("VP2_the_ray_starts_at_the_hand", close(ray.origin, hand), show(ray.origin))
     -- -60 degrees of pitch, then -10 of yaw, worked by hand from -Z in the hand's frame
     local tilted = Quat.mul_vec3(turn, { x = 0.5 * math.sin(math.rad(10)), y = -math.sin(math.rad(60)), z = -0.5 * math.cos(math.rad(10)) })
@@ -93,7 +121,7 @@ end, function(world, commands)
     commands:entity(me:id()):insert({ ["vr/pointer"] = copy })
 end)
 step(after(0.3), function(world)
-    local ray = carrier(world, "me"):get("vr/pointer/ray")
+    local ray = carrier(world, "me"):get("pointer/ray")
     local forward = Quat.mul_vec3(turn, { x = 0, y = 0, z = -1 })
     T("VP3_no_turn_is_the_hands_forward", close(ray.direction, forward), show(ray.direction))
     write_file_bytes("assets/modules/vr/pointer/init.lua", read_file_bytes("assets/modules/vr/pointer/init.lua"))
@@ -105,16 +133,17 @@ step(after(0.3), function(world, commands)
     local me = carrier(world, "me")
     T("VP5_after_a_reload_one_laser", #lasers(world, me) == 1, tostring(#lasers(world, me)))
     local ui = me:get("input/ui")
-    T("VP5_the_bindings_stay", ui.vr_pointer ~= nil and ui.vr_grabbable ~= nil, "")
-    T("VP5_the_ray_still_follows_the_hand", close(me:get("vr/pointer/ray").origin, hand), show(me:get("vr/pointer/ray").origin))
-    commands:entity(me:id()):remove("vr/pointer", "vr/grabbable")
-    commands:entity(carrier(world, "together"):id()):remove("vr/pointer", "vr/grabbable", "input", "input/ui")
+    T("VP5_the_bindings_stay", ui.pointer ~= nil and ui.vr_grabbable ~= nil, "")
+    T("VP5_the_ray_still_follows_the_hand", close(me:get("pointer/ray").origin, hand), show(me:get("pointer/ray").origin))
+    commands:entity(me:id()):remove("vr/pointer", "pointer", "vr/grabbable")
+    commands:entity(carrier(world, "together"):id()):remove("vr/pointer", "pointer", "vr/grabbable", "input", "input/ui")
 end)
 step(after(0.5), function(world)
     local me = carrier(world, "me")
     local ui = me:get("input/ui") or {}
-    T("VP6_removal_takes_the_bindings", ui.vr_pointer == nil and ui.vr_grabbable == nil, "")
-    T("VP6_the_ray", not me:has("vr/pointer/ray"), "")
+    local game = me:get("input/game") or {}
+    T("VP6_removal_takes_the_bindings", ui.pointer == nil and game.pointer == nil and ui.vr_grabbable == nil, "")
+    T("VP6_the_ray", not me:has("pointer/ray"), "")
     T("VP6_and_the_laser", #world:query({ with = { "vr/pointer/laser" } }) == 0, tostring(#world:query({ with = { "vr/pointer/laser" } })))
     T("VP6_removed_with_input_no_binding_comes_back", not carrier(world, "together"):has("input/ui"), "")
 end)

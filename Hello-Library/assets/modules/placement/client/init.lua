@@ -109,7 +109,7 @@ app:add_systems(Update, {
     Query[{ with = { "placement", Mut["Transform"] } }],
     Query[{
         with = { "input" },
-        optional = { "vr/pointer/ray", "Children" },
+        optional = { "pointer/ray", "Children" },
     }],
     Query[{ with = { "camera/3d/eye", "Camera", "GlobalTransform" } }],
     Query[{ with = { "Window" } }],
@@ -118,7 +118,7 @@ app:add_systems(Update, {
 }, function(rapier, ray_cast, placing, players, eyes, windows, pickables, own)
     for _, n in ipairs(own:iter()) do
         for _, player in ipairs(players:iter_many(n:get("core/net/owns"))) do
-            local ray = player:get("vr/pointer/ray")
+            local ray = player:get("pointer/ray")
             local eye = eyes:iter_many(player:get("Children") or {})[1]
             local window = windows:iter()[1]
             if ray == nil and eye ~= nil and window ~= nil then

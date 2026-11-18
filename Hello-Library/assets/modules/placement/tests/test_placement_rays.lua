@@ -51,7 +51,7 @@ app:add_systems(Startup, { World, ResMut[Assets[Mesh]], Commands }, function(wor
         ["zz/pr/me"] = {},
         input = {},
         ["core/net/owner"] = world_net,
-        ["vr/pointer/ray"] = { origin = HAND, direction = Vec3.normalize(Vec3.sub(GROUND, HAND)) },
+        ["pointer/ray"] = { origin = HAND, direction = Vec3.normalize(Vec3.sub(GROUND, HAND)) },
         Transform = {},
         ["core/net/sync"] = false,
     })

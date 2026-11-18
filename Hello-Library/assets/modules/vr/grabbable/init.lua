@@ -60,14 +60,14 @@ app:add_systems(Update, {
     MeshRayCast,
     Query[{
         added = { "input/ui/vr_grabbable/grab" },
-        with = { "vr/grabbable", "vr/pointer/ray" },
+        with = { "vr/grabbable", "pointer/ray" },
     }],
     Query[{ with = { "vr/grabbable/target", "Transform" } }],
     Commands,
 }, function(ray_cast, grabbing, targets, commands)
     for _, e in ipairs(grabbing:iter()) do
         local me = e:id()
-        local hit = ray_cast:cast_ray(e:get("vr/pointer/ray"), {
+        local hit = ray_cast:cast_ray(e:get("pointer/ray"), {
             filter = function(entity)
                 return grabbing:root_ancestor(entity) ~= me
             end,
@@ -102,13 +102,13 @@ end):in_set("vr/grabbable/release")
 -- Facing keeps the target upright: it turns about Y only, its front (+Z) to the head.
 app:add_systems(Update, {
     Query[{
-        changed = { "vr/pointer/ray" },
+        changed = { "pointer/ray" },
         with = { "vr/grabbable", "vr/input/pose" },
     }],
     Query[{ with = { "vr/grabbable/held", "vr/grabbable/target", Mut["Transform"] } }],
 }, function(players, held)
     for _, e in ipairs(players:iter()) do
-        local ray = e:get("vr/pointer/ray")
+        local ray = e:get("pointer/ray")
         local head = e:get("vr/input/pose").hmd_position
         for _, h in ipairs(held:iter_mut()) do
             local grab = h:get("vr/grabbable/held")

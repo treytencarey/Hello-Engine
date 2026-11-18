@@ -1,5 +1,5 @@
 ---
-depends_on: [sidebar, vr/input, vr/pointer, vr/grabbable]
+depends_on: [sidebar, vr/input, pointer, vr/grabbable]
 conflicts_with: []
 exposes: [vr/ui_panels, vr/ui_panels/panel, vr/ui_panels/panels, vr/ui_panels/camera]
 ---
@@ -24,7 +24,7 @@ The sidebar as a panel in the world, for this client's own player in VR. The sid
 - `vr/ui_panels/panels`: on the container, its panels, kept by the engine.
 - `vr/ui_panels/camera = {}`: the `Camera2d` drawing the container into the image, a child of the mesh.
 
-The mesh also carries `vr/pointer/target` (the image and its size) and `vr/grabbable/target = { face = true }`. The container gets `UiTargetCamera` naming the panel's camera, and loses it when `vr/ui_panels` goes.
+The mesh also carries `pointer/target` (the image and its size) and `vr/grabbable/target = { face = true }`. The container gets `UiTargetCamera` naming the panel's camera, and loses it when `vr/ui_panels` goes.
 
 ## Systems
 

@@ -66,7 +66,7 @@ end
 local function panels(world)
     return world:query({
         with = { "vr/ui_panels/panel", "Transform" },
-        optional = { "vr/pointer/target", "vr/grabbable/target", "Visibility", "NoFrustumCulling", "Aabb", "Mesh3d" },
+        optional = { "pointer/target", "vr/grabbable/target", "Visibility", "NoFrustumCulling", "Aabb", "Mesh3d" },
     })
 end
 local function camera_of(world, panel)
@@ -86,7 +86,7 @@ end, function(world, commands)
     local panel = panels(world)[1]
     local c = container(world)
     local p = panel:get("vr/ui_panels/panel")
-    local target = panel:get("vr/pointer/target")
+    local target = panel:get("pointer/target")
     T("VUP1_one_panel_linked_to_the_container", p.entity == c:id() and #(c:get("vr/ui_panels/panels") or {}) == 1
         and p.width == 300 and p.height == 500, tostring(p.width) .. " x " .. tostring(p.height))
     T("VUP1_it_is_a_pointer_target_on_its_image", target ~= nil and target.width == 300 and target.height == 500 and target.image ~= nil, "")
@@ -114,7 +114,7 @@ step(after(0.3), function(world, commands)
     local p = panel:get("vr/ui_panels/panel")
     T("VUP3_a_new_size_resizes_the_same_panel", #panels(world) == 1 and panel:id() == state.panel and p.width == 420,
         tostring(#panels(world)) .. " " .. tostring(p.width))
-    T("VUP3_and_its_pointer_target", panel:get("vr/pointer/target").width == 420, "")
+    T("VUP3_and_its_pointer_target", panel:get("pointer/target").width == 420, "")
     T("VUP3_drawn_by_the_same_camera", container(world):get("UiTargetCamera") == state.camera, "")
     T("VUP3_its_old_aabb_taken_off_for_bevy_to_compute_again", not panel:has("Aabb"), "")
     commands:entity(container(world):id()):insert({ Node = { display = "None" } })

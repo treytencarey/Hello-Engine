@@ -1,5 +1,5 @@
 ---
-depends_on: [core/player/attest, core/net, camera/third_person, movement, facing, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/profile, sidebar/invites, sidebar/menu, sidebar/file_browser, git/panel, git/collaborators, player/respawn, player/vr, scope/portal/console]
+depends_on: [core/player/attest, core/net, camera/third_person, movement, facing, animation, abilities/fireball, abilities/grenade, ai/perception, ai/noisemaker, input, sidebar, sidebar/profiler, sidebar/profile, sidebar/invites, sidebar/menu, sidebar/file_browser, git/panel, git/collaborators, player/respawn, player/vr, scope/portal/console, pointer/view]
 conflicts_with: []
 exposes: [player]
 ---
@@ -23,7 +23,7 @@ The owning client drives its player's Transform, as there is no client predictio
 
 - What each player gets, by side. Names are written in the code:
   - server: `camera/third_person`, `movement`, `facing/velocity` (it faces where it walks), `animation` (no model unless the world sets `animation.model`, for example through carrier defaults), `abilities/fireball` (a fireball on Q), `abilities/grenade` (a grenade on G), `ai/perception/target` (for agents to look for), `ai/noisemaker` (for them to hear), `sidebar/file_browser` (the file browser panel, synced to its owner: a panel with server work is the server's to add), `git/panel` (the GitHub panel, synced to its owner, for the same reason: its server half answers the owner's asks and opens the portals they ask for) `player/vr` (the VR stack, which does nothing until a headset is tracking) and `scope/portal/console/user` (so a portal-room console's request and response reach this player's owner alone; it does nothing in a world with no console);
-  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), `sidebar/invites` (the invite cards, which need no open panel), `sidebar/menu` (the menu, which holds other mods' items), `git/collaborators` (the collaborators panel), `player/respawn` (Respawn, an item in the menu), its `RigidBody3d` switched to `Dynamic` once this client's copy of the map is ready under it, and its `GravityScale3d` at 1. Each is local UI with no server half, so the client adds it.
+  - the owning client: `input`, `input/mode = { mode = "input/game" }`, `sidebar`, `sidebar/profiler`, `sidebar/profile` (the sign-in panel), `sidebar/invites` (the invite cards, which need no open panel), `sidebar/menu` (the menu, which holds other mods' items), `git/collaborators` (the collaborators panel), `player/respawn` (Respawn, an item in the menu), `pointer/view` (the desktop's ray source for `pointer`, unless `vr/pointer` is there; `player/vr` swaps them), its `RigidBody3d` switched to `Dynamic` once this client's copy of the map is ready under it, and its `GravityScale3d` at 1. Each is local UI with no server half, so the client adds it.
 
   If `player` is removed from an entity that stays, each half removes what it added.
 

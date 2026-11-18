@@ -1,5 +1,5 @@
 ---
-depends_on: [input, vr/input, vr/pointer]
+depends_on: [input, vr/input, pointer]
 conflicts_with: []
 exposes: [vr/grabbable, vr/grabbable/target, vr/grabbable/held]
 ---
@@ -22,7 +22,7 @@ Binding: `input/ui.vr_grabbable = { grab = { key = "KeyG" } }`, which `vr/input`
 |----------|-------|---------|
 | First | `vr/grabbable/bind` | On `vr/grabbable` or `input` arriving, bind `input/ui.vr_grabbable` |
 | First | `vr/grabbable/removed` | When `vr/grabbable` goes, unbind and drop what is held |
-| Update | `vr/grabbable/grab` | On the grab action's `added` edge, cast `vr/pointer/ray` with `MeshRayCast` past the player and its descendants; the first hit gets `vr/grabbable/held` if it is a target |
+| Update | `vr/grabbable/grab` | On the grab action's `added` edge, cast `pointer/ray` (the VR controller's, from `vr/pointer`) with `MeshRayCast` past the player and its descendants; the first hit gets `vr/grabbable/held` if it is a target |
 | Update | `vr/grabbable/release` | On the action's `removed` edge, drop what is held |
 | Update, after `vr/grabbable/grab` | `vr/grabbable/move` | On a changed ray, the held target along it, facing the head if it asks to |
 

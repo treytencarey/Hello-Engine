@@ -1,5 +1,5 @@
 ---
-depends_on: [vr, vr/input, vr/pointer, vr/grabbable, vr/ui_panels, camera/vr, camera/third_person, movement, facing]
+depends_on: [vr, vr/input, vr/pointer, pointer/view, vr/grabbable, vr/ui_panels, camera/vr, camera/third_person, movement, facing]
 conflicts_with: []
 exposes: [player/vr]
 ---
@@ -13,7 +13,7 @@ A player in VR. This mod is the composer: it names what a VR player has, on each
 - `player/vr = {}`, on a player, added on the server and synced from it. It adds:
   - server, always: `vr`;
   - server, while `vr/active` exists: `camera/vr` in place of `camera/third_person`, and `facing/camera` in place of `facing/velocity`;
-  - the owning client, while `vr/active` exists: `vr/input`, and the tools `vr/pointer`, `vr/grabbable` and `vr/ui_panels`.
+  - the owning client, while `vr/active` exists: `vr/input`, and the tools `vr/pointer`, `vr/grabbable` and `vr/ui_panels`. `vr/pointer` is the VR controller's ray source for `pointer`, in place of the desktop's `pointer/view`, which it takes off and gives back when VR ends.
 
   When `vr/active` goes, the player gets `camera/third_person` and `facing/velocity` back. If `player/vr` is removed from an entity that stays, each half removes what it added.
 

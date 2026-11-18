@@ -68,7 +68,7 @@ app:add_systems(First, {
     }],
     Query[{ with = { "vr/ui_panels", "vr/input/pose" } }],
     Query[{
-        with = { Mut["vr/ui_panels/panel"], Mut["vr/pointer/target"] },
+        with = { Mut["vr/ui_panels/panel"], Mut["pointer/target"] },
         optional = { "Children" },
     }],
     Query[{ with = { "vr/ui_panels/camera", Mut["Camera"] } }],
@@ -101,7 +101,7 @@ app:add_systems(First, {
                 }):id()
                 commands:spawn({
                     ["vr/ui_panels/panel"] = { entity = c:id(), width = w, height = h, image = image },
-                    ["vr/pointer/target"] = { image = image, width = w, height = h },
+                    ["pointer/target"] = { image = image, width = w, height = h },
                     ["vr/grabbable/target"] = { face = true },
                     Mesh3d = mesh,
                     ["MeshMaterial3d<StandardMaterial>"] = material,
@@ -112,7 +112,7 @@ app:add_systems(First, {
             else
                 local p = panel:get_mut("vr/ui_panels/panel")
                 p.width, p.height, p.image = w, h, image
-                local target = panel:get_mut("vr/pointer/target")
+                local target = panel:get_mut("pointer/target")
                 target.width, target.height, target.image = w, h, image
                 -- Bevy computes a mesh's `Aabb` only while it has none, and the ray cast and culling
                 -- read it, so the new mesh's is computed again.

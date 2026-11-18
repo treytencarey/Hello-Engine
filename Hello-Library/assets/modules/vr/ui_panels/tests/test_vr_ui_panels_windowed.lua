@@ -7,6 +7,10 @@
 --   VU2 placed in front of the right hand, its front to the head
 --   VU3 the ray on a button hovers it, at the button's pixel, and the laser shows along the ray
 --   VU4 neither the laser nor the player's body comes between: the hover stays; a wall does come between
+--   VU3b while the ray is on the panel the pointer's scroll binding takes the wheel, and not once it
+--        has left
+--   VU4b with the ray off the panel, the mouse's own click (as Bevy's picking writes it for the real
+--        button) clicks nothing on it: the pointer left the panel's image
 --   VU5 the trigger clicks the button, through Bevy's picking
 --   VU6 a long press is a right click, and its release no left click
 --   VU7 the grip grabs the panel and it follows the hand, facing the head
@@ -35,6 +39,7 @@ local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local VrInputRaw = require("hello::vr_messages::VrInputRaw")
 local VrPoseInput = require("hello::vr_messages::VrPoseInput")
+local PointerInput = require("bevy::picking::pointer::PointerInput")
 
 local suite = helpers.create_suite("VrUiPanelsWindowedSuite")
 local T = suite.assert_test
@@ -122,8 +127,25 @@ app:add_systems(Update, {
     end
 end):in_set("zz/vr_ui_panels/button")
 
+-- The real button, as `bevy_picking`'s mouse input writes it: picking sends a press to what the
+-- pointer hovers, wherever it says it is.
+local mouse = {}
+app:add_systems(First, {
+    Query[{ with = { "pointer/target" } }],
+    bevy.MessageWriter[PointerInput],
+}, function(targets, pointer)
+    local action = table.remove(mouse, 1)
+    local target = targets:iter()[1]
+    if action == nil or target == nil then return end
+    pointer:write({
+        pointer_id = "Mouse",
+        location = { target = { Image = target:get("pointer/target").image }, position = { x = -10, y = -10 } },
+        action = action,
+    })
+end):in_set("zz/vr_ui_panels/mouse")
+
 app:add_systems(Update, {
-    Query[{ removed = { "vr/pointer/hovered" } }],
+    Query[{ removed = { "pointer/hovered" } }],
 }, function(left)
     unhovered = unhovered + #left:iter()
 end):in_set("zz/vr_ui_panels/unhovered")
@@ -131,7 +153,7 @@ end):in_set("zz/vr_ui_panels/unhovered")
 -- The suite's own casts along the pointer's ray, past the player as the mod's are.
 app:add_systems(Update, {
     MeshRayCast,
-    Query[{ with = { "zz/me", "vr/pointer/ray" } }],
+    Query[{ with = { "zz/me", "pointer/ray" } }],
     Query[{ with = { "vr/ui_panels/panel" } }],
     Query[{ with = { "zz/wall" } }],
     Query[{ with = { "vr/pointer/laser" } }],
@@ -148,7 +170,7 @@ app:add_systems(Update, {
         return tostring(entity)
     end
     local function first(settings)
-        local hit = ray_cast:cast_ray(e:get("vr/pointer/ray"), settings)[1]
+        local hit = ray_cast:cast_ray(e:get("pointer/ray"), settings)[1]
         if hit == nil then return "nothing" end
         local uv = hit.ray_mesh_hit.uv
         return string.format("%s at %.3f uv %s", name(hit.entity), hit.ray_mesh_hit.distance,
@@ -161,7 +183,7 @@ app:add_systems(Update, {
 end):in_set("zz/vr_ui_panels/seen")
 
 local function me(world)
-    return world:query({ with = { "zz/me" }, optional = { "Children", "vr/pointer/ray" } })[1]
+    return world:query({ with = { "zz/me" }, optional = { "Children", "pointer/ray" } })[1]
 end
 local function container(world)
     return world:query({ with = { "sidebar/container" }, optional = { "ComputedNode", "UiTargetCamera" } })[1]
@@ -169,7 +191,7 @@ end
 local function panels(world)
     return world:query({
         with = { "vr/ui_panels/panel" },
-        optional = { "vr/pointer/target", "vr/pointer/hovered", "vr/grabbable/held", "Visibility", "NoFrustumCulling", "Aabb", "Children" },
+        optional = { "pointer/target", "pointer/hovered", "vr/grabbable/held", "Visibility", "NoFrustumCulling", "Aabb", "Children" },
     })
 end
 local function camera_of(world, panel)
@@ -186,7 +208,7 @@ local function show(v) return v and string.format("%.3f %.3f %.3f", v.x, v.y, v.
 
 -- Everything a failure about the ray needs, to tell its causes apart.
 local function why(world)
-    local ray = me(world):get("vr/pointer/ray")
+    local ray = me(world):get("pointer/ray")
     local panel = panels(world)[1]
     local text = string.format("ray from %s along %s", show(ray and ray.origin), show(ray and ray.direction))
     if panel ~= nil then
@@ -215,7 +237,7 @@ local function aim_at(world, px, py)
 end
 
 local function hovered_at(world, px, py)
-    local h = panels(world)[1]:get("vr/pointer/hovered")
+    local h = panels(world)[1]:get("pointer/hovered")
     return h ~= nil and math.abs(h.x - px) < 2 and math.abs(h.y - py) < 2, h
 end
 
@@ -236,7 +258,7 @@ end, function(world)
     local panel = panels(world)[1]
     local p = panel:get("vr/ui_panels/panel")
     local size = c:get("ComputedNode").size
-    local target = panel:get("vr/pointer/target")
+    local target = panel:get("pointer/target")
     T("VU1_one_panel_sized_as_the_container", #panels(world) == 1 and p.width == math.floor(size.x) and p.height == math.floor(size.y),
         string.format("%s x %s against %.1f x %.1f", tostring(p.width), tostring(p.height), size.x, size.y))
     T("VU1_its_pointer_target_is_its_image_and_it_has_bounds", target.width == p.width and target.height == p.height
@@ -264,19 +286,31 @@ step(after(0.5), function(world, commands)
     T("VU3_the_laser_shows_along_the_ray", l:get("Visibility") == "Visible"
         and near(global(world, l).translation, Vec3.add(hand, Quat.mul_vec3(aim, { x = 0, y = 0, z = -1 }))),
         tostring(l:get("Visibility")) .. " " .. show(global(world, l).translation) .. "; " .. why(world))
-    T("VU4_neither_the_laser_nor_the_body_comes_between", unhovered == 0 and panels(world)[1]:has("vr/pointer/hovered"),
+    T("VU4_neither_the_laser_nor_the_body_comes_between", unhovered == 0 and panels(world)[1]:has("pointer/hovered"),
         tostring(unhovered) .. " unhovered; " .. why(world))
+    local bound = world:get_entity(me(world):id()):get("input/game") or {}
+    T("VU3b_on_the_panel_the_scroll_binding_takes_the_wheel", ((bound.pointer or {}).scroll or {}).take == true,
+        tostring(((bound.pointer or {}).scroll or {}).take))
     wall_at = Vec3.add(hand, Vec3.mul(Vec3.sub(state.button, hand), Vec3.splat(0.5)))
 end)
 step(function() return state.wall ~= nil end, function() end)
 step(after(0.5), function(world, commands)
-    T("VU4_a_wall_comes_between", not panels(world)[1]:has("vr/pointer/hovered"), why(world))
+    T("VU4_a_wall_comes_between", not panels(world)[1]:has("pointer/hovered"), why(world))
+    local bound = world:get_entity(me(world):id()):get("input/game") or {}
+    T("VU3b_and_off_it_not", bound.pointer ~= nil and bound.pointer.scroll.take == nil, tostring(bound.pointer and bound.pointer.scroll.take))
+    mouse[#mouse + 1] = { Press = "Primary" }
+    mouse[#mouse + 1] = { Release = "Primary" }
+end)
+step(after(0.5), function(world, commands)
+    T("VU4b_with_the_ray_off_the_panel_the_mouse_s_own_click_clicks_nothing_on_it", (clicks.Primary or 0) == 0,
+        tostring(clicks.Primary) .. " clicks: the pointer still hovers the button")
+    clicks.Primary = nil
     commands:entity(state.wall):despawn()
 end)
 step(function(world)
-    return panels(world)[1]:has("vr/pointer/hovered") or t - mark > 3
+    return panels(world)[1]:has("pointer/hovered") or t - mark > 3
 end, function(world)
-    T("VU4_the_hover_is_back_without_it", panels(world)[1]:has("vr/pointer/hovered"), why(world))
+    T("VU4_the_hover_is_back_without_it", panels(world)[1]:has("pointer/hovered"), why(world))
     raw = { right_trigger = 1 }
 end)
 step(after(0.15), function() raw = {} end)
@@ -322,7 +356,7 @@ end, function(world)
     local p = panel:get("vr/ui_panels/panel")
     local size = container(world):get("ComputedNode").size
     T("VU9_a_wider_container_resizes_the_same_panel", #panels(world) == 1 and panel:id() == state.panel
-        and p.width == math.floor(size.x) and panel:get("vr/pointer/target").width == p.width,
+        and p.width == math.floor(size.x) and panel:get("pointer/target").width == p.width,
         string.format("%s against %.1f", tostring(p.width), size.x))
     T("VU9_still_drawn_by_its_camera", container(world):get("UiTargetCamera") == camera_of(world, panel):id(), "")
     -- In the new part, outside where the old mesh's bounds reached.
@@ -341,7 +375,7 @@ step(after(0.5), function(world)
     local panel = panels(world)[1]
     T("VU10_closing_hides_it", panel:get("Visibility") == "Hidden", tostring(panel:get("Visibility")))
     T("VU10_stops_its_camera", camera_of(world, panel):get("Camera").is_active == false, "")
-    T("VU10_and_the_ray_leaves_it", not panel:has("vr/pointer/hovered") and laser(world):get("Visibility") == "Hidden", why(world))
+    T("VU10_and_the_ray_leaves_it", not panel:has("pointer/hovered") and laser(world):get("Visibility") == "Hidden", why(world))
     hand = { x = 1, y = 1.2, z = -0.3 }
     head = { x = 1, y = 1.5, z = 0 }
 end)

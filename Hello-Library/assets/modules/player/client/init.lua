@@ -39,12 +39,17 @@ app:add_systems(First, {
             changed = { "core/net/owner" },
         },
         with = { "player", "core/net/owner" },
+        optional = { "vr/pointer" },
     }],
     Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
 }, function(players, own, commands)
     for _, e in ipairs(players:iter()) do
         if not mine(own, e) then goto next_player end
+        -- The desktop's ray source, unless the player is in VR, whose controller is its source.
+        if not e:has("vr/pointer") then
+            commands:entity(e:id()):insert_if_new({ ["pointer/view"] = {} })
+        end
         commands:entity(e:id()):insert_if_new({
             input = {},
             ["input/mode"] = { mode = "input/game" },
@@ -214,7 +219,7 @@ app:add_systems(First, {
     Query[{
         any_of = {
             "input", "sidebar", "sidebar/profiler", "sidebar/profile", "sidebar/invites", "sidebar/menu",
-            "git/collaborators", "player/respawn", "GravityScale3d",
+            "git/collaborators", "player/respawn", "GravityScale3d", "pointer/view",
         },
     }],
     Commands,
@@ -225,6 +230,6 @@ app:add_systems(First, {
     end
     for _, e in ipairs(parts:iter_many(gone)) do
         commands:entity(e:id()):remove("input", "input/mode", "sidebar", "sidebar/profiler", "sidebar/profile",
-            "sidebar/invites", "sidebar/menu", "git/collaborators", "player/respawn", "GravityScale3d")
+            "sidebar/invites", "sidebar/menu", "git/collaborators", "player/respawn", "GravityScale3d", "pointer/view")
     end
 end):in_set("player/removed")
