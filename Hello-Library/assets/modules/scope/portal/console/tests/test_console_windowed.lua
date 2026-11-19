@@ -10,6 +10,8 @@
 --   WS3 the UV assumption: the mesh has u along its X from the left and v down from the top, so a
 --       ray at the point of a pixel meets the mesh at that pixel's uv
 --   WS3 and a click there, on "List branches", lands on that row and asks root for the branches
+--   WS8 the window's mouse moving while the ray rests on the row takes nothing from the pointer: a
+--       click still lands on the row
 --   WS4 a click 4 m away, past the 3 m reach, asks nothing
 --   WS5 the mouse's own click after that, as Bevy's picking writes it for the real button with the
 --       aim off the screen, clicks nothing on it: the pointer has left the screen's image
@@ -207,6 +209,18 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
 
     elseif phase == "clicked" and (#asks(world) > 0 or clock > 3) then
         T("WS3_and_a_click_on_list_branches_lands_on_its_row", #asks(world) == 1, tostring(#asks(world)) .. " asks")
+        for _, a in ipairs(asks(world)) do commands:entity(a:id()):despawn() end
+        -- the real mouse moving, as Bevy's picking writes it, somewhere off the row
+        mouse[#mouse + 1] = { Move = { delta = { x = 1, y = 1 } } }
+        step("stolen")
+
+    elseif phase == "stolen" and clock > 0.5 then
+        press()
+        step("stolen_clicked")
+
+    elseif phase == "stolen_clicked" and (#asks(world) > 0 or clock > 3) then
+        T("WS8_the_window_s_mouse_moving_takes_nothing_from_the_pointer", #asks(world) == 1,
+            tostring(#asks(world)) .. " asks: the mouse's move took the pointer off the row")
         for _, a in ipairs(asks(world)) do commands:entity(a:id()):despawn() end
         aim(commands, ROW_PIXEL, 4)
         step("far")

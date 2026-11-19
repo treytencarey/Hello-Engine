@@ -5,12 +5,13 @@
 -- headless run has none.
 --
 --   VP1 `vr/pointer` brings `pointer`, its base, which binds its group in `input/game` and
---       `input/ui`; the grip binds its own
+--       `input/ui`, and makes the player a picking pointer of its own (`PointerId`); the grip binds
+--       its own
 --   VP2 the ray starts at the right hand and is turned in the hand's own frame by `yaw` and `pitch`
 --   VP3 with no turn it is the hand's forward, and a changed `vr/pointer` applies at once
 --   VP4 one laser, a child of the player, hidden while nothing is hovered
 --   VP5 a reload keeps one laser and the bindings, and the ray still follows the hand
---   VP6 removal takes the bindings, the ray and the laser; removed with `input`, no binding comes back
+--   VP6 removal takes the bindings, the ray, the laser and the picking pointer; removed with `input`, no binding comes back
 --   VP7 `pointer/view` brings `pointer` too, and with the cursor hidden its ray is the eye's forward
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
@@ -68,7 +69,7 @@ end)
 local function carrier(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/carrier" },
-        optional = { "pointer", "vr/pointer", "pointer/ray", "input/ui", "input/game", "Children" },
+        optional = { "pointer", "vr/pointer", "pointer/ray", "input/ui", "input/game", "Children", "PointerId", "PointerLocation", "PointerPress" },
     })) do
         if e:get("zz/carrier").name == name then
             return e
@@ -107,6 +108,8 @@ end, function(world, commands)
     T("VP7_pointer_view_brings_its_base_and_casts_the_eye_s_forward_with_the_cursor_hidden", desk ~= nil and desk:has("pointer")
         and ray ~= nil and close(ray.direction, forward) and close(ray.origin, { x = 0, y = 1.6, z = 0 }),
         ray and (show(ray.origin) .. " / " .. show(ray.direction)) or "no ray")
+    T("VP1_the_player_is_a_picking_pointer_of_its_own", me:has("PointerId") and me:has("PointerLocation") and me:has("PointerPress"),
+        tostring(me:get("PointerId")))
     T("VP1_the_grip_binds_grab", ui.vr_grabbable ~= nil and ui.vr_grabbable.grab.key == "KeyG", "")
     ray = me:get("pointer/ray")
     T("VP2_the_ray_starts_at_the_hand", close(ray.origin, hand), show(ray.origin))
@@ -144,6 +147,7 @@ step(after(0.5), function(world)
     local game = me:get("input/game") or {}
     T("VP6_removal_takes_the_bindings", ui.pointer == nil and game.pointer == nil and ui.vr_grabbable == nil, "")
     T("VP6_the_ray", not me:has("pointer/ray"), "")
+    T("VP6_and_the_picking_pointer", not me:has("PointerId") and not me:has("PointerLocation") and not me:has("PointerPress"), "")
     T("VP6_and_the_laser", #world:query({ with = { "vr/pointer/laser" } }) == 0, tostring(#world:query({ with = { "vr/pointer/laser" } })))
     T("VP6_removed_with_input_no_binding_comes_back", not carrier(world, "together"):has("input/ui"), "")
 end)

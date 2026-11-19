@@ -23,6 +23,7 @@ A ray turned into Bevy's picking on a screen, for this client's own player. When
 - `pointer/ray = { origin, direction }`, on the player: the ray in world space, written by its source and taken off by it. Other mods read it (`vr/grabbable`, `placement`).
 - `pointer/target = { image, width, height }`: on a mesh showing a render-target image, added and removed by the mod that makes the mesh, usually `ui/screen`. Only these answer the ray. Being a part of `pointer`, it is taken off every entity when the last source goes; `ui/screen` gives its own back.
 - `pointer/hovered = { x, y }`: on the target the ray is on, in its image's pixels. Exists while hovered.
+- `PointerId = { Custom = 1 }`, Bevy's, on the carrier: its own picking pointer, so the window's mouse never moves it. One pointer per carrier; the id is fixed today, and named in one place in the mod. `pointer` adds it, with the parts Bevy's `PointerId` brings (`PointerLocation`, `PointerPress`, `PointerInteraction`), and takes them off. They are not in the carrier's `core/net/sync`, so they never cross.
 - `pointer/press = { at, x, y, long }`, on the player while a press that began on a target is held: when it was pressed (`at`, absent once it moved too far for a long press), where on the target, and whether the long press was sent.
 
 Bindings, in `input/game` and `input/ui`: `pointer = { press = { button = "Left" }, scroll = { scroll = true } }`. While a target is hovered the scroll binding is `{ scroll = true, take = true }`, which takes the wheel from the mode's other scroll bindings (`input`'s take), and it goes back when the ray leaves. `vr/input` maps the VR controller's trigger and stick to the same button and wheel.
@@ -31,8 +32,8 @@ Bindings, in `input/game` and `input/ui`: `pointer = { press = { button = "Left"
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `pointer/bind` | On `pointer` or `input` arriving, bind the `pointer` group in both modes |
-| First | `pointer/removed` | When `pointer` goes, unbind, take `pointer/ray` and `pointer/press` off, and `pointer/hovered` off the target |
+| First | `pointer/bind` | On `pointer` or `input` arriving, bind the `pointer` group in both modes, and give the carrier its `PointerId` |
+| First | `pointer/removed` | When `pointer` goes, unbind, take `pointer/ray`, `pointer/press` and the `PointerId` with its parts off, and `pointer/hovered` off the target |
 | Update | `pointer/cast` | On a changed ray, cast it with `MeshRayCast`, past the player and its descendants. A target hit within `range`: `pointer/hovered` moves, and `PointerInput` Move, and Scroll while a scroll action is there. The ray leaving a target: a Move off its image, so Bevy's hover goes, and the wheel is given back |
 | Update, after the cast | `pointer/press` | On the press action's edges, `PointerInput` Press and Release Primary on the hovered target |
 | Update, after the press | `pointer/long_press` | Polls `Time` while pressed: held still for `long_press`, Press and Release Secondary |
@@ -50,7 +51,7 @@ commands:entity(player):insert({ ["pointer/ray"] = { origin = o, direction = d }
 
 ## Notes
 
-- The mouse pointer is reused: a pointer of its own would be `PointerId::Custom`, which Lua cannot build. Bevy's picking presses what a pointer hovers, and only a move moves it; in game input the hidden cursor sends no move, so without the move off the image the mouse's next click would land where the ray last was.
+- Every `PointerInput` is the carrier's own pointer's (`PointerId::Custom`, its Uuid as text in the message). Bevy's picking presses what a pointer hovers, and only a move moves it: a move goes when the hit pixel changes, and when the ray leaves a target a move off its image ends the hover, so the next press cannot land where the ray last was. Nothing else moves this pointer: the window's mouse is a pointer of its own.
 - Bevy's picking skips a move with no delta, so a ray held still sends none.
 - A press, release and long press act on the hovered target; a release after a long press sends no primary release, so it does not also click.
-- Suites: `vr/pointer/tests/test_vr_pointer.lua` (headless: the base and its bindings, both sources' rays, removal); `vr/ui_panels/tests/test_vr_ui_panels_windowed.lua` (a ray meets only what a view sees: hover, the wheel taken while on a panel and given back, the mouse's own click after the ray left clicking nothing, press, long press); `scope/portal/console/tests/test_console_windowed.lua` (a desktop player on a console's screen: a click, the wheel scrolling the row under the ray, the third-person zoom getting no wheel while on it and getting it back after).
+- Suites: `vr/pointer/tests/test_vr_pointer.lua` (headless: the base and its bindings, the carrier's `PointerId`, both sources' rays, removal); `vr/ui_panels/tests/test_vr_ui_panels_windowed.lua` (a ray meets only what a view sees: hover, the wheel taken while on a panel and given back, the window mouse's own click never reaching a panel, press, long press); `scope/portal/console/tests/test_console_windowed.lua` (a desktop player on a console's screen: a click, a click still landing after the window's mouse moved, the wheel scrolling the row under the ray, the third-person zoom getting no wheel while on it and getting it back after).

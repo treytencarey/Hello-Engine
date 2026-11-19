@@ -1,9 +1,9 @@
 -- A ray turned into Bevy's picking on a screen, for this client's own player. When the first thing
 -- the player's `pointer/ray` meets is a pointer target within `range`, Bevy's picking hears it as
--- the mouse pointer on that target's image: it moves there, scrolls, presses, and a long press is a
--- right click. A ray source writes the ray and has `pointer` as its base: `pointer/view` is the
--- desktop's (the view's centre, or the cursor), `vr/pointer` the VR controller's. While the ray is on
--- a target the wheel is the screen's: the camera does not zoom.
+-- the carrier's own pointer on that target's image: it moves there, scrolls, presses, and a long
+-- press is a right click. A ray source writes the ray and has `pointer` as its base:
+-- `pointer/view` is the desktop's (the view's centre, or the cursor), `vr/pointer` the VR
+-- controller's. While the ray is on a target the wheel is the screen's: the camera does not zoom.
 --
 -- pointer = {
 --     long_press = <seconds a press is held still to be a right click>,
@@ -33,6 +33,12 @@ local Time = require("bevy::time::Time")
 
 local MODES = { "input/game", "input/ui" }
 
+-- The pointer's own id in Bevy's picking, so the window's mouse never moves it: one pointer per
+-- carrier, a fixed id today. The component takes the number, a `PointerInput` the Uuid's text.
+local ID = 1
+local POINTER_ID = { Custom = ID }
+local POINTER = { Custom = string.format("00000000-0000-0000-0000-%012x", ID) }
+
 --- The pointer's group, the wheel taken or not.
 local function bindings(take)
     return { press = { button = "Left" }, scroll = { scroll = true, take = take or nil } }
@@ -51,6 +57,7 @@ app:add_systems(First, {
     -- read now: the change runs after this system, when its parameters are gone
     local take = not hovered:is_empty()
     for _, e in ipairs(players:iter()) do
+        commands:entity(e:id()):insert({ PointerId = POINTER_ID })
         for _, mode in ipairs(MODES) do
             commands:entity(e:id()):entry(mode):or_default():and_modify(function(group)
                 group.pointer = bindings(take)
@@ -74,7 +81,8 @@ app:add_systems(First, {
                     group.pointer = nil
                 end)
             end
-            player:try_remove("pointer/ray", "pointer/press")
+            -- with the parts Bevy's `PointerId` brought
+            player:try_remove("pointer/ray", "pointer/press", "PointerId", "PointerLocation", "PointerPress", "PointerInteraction")
         end
         for _, h in ipairs(hovered:iter()) do
             commands:entity(h:id()):try_remove("pointer/hovered")
@@ -86,8 +94,7 @@ end):in_set("pointer/removed")
 -- does, and only a target answers. A player is a root, so its descendants share its root. Bevy's
 -- picking skips a move with no delta, so a ray held still sends none. When the ray leaves a target
 -- the pointer leaves its image, off the edge: Bevy's picking presses what the pointer hovers, and
--- only a move moves it, so a hidden cursor's next click would land where it was left. The mouse
--- pointer is reused: a pointer of its own would be `PointerId::Custom`, which Lua cannot build.
+-- only a move moves it, so its next press would land where it was left.
 app:add_systems(Update, {
     MeshRayCast,
     Query[{
@@ -114,7 +121,7 @@ app:add_systems(Update, {
         if was ~= nil and (hit == nil or was:id() ~= hit.entity) then
             commands:entity(was:id()):try_remove("pointer/hovered")
             pointer:write({
-                pointer_id = "Mouse",
+                pointer_id = POINTER,
                 location = { target = { Image = was:get("pointer/target").image }, position = { x = -1, y = -1 } },
                 action = { Move = { delta = { x = -0.001, y = -0.001 } } },
             })
@@ -127,7 +134,7 @@ app:add_systems(Update, {
             local location = { target = { Image = target.image }, position = { x = x, y = y } }
             if before == nil or before.x ~= x or before.y ~= y then
                 pointer:write({
-                    pointer_id = "Mouse",
+                    pointer_id = POINTER,
                     location = location,
                     action = { Move = { delta = before and { x = x - before.x, y = y - before.y } or { x = 0.001, y = 0.001 } } },
                 })
@@ -136,7 +143,7 @@ app:add_systems(Update, {
             local scroll = e:get("input/game/pointer/scroll") or e:get("input/ui/pointer/scroll")
             if scroll ~= nil then
                 pointer:write({
-                    pointer_id = "Mouse",
+                    pointer_id = POINTER,
                     location = location,
                     action = { Scroll = { unit = "Line", x = scroll.dx, y = scroll.dy } },
                 })
@@ -177,7 +184,7 @@ app:add_systems(Update, {
     end
     for _, e in ipairs(pressed:iter()) do
         if location ~= nil then
-            pointer:write({ pointer_id = "Mouse", location = location, action = { Press = "Primary" } })
+            pointer:write({ pointer_id = POINTER, location = location, action = { Press = "Primary" } })
             commands:entity(e:id()):insert({
                 ["pointer/press"] = {
                     at = time:elapsed_secs(),
@@ -190,7 +197,7 @@ app:add_systems(Update, {
     end
     for _, e in ipairs(released:iter()) do
         if location ~= nil and not e:get("pointer/press").long then
-            pointer:write({ pointer_id = "Mouse", location = location, action = { Release = "Primary" } })
+            pointer:write({ pointer_id = POINTER, location = location, action = { Release = "Primary" } })
         end
         commands:entity(e:id()):try_remove("pointer/press")
     end
@@ -213,8 +220,8 @@ app:add_systems(Update, {
                 press.at = nil
             elseif time:elapsed_secs() - press.at >= p.long_press then
                 local location = { target = { Image = on:get("pointer/target").image }, position = { x = at.x, y = at.y } }
-                pointer:write({ pointer_id = "Mouse", location = location, action = { Press = "Secondary" } })
-                pointer:write({ pointer_id = "Mouse", location = location, action = { Release = "Secondary" } })
+                pointer:write({ pointer_id = POINTER, location = location, action = { Press = "Secondary" } })
+                pointer:write({ pointer_id = POINTER, location = location, action = { Release = "Secondary" } })
                 press.long = true
             end
         end
