@@ -56,6 +56,7 @@ app:add_systems(First, {
             sidebar = {},
             ["sidebar/profiler"] = {},
             ["sidebar/profile"] = {},
+            ["sidebar/people"] = {},
             ["sidebar/invites"] = {},
             ["sidebar/menu"] = {},
             ["git/collaborators"] = {},
@@ -218,8 +219,8 @@ app:add_systems(First, {
     Query[{ removed = { "player" } }],
     Query[{
         any_of = {
-            "input", "sidebar", "sidebar/profiler", "sidebar/profile", "sidebar/invites", "sidebar/menu",
-            "git/collaborators", "player/respawn", "GravityScale3d", "pointer/view",
+            "input", "sidebar", "sidebar/profiler", "sidebar/profile", "sidebar/people", "sidebar/invites",
+            "sidebar/menu", "git/collaborators", "player/respawn", "GravityScale3d", "pointer/view",
         },
     }],
     Commands,
@@ -230,6 +231,6 @@ app:add_systems(First, {
     end
     for _, e in ipairs(parts:iter_many(gone)) do
         commands:entity(e:id()):remove("input", "input/mode", "sidebar", "sidebar/profiler", "sidebar/profile",
-            "sidebar/invites", "sidebar/menu", "git/collaborators", "player/respawn", "GravityScale3d", "pointer/view")
+            "sidebar/people", "sidebar/invites", "sidebar/menu", "git/collaborators", "player/respawn", "GravityScale3d", "pointer/view")
     end
 end):in_set("player/removed")

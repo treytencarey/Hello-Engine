@@ -11,6 +11,7 @@
 -- C1  a click on a button item reaches the contributor's own observer
 -- A1  a player arriving gets a row, with the contributor's items
 -- N1  a row's name follows its player's `user_id`
+-- N2  a player's `name`, once it has one, shows in place of its `user_id`
 -- G1  a player leaving takes its row and its items
 -- H1  a reload of the mod keeps the panel open and rebuilds the rows, and the contributor adds its
 --     items again on the rebuilt rows, once each
@@ -272,6 +273,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local a = row_of(world, alice)
         T("N1_a_row_s_name_follows_its_player", a ~= nil and children_of(world, a)[1].text == "zz-alice-renamed",
             a and texts(children_of(world, a)) or "no row")
+        commands:entity(alice):insert({ player = { client_id = 2, user_id = "zz-alice-renamed", name = "Zz Alice" } })
+        step("named")
+
+    elseif phase == "named" and clock > 0.3 then
+        local a = row_of(world, alice)
+        T("N2_a_row_shows_its_player_s_name_before_its_user_id", a ~= nil and children_of(world, a)[1].text == "Zz Alice",
+            a and texts(children_of(world, a)) or "no row")
         mark.bob_row = row_of(world, bob) and row_of(world, bob):id()
         commands:entity(bob):despawn()
         step("left")
@@ -300,7 +308,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             and state_of(world).open == true)
         T("H1_and_rebuilds_the_rows", a ~= nil and c ~= nil and a:id() ~= mark.rows[1] and c:id() ~= mark.rows[2]
             and #targets(world, alice) == 1 and #targets(world, carol) == 1)
-        local ok_a, why_a = laid_out(world, alice, "zz-alice-renamed", 2)
+        local ok_a, why_a = laid_out(world, alice, "Zz Alice", 2)
         local ok_c, why_c = laid_out(world, carol, "zz-carol", 4)
         T("H1_the_contributor_adds_its_items_again_once_each", ok_a and ok_c and spawned == mark.spawned + 2,
             string.format("spawns %d: %s / %s", spawned - mark.spawned, why_a, why_c))

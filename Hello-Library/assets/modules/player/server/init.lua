@@ -8,6 +8,7 @@
 --     client_id = <the owning client>,
 --     spawn_point = <the Name of the player/spawner/point it claims; absent while no point is ready>,
 --     user_id = <who the player is, from its join ticket; "" until known>,
+--     name = <the display name its join ticket gives; absent without one>,
 --     smoothing = <how fast the server's Transform follows the owner's, per second>,
 -- }
 
@@ -62,7 +63,8 @@ end):in_set("player/init")
 
 -- Who the player is, from the join ticket its client presented: `core/player/attest` on the
 -- server's `core/net/connection` with the player's `client_id`. It lives on the connection, so a
--- player spawned again for the same connection is who it was.
+-- player spawned again for the same connection is who it was. A client sees only the replica, so the
+-- display name is copied too.
 app:add_systems(Update, {
     Query[{
         changed = { "core/player/attest" },
@@ -86,14 +88,19 @@ app:add_systems(Update, {
         changed[#changed + 1] = p:get("player").client_id
     end
     for _, client_id in ipairs(changed) do
-        local user_id = ""
+        local user_id, name = "", nil
         for _, c in ipairs(connections:iter()) do
             local a = c:get("core/player/attest")
-            if c:get("core/net/connection").client_id == client_id and a.state == "attested" then user_id = a.user end
+            if c:get("core/net/connection").client_id == client_id and a.state == "attested" then
+                user_id, name = a.user, a.name
+            end
         end
         for _, p in ipairs(players:iter_mut()) do
             local player = p:get_mut("player")
-            if player.client_id == client_id and player.user_id ~= user_id then player.user_id = user_id end
+            if player.client_id == client_id then
+                if player.user_id ~= user_id then player.user_id = user_id end
+                if player.name ~= name then player.name = name end
+            end
         end
     end
 end):in_set("player/identity")

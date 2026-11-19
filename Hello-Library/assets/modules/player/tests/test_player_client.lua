@@ -1,5 +1,5 @@
 -- --host (windowed: input and the sidebar act on a window)
--- C1 the local player starts in game input with its sidebar
+-- C1 the local player starts in game input with its sidebar, and the people panel
 -- C2 its own body turns dynamic and falls
 -- C3 a remote player is left as the server sent it
 -- C5 the server's kind written over its own body (a new owner's values, sent again) is put back dynamic
@@ -36,7 +36,7 @@ end
 local function named(world, name)
     for _, e in ipairs(world:query({
         with = { "zz/name" },
-        optional = { "player", "input", "input/mode", "sidebar", "sidebar/profiler", "RigidBody3d", "GravityScale3d" },
+        optional = { "player", "input", "input/mode", "sidebar", "sidebar/profiler", "sidebar/people", "RigidBody3d", "GravityScale3d" },
     })) do
         if e:get("zz/name").name == name then
             return e
@@ -70,6 +70,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("C1_the_local_player_starts_in_game_input_with_its_sidebar",
             me:get("input/mode").mode == "input/game" and me:has("sidebar") and me:has("sidebar/profiler")
                 and #world:query({ with = { "sidebar/container" } }) == 1, "")
+        suite.assert_test("C1_with_the_people_panel", me:has("sidebar/people") and not other:has("sidebar/people"), "")
         suite.assert_test("C2_its_own_body_turns_dynamic_and_falls",
             me:get("RigidBody3d") == "Dynamic" and y_of(world, me) < 2,
             string.format("y=%.2f", y_of(world, me)))
@@ -102,6 +103,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("C4_removing_player_takes_off_input_and_sidebar",
             me ~= nil and not me:has("input") and not me:has("sidebar") and not me:has("sidebar/profiler")
                 and not me:has("GravityScale3d"), "")
+        suite.assert_test("C4_and_the_people_panel", me ~= nil and not me:has("sidebar/people"), "")
         phase = "done"
         suite.finish("PlayerClientSuite")
     end

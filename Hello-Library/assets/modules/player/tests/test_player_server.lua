@@ -93,7 +93,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         connection(world, 9):patch({ ["core/net/connection"] = { observer = false } })
         p:patch({ ["core/net/sync/Transform"] = { translation = { x = 0, y = 5, z = 4 } } })
         -- Who the client is lands on its connection, as core/player/attest writes it.
-        commands:entity(connection(world, 7):id()):insert({ ["core/player/attest"] = { state = "attested", user = "u7" } })
+        commands:entity(connection(world, 7):id()):insert({ ["core/player/attest"] = { state = "attested", user = "u7", name = "Zz Seven" } })
         step("changed")
 
     elseif phase == "changed" and clock > 1.0 then
@@ -105,6 +105,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         suite.assert_test("S8_the_server_follows_the_owners_transform",
             near(pos.x, 0, 0.05) and near(pos.z, 4, 0.05), string.format("at %.2f %.2f", pos.x, pos.z))
         suite.assert_test("S9_identity_comes_from_the_join_ticket", p:get("player").user_id == "u7", "")
+        suite.assert_test("S9_with_its_display_name", p:get("player").name == "Zz Seven", tostring(p:get("player").name))
+        commands:entity(connection(world, 7):id()):insert({ ["core/player/attest"] = { state = "attested", user = "u7", name = "Zz Renamed" } })
+        step("renamed")
+
+    elseif phase == "renamed" and clock > 0.3 then
+        local p = players(world, 7)[1]
+        suite.assert_test("S9_the_name_follows_the_attestation", p:get("player").name == "Zz Renamed", tostring(p:get("player").name))
+        commands:entity(connection(world, 7):id()):insert({ ["core/player/attest"] = { state = "anonymous" } })
+        step("anonymous")
+
+    elseif phase == "anonymous" and clock > 0.3 then
+        local p = players(world, 7)[1]
+        suite.assert_test("S9_an_anonymous_join_has_no_name", p:get("player").name == nil and p:get("player").user_id == "",
+            tostring(p:get("player").name))
         connection(world, 9):patch({ ["core/net/connection"] = { observer = true } })
         commands:entity(connection(world, 7):id()):despawn()
         step("left")

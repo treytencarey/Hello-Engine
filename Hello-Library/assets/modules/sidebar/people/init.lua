@@ -27,9 +27,12 @@
 --     enabled = <false dims a button and its text>,
 -- }
 
--- Who a row names: the player's `user_id`, which the server copies from the client's join
--- ticket, or its client while it has none (an anonymous join).
+-- Who a row names: the player's `name`, else its `user_id`, both of which the server copies from
+-- the client's join ticket, or its client while it has neither (an anonymous join).
 local function name_of(player)
+    if player.name ~= nil and player.name ~= "" then
+        return tostring(player.name)
+    end
     if player.user_id ~= nil and player.user_id ~= "" then
         return tostring(player.user_id)
     end
