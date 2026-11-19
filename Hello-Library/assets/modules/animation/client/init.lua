@@ -3,16 +3,13 @@
 -- A character's model is a child (`animation/model`) holding its scene, which spawns its own
 -- AnimationPlayer. The clips play through `animation/clip` on that child: this half writes every
 -- clip the character has, each at its weight, those silent at 0, so the child's graph stays the
--- same while it fades from one to another. The clip to play comes from the character's motion on
--- this client, or from `animation/action` while that is there.
+-- same while it fades from one to another. What it plays is its `animation/playing`, worked out by
+-- the side that moves it (the shared half).
 --
 -- animation/model = { scene = <the scene's path> }: the child holding the model's scene.
--- animation/motion = { at = { x, y, z } }: where the character was last frame.
--- animation/playing = { state = <name>, speed = <playback speed> }: what it should play.
 
 local AssetServer = require("bevy::asset::AssetServer")
 local Time = require("bevy::time::Time")
-local Quat = require("bevy::math::Quat")
 
 -- How fast a clip's weight moves toward its target, per second: a fade takes 0.2 s.
 local FADE = 5
@@ -45,9 +42,6 @@ app:add_systems(First, {
         end
     end
 end):in_set("animation/model")
-
--- Faster than this across, in metres per second, a character with a `run` clip runs.
-local RUN_FROM = 4
 
 --- Wrapped into [0, 360).
 local function around(deg)
@@ -95,17 +89,13 @@ local function targets(a, state, angle)
     return out
 end
 
--- What it is doing, and the clips its model plays for it. The motion is its body's velocity while
--- that says it moves (physics moves a body in fixed steps, so most frames show no movement), else how
--- it moved since last frame: a frame holding two steps reads a kinematic copy as still, as its
--- Transform moved only before the first. Motion is followed every frame, so it polls. Each clip's
--- weight on the model moves toward its target, so a new state fades in as the old one fades out; a
--- model at its targets is not written.
+-- The clips its model plays for what it plays. Each clip's weight on the model moves toward its
+-- target, so a new state fades in as the old one fades out; a model at its targets is not written.
 app:add_systems(Update, {
     Res[Time],
     Query[{
-        with = { "animation", "Transform" },
-        optional = { "animation/motion", "animation/playing", "animation/action", "Velocity3d", "Children" },
+        with = { "animation", "animation/playing" },
+        optional = { "Children" },
     }],
     Query[{ with = { "animation/model" }, optional = { "animation/clip" } }],
     Commands,
@@ -115,46 +105,8 @@ app:add_systems(Update, {
     for _, e in ipairs(characters:iter()) do
         local a = e:get("animation")
         if a.model == nil then goto next_character end
-        local transform = e:get("Transform")
-        local at = transform.translation
-        local last = (e:get("animation/motion") or {}).at
-        local from = last or at
-        local vx, vy, vz = (at.x - from.x) / dt, (at.y - from.y) / dt, (at.z - from.z) / dt
-        local body = e:get("Velocity3d")
-        if body and body.linvel and (body.linvel.x ~= 0 or body.linvel.y ~= 0 or body.linvel.z ~= 0) then
-            vx, vy, vz = body.linvel.x, body.linvel.y, body.linvel.z
-        end
-        local horizontal = math.sqrt(vx * vx + vz * vz)
-        local state, speed = "idle", 1
-        local action = e:get("animation/action")
-        if action and action.state then
-            state, speed = action.state, action.speed or 1
-        elseif vy < -1 then
-            state = "fall"
-        elseif vy > 1 then
-            state = "jump"
-        elseif horizontal > 0.1 then
-            state, speed = "walk", horizontal / a.walk_speed
-            if a.clips.run ~= nil and horizontal > RUN_FROM then
-                state, speed = "run", horizontal / a.run_speed
-            end
-            speed = math.max(0.3, math.min(2, speed))
-        end
-        -- Where it moves, in degrees clockwise from where it faces, seen from above: its front is +Z.
-        local angle = nil
-        if horizontal > 0.1 then
-            local front = Quat.mul_vec3(transform.rotation, { x = 0, y = 0, z = 1 })
-            angle = math.deg(math.atan2(front.x, front.z) - math.atan2(vx, vz))
-        end
-
-        local playing = e:get("animation/playing") or {}
-        if last == nil or last.x ~= at.x or last.y ~= at.y or last.z ~= at.z then
-            commands:entity(e:id()):patch({ ["animation/motion"] = { at = { x = at.x, y = at.y, z = at.z } } })
-        end
-        if playing.state ~= state or playing.speed ~= speed then
-            commands:entity(e:id()):patch({ ["animation/playing"] = { state = state, speed = speed } })
-        end
-
+        local playing = e:get("animation/playing")
+        local state, speed, angle = playing.state, playing.speed or 1, playing.angle
         local model = models:iter_many(e:get("Children") or {})[1]
         if model and a.clips then
             local current = model:get("animation/clip") or {}
@@ -186,4 +138,4 @@ app:add_systems(Update, {
         end
         ::next_character::
     end
-end):in_set("animation/state")
+end):in_set("animation/fade"):after("animation/state")
