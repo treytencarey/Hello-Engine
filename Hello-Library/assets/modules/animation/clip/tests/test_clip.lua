@@ -19,10 +19,14 @@
 --   CL13 `"end"` starts a clip at its end, a backward one too, which then plays back from there
 --   CL14 a clip whose length is not known yet (its file still loading) goes to its end once it is
 --   CL15 a clip named by an animation of the node's scene's glTF plays it
+--   CL16 a clip named by an animation of a scene whose file does not exist asks for that file once:
+--        nothing tries it again
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
+local bevy = require("bevy::prelude")
 local AssetServer = require("bevy::asset::AssetServer")
+local UntypedAssetLoadFailedEvent = require("bevy::asset::UntypedAssetLoadFailedEvent")
 
 local suite = helpers.create_suite("AnimationClipSuite")
 local T = suite.assert_test
@@ -31,6 +35,8 @@ local MODEL = "modules/animation/tests/fixtures/Model"
 local WALK = MODEL .. "-Walk.glb#Animation0"
 local IDLE = MODEL .. "-Idle.glb#Animation0"
 local JUMP = MODEL .. "-Jump.glb#Animation0"
+-- a file that does not exist
+local MISSING = "modules/animation/clip/tests/fixtures/zz_missing.gltf"
 -- a file nothing else here loads, so its length is not known when it starts
 local LATE = MODEL .. "-Walk8.gltf#Animation3"
 
@@ -49,7 +55,23 @@ app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, 
         Transform = { translation = { x = 5, y = 0, z = 0 } },
         ["animation/clip"] = { clips = { zz_open = 1 }, speed = 0 },
     })
+    commands:spawn({
+        ["zz/missing"] = {},
+        SceneRoot = asset_server:load(MISSING .. "#Scene0"),
+        Transform = { translation = { x = -5, y = 0, z = 0 } },
+        ["animation/clip"] = { clips = { zz_gone = 1 } },
+    })
 end)
+
+-- Every time the missing file is asked for and fails: the scene's own ask, and the clip's.
+local missing_failures = 0
+app:add_systems(First, { bevy.MessageReader[UntypedAssetLoadFailedEvent] }, function(failed)
+    for _, failure in ipairs(failed:read()) do
+        -- named with its asset source, maybe twice
+        local path = tostring(failure.path):gsub("#.*$", ""):gsub("^.*://", "")
+        if path == MISSING then missing_failures = missing_failures + 1 end
+    end
+end):in_set("zz/animation_clip_missing")
 
 local function node(world)
     return world:query({ with = { "zz/clip" }, optional = { "animation/clip", "animation/clip/graph" } })[1]
@@ -222,6 +244,9 @@ app:add_systems(Update, {
         local a = g and np and g.nodes.zz_open and np.AnimationPlayer:animation(g.nodes.zz_open) or nil
         T("CL15_a_clip_named_by_its_scene_s_gltf_plays_it", a ~= nil and a.weight == 1 and a.speed == 0,
             g and ("node " .. tostring(g.nodes.zz_open) .. ", " .. (a and "playing" or "not playing")) or "no graph")
+        -- the suite has run for several seconds by now: a clip retrying each frame asks hundreds of times
+        T("CL16_a_scene_file_that_does_not_exist_is_asked_for_once", missing_failures >= 1 and missing_failures <= 2,
+            tostring(missing_failures) .. " failed loads")
         phase = "done"
         suite.finish("ANIMATION_CLIP")
     end
