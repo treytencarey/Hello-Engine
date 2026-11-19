@@ -15,6 +15,30 @@ local Sphere = require("bevy::math::primitives::Sphere")
 local Quat = require("bevy::math::Quat")
 local Vec3 = require("bevy::math::Vec3")
 
+--- The doors this client's own players came out of, by `Name`, and the worlds they came from
+--- (`scope/portal/from`). `players` names `scope/portal/from` and `core/net/owner`; `own` is this
+--- client's nets, with `core/net/owns`.
+local function ways_back(players, own)
+    local back = {}
+    for _, n in ipairs(own:iter()) do
+        for _, pl in ipairs(players:iter_many(n:get("core/net/owns"))) do
+            local from = pl:get("scope/portal/from")
+            if from.target ~= nil and from.door ~= nil then back[from.door] = from.target end
+        end
+    end
+    return back
+end
+
+--- The world a portal shows: its target, or, for a door without one, the world this client's
+--- player came from through it, as the crossing would take the player.
+local function shown_target(p, portal, back)
+    if portal.target ~= nil then return portal.target end
+    if portal.at ~= nil and p:has("Name") then return back[p:get("Name").name] end
+end
+
+-- A way back arriving, changing or going.
+local WAYS = Query[{ ["or"] = { added = { "scope/portal/from" }, changed = { "scope/portal/from" }, removed = { "scope/portal/from" } } }]
+
 -- One ask per placed portal, its child: it goes with the portal, and root loads each target once
 -- however many ask. `hosted` makes root ask once more after a `not-running` refusal. A portal
 -- seen being placed asks with `join_only = false`: root starts its world if nobody runs it and
@@ -27,7 +51,7 @@ app:add_systems(Update, {
     Query[{
         with = { "scope/portal", "scope/portal/view" },
         without = { "placement" },
-        optional = { "scope/portal/hosted", "Children" },
+        optional = { "scope/portal/hosted", "Children", "Name" },
     }],
     Query[{ with = { "SceneRoot" } }],
     Query[{
@@ -47,8 +71,11 @@ app:add_systems(Update, {
         removed = { "placement" },
         with = { "scope/portal" },
     }],
+    Query[{ with = { "player", "scope/portal/from", "core/net/owner" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(portals, scenes, asks, records, rows, just_placed, commands)
+}, function(portals, scenes, asks, records, rows, just_placed, players, own, commands)
+    local back = ways_back(players, own)
     local placed = {}
     for _, p in ipairs(just_placed:iter()) do
         placed[#placed + 1] = p:id()
@@ -64,7 +91,7 @@ app:add_systems(Update, {
         }
     end
     for _, p in ipairs(portals:iter()) do
-        local target = p:get("scope/portal").target
+        local target = shown_target(p, p:get("scope/portal"), back)
         local hosted = p:has("scope/portal/hosted") or nil
         local start = nil
         for _, id in ipairs(placed) do
@@ -117,10 +144,11 @@ end):in_set("scope/portal/view/client")
             with = { "core/world/status", "WorldShared" },
             without = { "WorldMirror" },
         }],
-    }, function(touched, moved, rows)
+        WAYS,
+    }, function(touched, moved, rows, ways)
         local me = rows:iter()[1]
         local watching = me ~= nil and me:get("core/world/status").observer == true
-        return not watching and not (touched:is_empty() and moved:is_empty())
+        return not watching and not (touched:is_empty() and moved:is_empty() and ways:is_empty())
     end)
 
 -- Only root's answer counts, a mirror from VM 0: this world's own entities, or another world's
@@ -148,8 +176,11 @@ app:add_systems(Update, {
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
+    Query[{ with = { "player", "scope/portal/from", "core/net/owner" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(portals, answers, meshes, rows, commands)
+}, function(portals, answers, meshes, rows, players, own, commands)
+    local back = ways_back(players, own)
     local said = {}
     for _, a in ipairs(answers:iter()) do
         if a:get("WorldMirror").world_id == 0 then
@@ -161,7 +192,7 @@ app:add_systems(Update, {
     local scope = me and me:get("core/world/status").scope_key
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
-        local target = portal.target
+        local target = shown_target(p, portal, back)
         local answer = target ~= nil and target ~= scope and said[target] or nil
         local surfaces = { p }
         if p:get("scope/portal/view").mode == "none" and not p:has("Mesh3d") then
@@ -179,7 +210,7 @@ app:add_systems(Update, {
             }
         end
         if target == nil then
-            -- A door leading nowhere shows nothing, and is not locked.
+            -- A door leading nowhere, for this client, shows nothing, and is not locked.
             for _, s in ipairs(surfaces) do
                 if s:has("core/compositor/stencil") then
                     commands:entity(s:id()):remove("core/compositor/stencil")
@@ -241,10 +272,11 @@ end):in_set("scope/portal/view/client")
             with = { "scope/portal", "scope/portal/view" },
             without = { "placement" },
         }],
-    }, function(touched, moved, rows, doors)
+        WAYS,
+    }, function(touched, moved, rows, doors, ways)
         local me = rows:iter()[1]
         local watching = me ~= nil and me:get("core/world/status").observer == true
-        return not watching and not (touched:is_empty() and moved:is_empty() and doors:is_empty())
+        return not watching and not (touched:is_empty() and moved:is_empty() and doors:is_empty() and ways:is_empty())
     end)
 
 -- The `"3d"` look, in PostUpdate so it sees this frame's lock: red and glowing while being placed,

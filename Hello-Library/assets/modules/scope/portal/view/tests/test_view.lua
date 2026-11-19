@@ -30,6 +30,11 @@
 --   V20 a door without `target` asks nothing
 --   V21 ...given a target, it asks and shows it
 --   V22 ...and its target taken away again, its ask and its stencils go
+--   V23 a door without `target` that this client's player came out of shows the world it came from,
+--       from the door's own place there, as the crossing would take it; this after the door's scene
+--       was written again, its old copy having had a target
+--   V24 another player's way back shows nothing here
+--   V25 the player's way back gone, the door shows nothing and its ask goes
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -47,9 +52,17 @@ local LATER = "github:zzview/later:main"
 local MOVED = "github:zzview/moved:main"
 local MAPPED = "github:zzview/mapped:main"
 local VIEW_SOURCE = "assets/modules/scope/portal/view/client/init.lua"
+local BACK = "github:zzview/back:main"
+local OLD = "github:zzview/old:main"
+local THEIRS = "github:zzview/theirs:main"
+local Net = require("modules/core/net/shared/net.lua")
 
-app:add_systems(Startup, { Commands }, function(commands)
-    commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net/sync"] = false })
+local own_net
+app:add_systems(Startup, { World, Commands }, function(world, commands)
+    -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
+    Net.declare_ownership(world, commands)
+    own_net = commands:spawn({ ["core/world/net"] = { mode = "client" }, ["core/net"] = { mode = "client", name = "zzview" },
+        ["core/net/sync"] = false }):id()
     commands:spawn({
         ["core/world/status"] = { scope_key = HERE, mode = "client", status = "ready", observer = false },
         WorldShared = {},
@@ -108,7 +121,8 @@ local function mapped_at(world, kids, x, y, z)
 end
 
 local phase, clock = "spawn", 0
-local door_kids, mapped_kids, blank_kids = {}, {}, {}
+local door_kids, mapped_kids, blank_kids, back_kids = {}, {}, {}, {}
+local back_map
 local kept_ask
 
 app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, commands, assets)
@@ -289,6 +303,50 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
         T("V13_a_reload_keeps_each_ask_once",
             kept_ask ~= nil and #later == 1 and later[1].entity:id() == kept_ask,
             string.format("asks=%d same=%s", #later, tostring(later[1] and later[1].entity:id() == kept_ask)))
+        -- this client's player, out of the door `zz_back`; another player, out of `zz_back2`
+        commands:spawn({ player = { client_id = 1 }, ["core/net/owner"] = own_net, ["core/net/sync"] = false,
+            ["scope/portal/from"] = { target = BACK, door = "zz_back" }, ["zz/view/me"] = {} })
+        commands:spawn({ player = { client_id = 2 }, ["core/net/sync"] = false,
+            ["scope/portal/from"] = { target = THEIRS, door = "zz_back2" } })
+        for _, ref in ipairs({ BACK, OLD, THEIRS }) do
+            commands:spawn({ ["core/world/observe/answer"] = { ref = ref, state = "allowed" },
+                WorldMirror = { world_id = 0 }, ["core/net/sync"] = false })
+        end
+        back_map = commands:spawn({ ["zz/view/map2"] = {}, Transform = {}, ["core/net/sync"] = false }):id()
+        -- the map's door as its old copy had it, with a target
+        local old = commands:spawn({ ["scope/portal"] = { target = OLD, at = "zz_arrival" }, ["scope/portal/view"] = { mode = "none" },
+            Name = "zz_back", Transform = { translation = { x = -4, y = 0, z = 3 } }, ChildOf = back_map,
+            ["core/net/sync"] = false, ["zz/view/p"] = { name = "back_old" } }):id()
+        commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = old })
+        local other = commands:spawn({ ["scope/portal"] = { at = "zz_arrival" }, ["scope/portal/view"] = { mode = "none" },
+            Name = "zz_back2", Transform = { translation = { x = 6, y = 0, z = 3 } }, ChildOf = back_map,
+            ["core/net/sync"] = false, ["zz/view/p"] = { name = "back2" } }):id()
+        back_kids[2] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = other }):id()
+        step("way_old")
+
+    elseif phase == "way_old" and clock > 0.4 then
+        -- the scene written again: the old copy goes, and the fresh one's door has no target
+        commands:entity(portal(world, "back_old"):id()):despawn()
+        local fresh = commands:spawn({ ["scope/portal"] = { at = "zz_arrival" }, ["scope/portal/view"] = { mode = "none" },
+            Name = "zz_back", Transform = { translation = { x = -4, y = 0, z = 3 } }, ChildOf = back_map,
+            ["core/net/sync"] = false, ["zz/view/p"] = { name = "back" } }):id()
+        back_kids[1] = commands:spawn({ Mesh3d = {}, ["zz/view/prim"] = {}, ChildOf = fresh }):id()
+        step("way_fresh")
+
+    elseif phase == "way_fresh" and clock > 0.5 then
+        local asks = asks_of(world, portal(world, "back"))
+        local s = stencil_on(world, back_kids[1])
+        T("V23_a_way_back_shows_the_world_it_came_from_from_the_door_s_place", #asks == 1 and asks[1].ask.ref == BACK
+            and s ~= nil and s.world == BACK and s.at == "zz_arrival" and s.view == "zz_back",
+            string.format("asks=%d world=%s at=%s view=%s", #asks, tostring(s and s.world), tostring(s and s.at), tostring(s and s.view)))
+        T("V24_another_player_s_way_back_shows_nothing_here", #asks_of(world, portal(world, "back2")) == 0
+            and stencil_on(world, back_kids[2]) == nil, "")
+        commands:entity(world:query({ with = { "zz/view/me" } })[1]:id()):remove("scope/portal/from")
+        step("way_gone")
+
+    elseif phase == "way_gone" and clock > 0.4 then
+        T("V25_the_way_back_gone_the_door_shows_nothing", #asks_of(world, portal(world, "back")) == 0
+            and stencil_on(world, back_kids[1]) == nil, "asks=" .. #asks_of(world, portal(world, "back")))
         phase = "done"
         suite.finish("ScopePortalViewSuite")
     end
