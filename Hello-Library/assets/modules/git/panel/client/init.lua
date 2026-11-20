@@ -11,6 +11,8 @@
 --     open = <whether the panel is open>,
 --     repo = <the chosen repository, "<owner>/<name>">,
 --     branch = <the chosen branch>,
+--     folder = <the folder the player typed, the world's place in the repository; nil for its top>,
+--     typing = <true while the folder field is open>,
 -- }
 --
 -- git/panel/button = {}
@@ -25,14 +27,25 @@ local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local Scroll = require("bevy::picking::prelude::Scroll")
 local Time = require("bevy::time::Time")
+local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
+local MessageReader = require("bevy::prelude").MessageReader
 
 -- How long an armed despawn waits for its second click, and how long a refusal stays on its row.
 local ARM_SECONDS = 5
 local REFUSAL_SECONDS = 10
 
--- Core's canonical form lowercases the owner and the name, and keeps the branch as it is.
-local function scope_of(repo, branch)
-    return "github:" .. repo:lower() .. ":" .. branch
+-- Core's canonical form lowercases the owner and the name, and keeps the folder and the branch as
+-- they are. A world in a folder of its repository is named by that folder: without it, the target
+-- is the repository's top, which may hold no world.
+local function scope_of(repo, branch, folder)
+    local sub = (tostring(folder or ""):gsub("^/+", ""):gsub("/+$", ""))
+    return "github:" .. repo:lower() .. (sub ~= "" and ("/" .. sub) or "") .. ":" .. branch
+end
+
+-- The folder row's text; while the field is open, the text being typed and a cursor.
+local function folder_text(folder, typing, draft)
+    if typing then return "Folder: " .. (draft or folder or "") .. "_" end
+    return "Folder: " .. ((folder ~= nil and folder ~= "") and folder or "(root)")
 end
 
 local function split(repo)
@@ -590,7 +603,8 @@ app:add_systems(Update, {
                     commands:entity(view:id()):despawn()
                 end
                 if carrier:get("git/panel/state").open then
-                    carrier:get_mut("git/panel/state").open = false
+                    local s = carrier:get_mut("git/panel/state")
+                    s.open, s.typing = false, nil
                 end
             end
         end
@@ -680,10 +694,66 @@ app:add_systems(Update, {
             commands:entity(view:id()):try_despawn()
         end
         for _, row in ipairs(states:iter_mut()) do
-            row:get_mut("git/panel/state").open = false
+            local s = row:get_mut("git/panel/state")
+            s.open, s.typing = false, nil
         end
     end
 end):in_set("git/panel")
+
+-- The folder field: what the player types while it is open. The text being typed lives on the
+-- field's own text, which a rebuild reads back, so the kept folder changes only on Enter and Escape
+-- leaves it as it was. The panel is open only in the open sidebar, which holds UI input, so game
+-- keys don't fire while it is typed into. Runs only while the field is open.
+app:add_systems(Update, {
+    MessageReader[KeyboardInput],
+    Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
+    Query[{ with = { "git/panel/view" } }],
+    Query[{ with = { "git/panel/row" } }],
+    Query[{ with = { Mut["Text"] } }],
+}, function(keys, carriers, views, rows, texts)
+    local events = keys:read()
+    local carrier = carriers:iter_mut()[1]
+    local view = views:iter()[1]
+    local field = nil
+    for _, row in ipairs(view and rows:iter_many(rows:iter_descendants(view:id())) or {}) do
+        local t = texts:iter_many_mut(texts:iter_descendants_depth_first(row:id()))[1]
+        if t ~= nil and t:get("Text"):match("^Folder: ") then field = t end
+    end
+    if carrier ~= nil then
+        local s = carrier:get("git/panel/state")
+        local draft = field and field:get("Text"):match("^Folder: (.*)_$") or s.folder or ""
+        local typing = s.typing == true
+        for _, ev in ipairs(events) do
+            if typing and ev.state == "Pressed" then
+                local key = ev.logical_key
+                -- A character key reads back as a one-item list (measured), its `SmolStr` inside.
+                local typed = type(key) == "table" and key.Character ~= nil and (key.Character[1] or key.Character) or nil
+                if type(typed) == "string" then
+                    if #draft < 100 and typed:match("^[%w%-%._/]$") then draft = draft .. typed end
+                elseif key == "Backspace" then
+                    draft = draft:sub(1, -2)
+                elseif key == "Escape" then
+                    typing = false
+                    carrier:get_mut("git/panel/state").typing = nil
+                elseif key == "Enter" then
+                    typing = false
+                    local kept = carrier:get_mut("git/panel/state")
+                    kept.folder, kept.typing = draft ~= "" and draft or nil, nil
+                end
+            end
+        end
+        if field ~= nil and typing then
+            field:get_mut("Text"):set_if_neq(folder_text(nil, true, draft))
+        end
+    end
+end):in_set("git/panel"):run_if({
+    Query[{ with = { "git/panel/state" } }],
+}, function(states)
+    for _, row in ipairs(states:iter()) do
+        if row:get("git/panel/state").typing then return true end
+    end
+    return false
+end)
 
 -- The rows are rebuilt only when what they say changes, read from the texts they hold: a rebuild
 -- takes the buttons the player may be pointing at.
@@ -768,7 +838,7 @@ app:add_systems(Update, {
             end
         end
 
-        local shown, open = {}, {}
+        local shown, open, draft = {}, {}, nil
         local held = rows:iter_many(parts)
         for _, row in ipairs(held) do
             local list = {}
@@ -777,7 +847,9 @@ app:add_systems(Update, {
                 shown[#shown + 1] = line:get("Text")
             end
             if list[1] ~= nil then open[list[1]] = list[3] == "▲" end
+            if state.typing and list[1] ~= nil then draft = draft or list[1]:match("^Folder: (.*)_$") end
         end
+        local folder_line = folder_text(state.folder, state.typing, draft)
 
         local repo_options = {}
         for _, r in ipairs(repos) do
@@ -789,7 +861,7 @@ app:add_systems(Update, {
             branch_options[#branch_options + 1] = { text = b, value = b, selected = b == state.branch }
         end
 
-        local key = owner ~= nil and state.branch ~= nil and scope_of(state.repo, state.branch) or nil
+        local key = owner ~= nil and state.branch ~= nil and scope_of(state.repo, state.branch, state.folder) or nil
         local current = key ~= nil and key == scope
         local flipping, failed = false, nil
         for _, f in ipairs(flips:iter()) do
@@ -942,6 +1014,7 @@ app:add_systems(Update, {
                 wanted[#wanted + 1] = open[p.label] and "▲" or "▼"
                 for _, o in ipairs(p.options) do wanted[#wanted + 1] = o.text end
             end
+            wanted[#wanted + 1] = folder_line
             if key ~= nil then
                 wanted[#wanted + 1] = switch
                 if current then wanted[#wanted + 1] = pulling and "⏳ Pulling…" or "⭳ Pull" end
@@ -1034,6 +1107,7 @@ app:add_systems(Update, {
                                 local s = o:get_mut("git/panel/state")
                                 s.repo = value
                                 s.branch = nil
+                                s.folder = nil
                             end
                         end
                         close(nodes, arrows, pickers[1])
@@ -1053,6 +1127,49 @@ app:add_systems(Update, {
                             end
                         end
                         close(nodes, arrows, pickers[2])
+                    end)
+                end
+
+                -- The folder: a click opens its field, where the folder is typed (the keys' system).
+                local folder_row = commands:spawn({
+                    ["git/panel/row"] = {},
+                    Node = { width = { Percent = 100 }, flex_direction = "Column", flex_shrink = 0, margin = { top = { Px = 8 } } },
+                    ChildOf = scroll:id(),
+                }):id()
+                local folder_field = commands:spawn({
+                    Button = {},
+                    Node = {
+                        width = { Percent = 100 },
+                        height = { Px = 30 },
+                        flex_direction = "Row",
+                        align_items = "Center",
+                        padding = { left = { Px = 8 }, right = { Px = 8 } },
+                        border = { left = { Px = 1 }, right = { Px = 1 }, top = { Px = 1 }, bottom = { Px = 1 } },
+                    },
+                    BorderRadius = {
+                        top_left = { Px = 4 }, top_right = { Px = 4 },
+                        bottom_left = { Px = 4 }, bottom_right = { Px = 4 },
+                    },
+                    ["ui/style"] = state.typing and { background = "bg", border = "accent" }
+                        or { background = "row_bg", hover = "row_hover", border = "border" },
+                    ChildOf = folder_row,
+                })
+                commands:spawn({
+                    Text = { text = folder_line },
+                    TextFont = { font_size = 12 },
+                    ["ui/style"] = { text = (state.typing and "accent") or (state.folder ~= nil and "text" or "text_dim") },
+                    ChildOf = folder_field:id(),
+                })
+                if not state.typing then
+                    folder_field:observe(On[Pointer[Click]], {
+                        Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
+                        Query[{ with = { "core/net", "core/net/owns" } }],
+                    }, function(_, owners, own)
+                        for _, n in ipairs(own:iter()) do
+                            for _, o in ipairs(owners:iter_many_mut(n:get("core/net/owns"))) do
+                                o:get_mut("git/panel/state").typing = true
+                            end
+                        end
                     end)
                 end
 
@@ -1089,7 +1206,7 @@ app:add_systems(Update, {
                                     local o_owner, o_name = split(s.repo)
                                     if o_owner ~= nil and s.branch ~= nil then
                                         click_commands:spawn({
-                                            ["core/world/flip"] = { scope = scope_of(s.repo, s.branch) },
+                                            ["core/world/flip"] = { scope = scope_of(s.repo, s.branch, s.folder) },
                                             WorldShared = {},
                                             ["core/net/sync"] = false,
                                             ["core/script/owner"] = false,
@@ -1134,7 +1251,7 @@ app:add_systems(Update, {
                                     local standing = o:has("git/panel/response") and o:get("git/panel/response").op ~= nil
                                     if s.repo ~= nil and s.branch ~= nil and not standing then
                                         click_commands:entity(o:id()):insert({
-                                            ["git/panel/request"] = { op = "portal", target_sk = scope_of(s.repo, s.branch) },
+                                            ["git/panel/request"] = { op = "portal", target_sk = scope_of(s.repo, s.branch, s.folder) },
                                         })
                                     end
                                 end

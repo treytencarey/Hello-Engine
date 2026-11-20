@@ -27,7 +27,12 @@
 -- O2  the server's answer takes the ask back, so the next one is a change
 -- O3  while the server's answer stands, a click asks nothing; once it is taken back, a click asks
 -- L1  a portal here to the target that is locked says why, and stops saying it once unlocked
+-- F1  "Folder: (root)" opens its field on a click; typing writes the folder, Backspace takes a
+--     character, and Enter keeps it
+-- F2  the folder lands in Switch's flip ask and the Portal ask's target, slashes trimmed
+-- F3  Escape closes the field and keeps the folder it had
 -- H1  a reload keeps the panel open, its rows, its state and its asks, none doubled
+-- F4  choosing a repository clears the folder
 -- X1  the carrier taken off closes its asks, and its button and panel go
 -- R2  with no base named, the first repository listed is chosen
 -- I2  signing out asks again for the repositories root answered signed in
@@ -39,6 +44,8 @@ local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 local Scroll = require("bevy::picking::prelude::Scroll")
 local MessageReader = require("bevy::prelude").MessageReader
+local MessageWriter = require("bevy::prelude").MessageWriter
+local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
 
 local suite = helpers.create_suite("GitPanelSuite")
 local T = suite.assert_test
@@ -93,6 +100,16 @@ app:add_systems(Update, { MessageReader["core/hot_reload/file_changed"] }, funct
         if tostring(event.path):find("git/panel/client/init.lua", 1, true) then reloads = reloads + 1 end
     end
 end):in_set("zz/panel/reload_watch")
+
+local keys = {}
+app:add_systems(Update, { MessageWriter[KeyboardInput] }, function(write)
+    for _, k in ipairs(keys) do write:write(k) end
+    keys = {}
+end):in_set("zz/panel/keys")
+local function type_key(char, logical)
+    keys[#keys + 1] = { key_code = "KeyA", logical_key = logical or { Character = char }, state = "Pressed",
+        text = char, ["repeat"] = false, window = camera }
+end
 
 local function click(commands, entity)
     commands:trigger(Pointer[Click], {
@@ -491,6 +508,52 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "unlocked" and not has_text(panel_texts(world), "⚠ portal refused: zz-locked") and clock > 0.3 then
         T("L1_and_stops_once_unlocked", true)
         commands:entity(mark.portal):despawn()
+        step("folder")
+
+    elseif phase == "folder" and button_labelled(world, "Folder: (root)") ~= nil and clock > 0.3 then
+        click(commands, button_labelled(world, "Folder: (root)"))
+        step("folder_open")
+
+    elseif phase == "folder_open" and state_of(world).typing and has_text(panel_texts(world), "Folder: _") then
+        for _, ch in ipairs({ "/", "H", "e", "l", "l", "o", "x" }) do type_key(ch) end
+        type_key(nil, "Backspace")
+        type_key("/")
+        step("folder_typed")
+
+    elseif phase == "folder_typed" and (has_text(panel_texts(world), "Folder: /Hello/_") or clock > 5) then
+        T("F1_typing_writes_the_folder_and_backspace_takes_a_character", has_text(panel_texts(world), "Folder: /Hello/_")
+            and state_of(world).folder == nil, table.concat(panel_texts(world), "|"))
+        type_key(nil, "Enter")
+        step("folder_kept")
+
+    elseif phase == "folder_kept" and not state_of(world).typing and has_text(panel_texts(world), "Folder: /Hello/")
+        and clock > 0.3 then
+        T("F1_enter_keeps_the_folder", state_of(world).folder == "/Hello/", tostring(state_of(world).folder))
+        mark.flips = #flips(world)
+        click(commands, button_labelled(world, "↗ Switch") or button_labelled(world, "⚠ zz-refused — retry"))
+        click(commands, button_labelled(world, "🌀 Portal"))
+        step("folder_asked")
+
+    elseif phase == "folder_asked" and #flips(world) > mark.flips and request_of(world) ~= nil and clock > 0.5 then
+        local scope = nil
+        for _, f in ipairs(flips(world)) do
+            if f:id() ~= mark.flip then scope, mark.folder_flip = f:get("core/world/flip").scope, f:id() end
+        end
+        T("F2_the_folder_lands_in_switch_s_flip_ask", scope == "github:zzowner/other-repo/Hello:Dev", tostring(scope))
+        T("F2_and_in_the_portal_ask_s_target", request_of(world).target_sk == "github:zzowner/other-repo/Hello:Dev",
+            tostring(request_of(world).target_sk))
+        -- Root would take the flip ask; the suite stands in for root.
+        commands:entity(mark.folder_flip):despawn()
+        click(commands, button_labelled(world, "Folder: /Hello/"))
+        step("folder_again")
+
+    elseif phase == "folder_again" and state_of(world).typing and has_text(panel_texts(world), "Folder: /Hello/_") then
+        type_key("x")
+        type_key(nil, "Escape")
+        step("folder_escaped")
+
+    elseif phase == "folder_escaped" and not state_of(world).typing and has_text(panel_texts(world), "Folder: /Hello/") then
+        T("F3_escape_keeps_the_folder_it_had", state_of(world).folder == "/Hello/", tostring(state_of(world).folder))
         step("settle")
 
     elseif phase == "settle" and clock > 0.5 then
@@ -518,7 +581,17 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("H1_its_asks_stay_none_doubled", #r == 1 and #b2 == 1 and #c == 1 and r[1].id == mark.asks.repos
             and b2[1].id == mark.asks.branches and c[1].id == mark.asks.commits, #r .. " " .. #b2 .. " " .. #c)
         T("H1_its_state_stays", state_of(world).repo == "ZzOwner/Other-Repo" and state_of(world).branch == "Dev"
-            and state_of(world).open == true)
+            and state_of(world).open == true and state_of(world).folder == "/Hello/")
+        click(commands, picker(world, "REPOSITORY").trigger)
+        step("folder_repo")
+
+    elseif phase == "folder_repo" and picker(world, "REPOSITORY").shown then
+        click(commands, option(world, "REPOSITORY", "third"))
+        step("folder_cleared")
+
+    elseif phase == "folder_cleared" and state_of(world).repo == "zzpanel/third" and clock > 0.3 then
+        T("F4_choosing_a_repository_clears_the_folder", state_of(world).folder == nil
+            and has_text(panel_texts(world), "Folder: (root)"), tostring(state_of(world).folder))
         commands:entity(player):remove("git/panel")
         step("removed")
 
