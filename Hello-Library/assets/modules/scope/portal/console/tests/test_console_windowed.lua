@@ -18,6 +18,7 @@
 --   WS6 the wheel on the screen scrolls the row under the pointer
 --   WS7 and while on the screen the wheel is not the camera's: the third-person zoom gets none of it,
 --       and gets it again once the aim is off the screen
+--   WS10 a branch list longer than the screen scrolls under the wheel
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -119,11 +120,12 @@ app:add_systems(First, { World }, function(world)
     if c ~= nil then world:write_message("input/synthetic_mouse_button", c) end
 end):in_set("zz/console_windowed/clicks")
 
-local wheel = 0
+-- notches to turn, and which way: up (+1) or down (-1)
+local wheel, wheel_y = 0, 1
 app:add_systems(First, { World }, function(world)
     if wheel > 0 then
         wheel = wheel - 1
-        world:write_message("input/synthetic_mouse_wheel", { x = 0, y = 1 })
+        world:write_message("input/synthetic_mouse_wheel", { x = 0, y = wheel_y })
     end
 end):in_set("zz/console_windowed/wheel")
 
@@ -268,6 +270,32 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
 
     elseif phase == "away_wheel" and clock > 1 then
         T("WS7_and_off_the_screen_the_zoom_has_the_wheel_again", zoomed)
+        for _, a in ipairs(asks(world)) do commands:entity(a:id()):despawn() end
+        aim(commands, ROW_PIXEL, 2)
+        step("long_aim")
+
+    elseif phase == "long_aim" and clock > 0.5 then
+        press()
+        step("long_asked")
+
+    elseif phase == "long_asked" and (#asks(world) > 0 or clock > 3) then
+        -- root's answer: more branches than the screen has room for
+        local branches = {}
+        for i = 1, 40 do branches[#branches + 1] = string.format("zz-branch-%02d", i) end
+        local a = asks(world)[1]
+        if a ~= nil then commands:entity(a:id()):insert({ ["vault/github/branches/reply"] = { branches = branches } }) end
+        step("long_listed")
+
+    elseif phase == "long_listed" and (row(world, "zz-branch-40") ~= nil or clock > 3) and clock > 1 then
+        wheel, wheel_y = 5, -1
+        step("long_wheel")
+
+    elseif phase == "long_wheel" and clock > 1 then
+        local moved = false
+        for _, e in ipairs(world:query({ with = { "ScrollPosition" }, iter_many = world:descendants(view(world):id()) })) do
+            moved = moved or e:get("ScrollPosition").y > 0
+        end
+        T("WS10_a_branch_list_longer_than_the_screen_scrolls_under_the_wheel", moved)
         phase = "done"
         suite.finish("PORTAL_CONSOLE_WINDOWED")
     end

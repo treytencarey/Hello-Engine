@@ -17,6 +17,7 @@
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
+local Scroll = require("bevy::picking::prelude::Scroll")
 local KeyboardInput = require("bevy::input::keyboard::KeyboardInput")
 local bevy = require("bevy::prelude")
 local Door = require("modules/scope/portal/console/shared/door.lua")
@@ -278,7 +279,7 @@ app:add_systems(Update, {
                     ChildOf = v:id(),
                 })
             end
-            local function row(text, data)
+            local function row(text, data, parent)
                 local r = commands:spawn({
                     ["scope/portal/console/row"] = data,
                     Button = {},
@@ -286,7 +287,7 @@ app:add_systems(Update, {
                     ["ui/style"] = { background = "row_bg", hover = "row_hover", text = "text" },
                     Text = { text = text },
                     TextFont = { font_size = 28 },
-                    ChildOf = v:id(),
+                    ChildOf = parent or v:id(),
                 })
                 r:observe(On[Pointer[Click]], {
                     Query[{ with = { "scope/portal/console/row" } }],
@@ -337,8 +338,34 @@ app:add_systems(Update, {
             if not state.listed then
                 row("List branches", {})
             else
+                -- The branches in a column of their own, which the wheel scrolls when they do not fit, as
+                -- the sidebar's lists do; what follows them stays in view below.
+                local list = commands:spawn({
+                    Node = {
+                        flex_direction = "Column",
+                        row_gap = { Px = 8 },
+                        flex_grow = 1,
+                        flex_shrink = 1,
+                        min_height = { Px = 0 },
+                        overflow = { x = "Visible", y = "Scroll" },
+                    },
+                    ScrollPosition = { x = 0, y = 0 },
+                    ChildOf = v:id(),
+                })
+                -- `ScrollPosition` is written whole: a field set on its working copy is dropped.
+                list:observe(On[Pointer[Scroll]], {
+                    Query[{ with = { Mut["ScrollPosition"] }, optional = { "ComputedNode" } }],
+                }, function(event, lists)
+                    event:propagate(false)
+                    for _, l in ipairs(lists:iter_many_mut({ event.entity })) do
+                        local node = l:get("ComputedNode")
+                        local room = node and math.max(0, node.content_size.y - node.size.y) or 0
+                        local at = l:get("ScrollPosition").y
+                        l:get_mut("ScrollPosition"):set_if_neq({ x = 0, y = math.max(0, math.min(room, at - event.event.y * 40)) })
+                    end
+                end)
                 for _, b in ipairs(state.branches or {}) do
-                    row((b == branch and "● " or "") .. tostring(b), { target = root .. ":" .. tostring(b) })
+                    row((b == branch and "● " or "") .. tostring(b), { target = root .. ":" .. tostring(b) }, list:id())
                 end
                 if state.typing == nil then
                     row("New branch", { new = true })

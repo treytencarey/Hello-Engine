@@ -114,11 +114,11 @@ local function view(world)
     return roots(world)[1]
 end
 
--- The screen's texts in order, and its rows by label.
+-- The screen's texts in order, and its rows by label: the branches sit in a list of their own.
 local function shown(world)
     local v = view(world)
     local texts, rows = {}, {}
-    for _, child in ipairs(v and v:get("Children") or {}) do
+    for _, child in ipairs(v and world:descendants(v:id()) or {}) do
         local e = world:query({ iter_many = { child }, with = { "Text" }, optional = { "scope/portal/console/row" } })[1]
         if e ~= nil then
             texts[#texts + 1] = e:get("Text")
