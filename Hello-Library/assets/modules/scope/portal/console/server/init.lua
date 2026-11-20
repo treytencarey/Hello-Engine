@@ -78,8 +78,11 @@ app:add_systems(Update, {
     Query[{ with = { Mut["animation/clip"] } }],
     Commands,
 }, function(asking, doors, consoles, records, rows, rigs, commands)
+    -- This world's place in its repository: its `scope_key` without the branch, which keeps the
+    -- subpath that `scope_root` drops. The last colon starts the branch.
     local me = rows:iter()[1]
-    local root = me and me:get("core/world/status").scope_root
+    local key = me and me:get("core/world/status").scope_key
+    local root = type(key) == "string" and key:match("^(.+):[^:]+$") or nil
     for _, e in ipairs(asking:iter()) do
         local ask = e:get("scope/portal/console/request")
         local name = type(ask) == "table" and ask.door or nil

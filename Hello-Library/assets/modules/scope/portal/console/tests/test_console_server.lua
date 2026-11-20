@@ -14,6 +14,8 @@
 --      starts the same included
 --   S6 pointed back at its authored target, the door keeps its authored `at`, and its record goes
 --   S7 the door's scene written again spawns it with its authored target, and the record sets it again
+--   S8 in a world in a folder of its repository, a branch of that folder's world is taken, and a
+--      branch of the repository's top is refused not-this-repository
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -26,6 +28,7 @@ local HERE = ROOT .. ":main"
 local AUTHORED = ROOT .. ":prologue"
 local FEATURE = ROOT .. ":feature"
 local OTHER = ROOT .. ":other"
+local FOLDER = ROOT .. "/Hello"
 
 local function door_bundle()
     return {
@@ -172,6 +175,29 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "s7" and clock > 0.5 then
         T("S7_a_door_spawned_again_takes_its_record", #world:query({ with = { "zz/door" } }) == 1
             and show(portal(world, "zz_door")) == FEATURE .. " @ zz_door", show(portal(world, "zz_door")))
+        -- This world becomes one in a folder of its repository, as the engine's repository's is.
+        local row = world:query({ with = { "core/world/status" } })[1]
+        commands:entity(row:id()):insert({
+            ["core/world/status"] = { scope_key = FOLDER .. ":main", scope_root = ROOT, mode = "server", status = "ready" },
+        })
+        commands:entity(player):insert({ ["scope/portal/console/response"] = {} })
+        step("s8 moved")
+
+    elseif phase == "s8 moved" and clock > 0.2 then
+        ask(commands, "zz_door", FOLDER .. ":feature")
+        step("s8a")
+
+    elseif phase == "s8a" and (said(world).status ~= nil or clock > 5) then
+        T("S8_a_branch_of_this_folder_s_world_is_taken", said(world).status == "done"
+            and show(portal(world, "zz_door")) == FOLDER .. ":feature @ zz_door",
+            tostring(said(world).reason) .. " " .. show(portal(world, "zz_door")))
+        commands:entity(player):insert({ ["scope/portal/console/response"] = {} })
+        ask(commands, "zz_door", OTHER)
+        step("s8b")
+
+    elseif phase == "s8b" and (said(world).status ~= nil or clock > 5) then
+        T("S8_a_branch_of_the_repository_s_top_is_refused", said(world).reason == "not-this-repository"
+            and show(portal(world, "zz_door")) == FOLDER .. ":feature @ zz_door", tostring(said(world).reason))
         phase = "done"
         suite.finish("PORTAL_CONSOLE_SERVER")
     end

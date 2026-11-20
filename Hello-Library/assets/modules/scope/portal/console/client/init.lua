@@ -32,13 +32,17 @@ local function screen_size(mesh)
     return math.floor(width / 0.0008), math.floor(height / 0.0008)
 end
 
--- This world's repository, from its own row's `scope_root` ("github:<owner>/<name>").
+-- This world's place in its repository, its own row's `scope_key` without the branch (the last
+-- colon starts it): `scope_root` drops the subpath of a world in a folder of its repository
+-- ("github:<owner>/<name>/Hello"). The repository's owner and name are `scope_root`'s.
 local function repository(rows)
     local me = rows:iter()[1]
-    local root = me and me:get("core/world/status").scope_root
+    local status = me and me:get("core/world/status")
+    local key, root = status and status.scope_key, status and status.scope_root
+    local here = type(key) == "string" and key:match("^(.+):[^:]+$") or nil
     local owner, name = nil, nil
     if type(root) == "string" then owner, name = root:match("^github:([^/]+)/(.+)$") end
-    return root, owner, name
+    return here, owner, name
 end
 
 -- The one place a console asks the server to re-point its door, on this client's own player.
