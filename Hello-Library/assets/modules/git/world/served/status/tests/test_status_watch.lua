@@ -18,6 +18,11 @@
 -- W14 in both-mode (root's `core/process`) nothing is asked; out of it, it asks again
 -- W15 an edit under the carrier that core marks `core/library/edit/refused` is told once, in a
 --     `git/merge/notice` titled REFUSED; a marked edit under no carrier is not
+-- W16 the first scan, naming an upstream, marks nothing
+-- W17 a scan naming an upstream after one naming none marks nothing
+-- W18 a scan whose upstream's `ahead` rose, or stayed, marks nothing
+-- W19 a scan whose upstream's `ahead` dropped (a push) puts `git/world/head/recheck` on the
+--     world's head, once
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -37,6 +42,8 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["zz/watch/identity"] = {},
         ["core/net/sync"] = false,
     })
+    -- The world's head, as its server syncs it to the player.
+    commands:spawn({ ["git/world/head"] = { sha = H1 }, ["zz/watch/head"] = {}, ["core/net/sync"] = false })
 end)
 
 local asks, max_open, last_open = 0, 0, nil
@@ -79,7 +86,21 @@ app:add_systems(First, {
     end
 end):in_set("zz/watch_notices")
 
-local function scan(head, entries) queued = { status = "ok", head = head, entries = entries } end
+-- Every recheck mark, by the entity it went on. The suite takes each off, as the head's client does.
+local rechecks = {}
+app:add_systems(First, {
+    Query[{ added = { "git/world/head/recheck" } }],
+    Commands,
+}, function(rows, commands)
+    for _, row in ipairs(rows:iter()) do
+        rechecks[#rechecks + 1] = row:id()
+        commands:entity(row:id()):try_remove("git/world/head/recheck")
+    end
+end):in_set("zz/watch_rechecks")
+
+local function scan(head, entries, upstream)
+    queued = { status = "ok", head = head, entries = entries, upstream = upstream }
+end
 
 app:add_systems(Update, { World, Commands }, function(world, commands)
     if phase == "done" then return end
@@ -118,10 +139,11 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             { path = "assets/zz/a.lua", op = "write", mtime = 1000 },
             { path = "assets/zz/b.lua", op = "create", mtime = 1000 },
             { path = "assets/zz/c.lua", op = "delete" },
-        })
+        }, { ahead = 1, behind = 0 })
         step("w2")
 
     elseif phase == "w2" and ((A and B and C) or clock > 5) then
+        T("W16_the_first_scan_marks_nothing", #rechecks == 0, #rechecks .. " mark(s)")
         T("W2_each_reported_file_is_an_edit_under_the_carrier",
             A ~= nil and B ~= nil and C ~= nil and A.seq == 1 and A.deleted == false and B.deleted == false
                 and C.deleted == true and A.parent == c:id() and C.parent == c:id(),
@@ -276,6 +298,36 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
                 and n.timeout == 20,
             string.format("%d notice(s), the first %s: '%s', timeout %s", #notices, tostring(n.title),
                 tostring(n.text), tostring(n.timeout)))
+        -- The scans since W2 named no upstream. Each case counts only the marks since its own scan.
+        scan(H2, {}, { ahead = 2, behind = 0 })
+        seen.marks = #rechecks
+        step("w17")
+
+    elseif phase == "w17" and (next_asked or clock > 5) then
+        T("W17_an_upstream_after_none_marks_nothing", #rechecks == seen.marks, #rechecks - seen.marks .. " mark(s)")
+        scan(H2, {}, { ahead = 3, behind = 0 })
+        seen.marks = #rechecks
+        step("w18 rose")
+
+    elseif phase == "w18 rose" and (next_asked or clock > 5) then
+        T("W18_ahead_rising_marks_nothing", #rechecks == seen.marks, #rechecks - seen.marks .. " mark(s)")
+        scan(H2, {}, { ahead = 3, behind = 1 })
+        seen.marks = #rechecks
+        step("w18 stayed")
+
+    elseif phase == "w18 stayed" and (next_asked or clock > 5) then
+        T("W18_ahead_staying_marks_nothing", #rechecks == seen.marks, #rechecks - seen.marks .. " mark(s)")
+        scan(H2, {}, { ahead = 0, behind = 1 })
+        seen.marks = #rechecks
+        step("w19")
+
+    elseif phase == "w19" and (next_asked or clock > 5) then
+        local head = world:query({ with = { "git/world/head", "zz/watch/head" } })[1]
+        local mark = rechecks[seen.marks + 1]
+        T("W19_ahead_dropping_marks_the_worlds_head_once",
+            #rechecks == seen.marks + 1 and head ~= nil and mark == head:id(),
+            string.format("%d mark(s), on %s, the head is %s", #rechecks - seen.marks, tostring(mark),
+                tostring(head and head:id())))
         finish()
     end
 

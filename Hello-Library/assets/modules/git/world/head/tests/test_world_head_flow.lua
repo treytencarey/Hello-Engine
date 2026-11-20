@@ -12,12 +12,24 @@
 -- J5  the pull moves the world's tree on disk, and the stated commit, on the server and for the
 --     player
 -- J6  the player is asked again about the new commit: nothing more to say
+-- J7  the player pushes again while the world runs: the push alone asks nothing
+-- J8  `git/world/head/recheck` on the player's copy of the world's head asks again about the same
+--     commit: the player is told, the world is asked to pull, and moves to the pushed commit
+-- J9  ...and the marker is taken off
 
 require("modules/core/init.lua")
 require("modules/core/world/creator.lua")
 require("modules/core/mod_registry/init.lua")
 
 local helpers = require("modules/core/test_helpers.lua")
+local Shared = require("modules/core/world/shared.lua")
+
+-- Root's facts, which a server world's infra waits for: a server launch on the public default
+-- credential, allowed as a credential-less rig allows it.
+Shared.process_info().mode = "server"
+Shared.set_gateway_entries({ { scope_root = "github:zz/rig", credential = Shared.DEFAULT_GATEWAY_CREDENTIAL,
+    allow_default = true } })
+app:add_systems(Startup, { Commands }, function(commands) Shared.publish_process(nil, commands) end)
 
 local suite = helpers.create_suite("GitWorldHeadFlowSuite")
 local T = suite.assert_test
@@ -38,7 +50,7 @@ local SEED = FIXTURE .. "/seed"
 local BARE = FIXTURE .. "/remote.git"
 local OUT = "assets/test_fixtures/zz-world-head-flow.out"
 
-local seen = helpers.shared_state("GitWorldHeadFlowSeen", { notices = 0, pulls = 0 })
+local seen = helpers.shared_state("GitWorldHeadFlowSeen", { notices = 0, pulls = 0, asks = 0 })
 
 local SERVER_BOOT = [==[
 local seen = require("modules/core/test_helpers.lua").shared_state("GitWorldHeadFlowSeen", {})
@@ -68,8 +80,10 @@ app:add_systems(Update, {
     Query[{ added = { "git/merge/notice" } }],
     Query[{ added = { "git/world/head/pull" } }],
     Query[{ with = { "vault/git/head/reply" } }],
-    Query[{ with = { "git/world/head" } }],
-}, function(notices, pulls, replies, heads)
+    Query[{ with = { "git/world/head" }, optional = { "git/world/head/recheck", "WorldMirror", "core/net/sync" } }],
+    Query[{ added = { "vault/git/head" } }],
+    Commands,
+}, function(notices, pulls, replies, heads, asks, commands)
     for _, e in ipairs(notices:iter()) do
         seen.notices = seen.notices + 1
         seen["notice_" .. seen.notices] = e:get("git/merge/notice").text
@@ -82,8 +96,16 @@ app:add_systems(Update, {
         local r = e:get("vault/git/head/reply")
         seen["reply_" .. tostring(r.sha)] = tostring(r.relation) .. " pushed=" .. tostring(r.pushed)
     end
+    for _ in ipairs(asks:iter()) do seen.asks = seen.asks + 1 end
     local head = heads:iter()[1]
     seen.client_stated = head and head:get("git/world/head").sha
+    seen.marked = head ~= nil and head:has("git/world/head/recheck")
+    if head and seen.recheck and not seen.rechecked then
+        seen.rechecked = true
+        seen.head_mirror = head:has("WorldMirror")
+        seen.head_synced = head:has("core/net/sync")
+        commands:entity(head:id()):insert({ ["git/world/head/recheck"] = {} })
+    end
 end):before("git/world/head/compare")
 ]==]
 
@@ -269,6 +291,36 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("J6_the_player_is_asked_again_and_told_nothing_more",
             tostring(seen["reply_" .. st.c4]):find("^same pushed=nil") ~= nil and seen.notices == 1 and seen.pulls == 1,
             string.format("reply %s, %d notice(s), %d pull ask(s)", tostring(seen["reply_" .. st.c4]), seen.notices, seen.pulls))
+        write(C .. "/assets/f.txt", "v5\n")
+        git(C, "commit", "-q", "--no-verify", "-am", "c5")
+        git(C, "rev-parse", "HEAD")
+        after(function(text) st.c5 = text:match("^(%x+)") end)
+        git(C, "push", "-q", "origin", "main")
+        st.phase = "pushed_again"
+        return
+    end
+
+    if st.phase == "pushed_again" then
+        if st.asks == nil then st.asks, st.t = seen.asks, 0 end
+        if st.t < 3 then return end
+        T("J7_a_push_alone_asks_nothing", seen.asks == st.asks and seen.pulls == 1 and seen.notices == 1,
+            string.format("%d request(s) since the push, %d pull ask(s), %d notice(s)", seen.asks - st.asks, seen.pulls,
+                seen.notices))
+        seen.recheck = true
+        st.phase, st.t = "rechecked", 0
+        return
+    end
+
+    if st.phase == "rechecked" then
+        if (seen.pulls < 2 or seen.client_stated ~= st.c5) and st.t < 20 then return end
+        T("J8_the_recheck_mark_asks_again_and_the_world_pulls",
+            seen.pulls == 2 and seen.pull_sha == st.c4 and notice(2):find("1 commit behind what you pushed", 1, true) ~= nil
+                and seen.client_stated == st.c5 and #st.pulls == 2,
+            string.format("%d pull ask(s) naming %s, notice %s, the player has %s (pushed %s), %d pull(s) at root; the head %s a mirror, %s core/net/sync",
+                seen.pulls, tostring(seen.pull_sha), notice(2), tostring(seen.client_stated), tostring(st.c5), #st.pulls,
+                seen.head_mirror and "is" or "is not", seen.head_synced and "with" or "without"))
+        T("J9_the_recheck_mark_is_taken_off", seen.rechecked == true and seen.marked == false,
+            string.format("marked %s, still on %s", tostring(seen.rechecked), tostring(seen.marked)))
         finish()
     end
 end)

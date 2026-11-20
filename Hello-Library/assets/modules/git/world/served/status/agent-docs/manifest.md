@@ -13,9 +13,10 @@ Git answers the branch-switch case by itself. A `git checkout` rewrites many fil
 ## Components
 
 - `git/world/served/status = {}`: on the entity that watches. `git/world/served` adds it to its own carrier while the world's tree is the player's checkout.
-- `git/world/served/status/scan { asked_at, head, ops }`, on the carrier, added with the first request:
+- `git/world/served/status/scan { asked_at, head, upstream, ops }`, on the carrier, added with the first request:
   - `asked_at`: this world's clock, in seconds, when the last request was asked;
   - `head`: the checkout's commit at the last scan;
+  - `upstream = { ahead, behind }`: the last scan's, copied from root's reply (`vault/git/status/reply.upstream`): how many commits the checkout's branch is ahead of its upstream and behind it. Absent when the last scan named none: no upstream, or a detached HEAD;
   - `ops = { [path] = { op, mtime } }`: what the last scan reported, by asset-relative path. `op` is `"write"`, `"create"` or `"delete"`, and `mtime` is when root read the file as last written (absent for a delete).
 - The requests are children of the carrier: `{ ["vault/git/status"] = {}, ["vault/git"] = {}, Request = {} }`, one open at a time, each closed once answered.
 - The edits are children of the carrier: `core/library/edit { path, seq, deleted }`, one per path, asset relative. They are kept through a reload of this mod, and go with the carrier, or with `git/world/served/status` when it is taken off.
@@ -34,6 +35,10 @@ Git answers the branch-switch case by itself. A `git checkout` rewrites many fil
 - A path that left the list while HEAD stayed put is a revert, and still the player's change: its `seq` moves once more, so the committed version goes up. A file the last scan listed as new is `deleted`. The next scan drops it.
 - A path that left the list because HEAD moved, a commit or a branch switch, is dropped at once.
 - A scan that failed changes nothing.
+
+## A push
+
+A push changes nothing a query of the world's head can see: the world still states its commit, and `git/world/head`'s client compares only when that commit moves. A push does lower the branch's `ahead`, so when a scan that succeeded names an upstream whose `ahead` is lower than the last scan's, this mod puts `git/world/head/recheck = {}` on the world's `git/world/head` entity, the one the world's server synced to this player, and that mod's client compares the checkout against the world's commit again: within one scan of the push, about 2 s. Nothing is marked on the first scan, nor when the last scan named no upstream, nor when `ahead` rose or stayed.
 
 ## The provider of the facts
 
@@ -58,7 +63,7 @@ When this world refuses an edit that was not stale, core marks the path's edit `
 | Schedule | Set | Purpose |
 |----------|-----|---------|
 | Update | `git/world/served/status` | While a carrier exists, outside both-mode and while signed in: asks root every 2 s, one request at a time. A request root has not answered in 10 s is closed and asked again |
-| Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, sets the provider marker, and closes the request. Runs on the reply's edge |
+| Update | `git/world/served/status` | On a status reply under a carrier: restates the edits and the scan, sets the provider marker, marks the world's head `git/world/head/recheck` when the upstream's `ahead` dropped, and closes the request. Runs on the reply's edge |
 | Update | `git/world/served/status` | On a changed root `core/player/identity`, signed out: the provider marker paused |
 | Update | `git/world/served/status` | On an added, changed or removed `git/world/head/dirty`: each fact under a carrier restates `both` |
 | Update | `git/world/served/status` | On `added core/library/edit/refused`, for an edit under a carrier: the `REFUSED` notice |
@@ -78,4 +83,4 @@ commands:spawn({ ["git/world/served/status"] = {} })
 - Only replies on this mod's own requests are read. `git/world/head` asks root for status too, on its own entity.
 - Content is core's concern. `mtime` only says that a file was written again. Core reads the file and sends nothing when its content is what was last sent.
 - Merging a held version into an edit is `git/world/served/merge`'s job.
-- Suites run headless. `test_status` runs a client world on a scratch repository, with root answering through real git and sharing a signed-in identity. `test_status_watch` stands in for root with scripted scans, and covers both checks.
+- Suites run headless. `test_status` runs a client world on a scratch repository, with root answering through real git and sharing a signed-in identity. `test_status_watch` stands in for root with scripted scans, and covers both checks and when a scan marks the world's head to compare again.

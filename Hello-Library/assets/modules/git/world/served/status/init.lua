@@ -14,6 +14,8 @@
 -- git/world/served/status/scan = {
 --     asked_at = <this world's clock, in seconds, when the last request was asked>,
 --     head = <the checkout's commit at the last scan>,
+--     upstream = { ahead = <commits the branch has that its upstream lacks>, behind = <the other way> },
+--         the last scan's; absent when it named none,
 --     ops = {
 --         [<path, asset relative>] = {
 --             op = "write" | "create" | "delete",
@@ -220,6 +222,15 @@ app:add_systems(Update, {
                     print(string.format("[GIT/WORLD/SERVED/STATUS] HEAD moved %s -> %s: files it changed are not edits",
                         scan.head:sub(1, 7), reply.head:sub(1, 7)))
                 end
+                -- A push lowers `ahead` and moves nothing a query of the world's head can see, so
+                -- the head's client is told to compare again.
+                local was, now = scan.upstream, reply.upstream
+                if head and was ~= nil and now ~= nil and now.ahead < was.ahead then
+                    commands:entity(head:id()):try_insert({ ["git/world/head/recheck"] = {} })
+                    print(string.format("[GIT/WORLD/SERVED/STATUS] pushed: %d ahead of the upstream, was %d",
+                        now.ahead, was.ahead))
+                end
+                scan.upstream = now and { ahead = now.ahead, behind = now.behind } or nil
                 scan.head = reply.head or scan.head
                 scan.ops = ops
             else

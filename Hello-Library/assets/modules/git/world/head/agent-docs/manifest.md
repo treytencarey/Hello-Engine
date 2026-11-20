@@ -1,7 +1,7 @@
 ---
 depends_on: [vault/git, git/merge/notice, notification, git/collaborators/authorize, player]
 conflicts_with: []
-exposes: [git/world/head, git/world/head/dirty]
+exposes: [git/world/head, git/world/head/dirty, git/world/head/recheck]
 ---
 
 # git/world/head
@@ -14,6 +14,7 @@ Neither half runs git. Each asks root (`vault/git`), which reads the checkout of
 
 - `git/world/head = { sha }`, server authority, synced to the world's players: the commit the world's tree is on. One entity per world, spawned by the world's server; this mod writes `sha`. Absent until root has answered.
 - `git/world/head/dirty = { [path] = "write" | "create" | "delete" }` (server writes it): the tree's live edits, the files that differ from its commit, asset relative, `server/` halves included. It goes on each writer's own player entity, with an entry `{ authority = "server", target = "owner" }` in that player's `core/net/sync`, so only that player receives it, and only while the proof on their connection (`git/collaborators/authorize/proof`) is `writer`. Anonymous and unauthorized players get none of it. It goes from a player whose proof stops being `writer`, and from every player when the head goes. Only a collaborator who may write gets these checks, and server halves are listed for them because they may change server-side scripts too. So the list rides each writer's own player entity, synced to its owner, rather than `git/world/head`, which every player receives.
+- `git/world/head/recheck = {}`, a marker on the `git/world/head` entity, on a client only and never synced: compare again. A push moves no commit the world states, so nothing else would ask about the same commit twice. `git/world/served/status` puts it there when its scan sees the player's branch fewer commits ahead of its upstream than the last scan did; this mod's client takes it off as it compares.
 - The requests this mod sends root are children of the `git/world/head` entity, so they go with it: `{ ["vault/git/status"] = {}, ["vault/git"] = {}, Request = {} }` (the server's commit), `{ ["vault/git/pull"] = {}, ["vault/git"] = { sha }, Request = {} }` (a pull, server) and `{ ["vault/git/head"] = {}, ["vault/git"] = { sha }, Request = {} }` (the comparison, client). Each is answered on `<method>/reply` and closed once answered.
 
 ## Systems
@@ -24,7 +25,7 @@ Neither half runs git. Each asks root (`vault/git`), which reads the checkout of
 | Update (server) | `git/world/head/state` | On a status or pull reply under a `git/world/head`: writes the commit it names into `sha`, and closes the request; a status reply also restates `git/world/head/dirty` on each writer's player and takes it off others. Runs on the reply's edge |
 | Update (server) | `git/world/head/state` | On a removed `git/world/head`: takes the dirty lists and their sync entries off every player |
 | Update (server) | `git/world/head/pulling` | On an added `core/net/predict` carrying `git/world/head/pull`: despawns it; asks root to pull when the ask names the world's current commit and no pull is under way |
-| Update (client) | `git/world/head/compare` | On an added or changed `git/world/head` with a `sha`: asks root how this player's checkout stands against it, closing a request for a commit the world has left. Only in a world with a `core/library` marked `edits` (the tree the player edits by hand); the edges wait until there is one |
+| Update (client) | `git/world/head/compare` | On an added or changed `git/world/head` with a `sha`, or an added `git/world/head/recheck` on it (which it takes off): asks root how this player's checkout stands against it, closing a request for a commit the world has left; one open request per commit. Only in a world with a `core/library` marked `edits` (the tree the player edits by hand); the edges wait until there is one |
 | Update (client) | `git/world/head/compare` | On a head reply for the world's current commit: a notice when behind or not fetched; when `pushed`, a `git/world/head/pull` and a notice. Closes the request. Runs on the reply's edge |
 
 ## Use

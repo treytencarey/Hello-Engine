@@ -5,18 +5,26 @@
 -- When the player's upstream holds commits the world's commit lacks (work pushed while the world
 -- ran), this half asks the world to pull, with git/world/head/pull. The pull moves the world's
 -- commit, which asks again.
+--
+-- git/world/head/recheck = {}: on the world's head, put there by git/world/served/status when the
+-- player's push lands. This half takes it off as it compares again.
 
 -- One request per commit the world states. A request for a commit the world has left is closed,
--- which stops its git process at root.
+-- which stops its git process at root. A push moves no commit the world states, so the recheck
+-- marker asks about the same commit again.
 app:add_systems(Update, {
     Query[{
-        ["or"] = { added = { "git/world/head" }, changed = { "git/world/head" } },
-        optional = { "Children" },
+        ["or"] = { added = { "git/world/head", "git/world/head/recheck" }, changed = { "git/world/head" } },
+        with = { "git/world/head" },
+        optional = { "Children", "git/world/head/recheck" },
     }],
     Query[{ with = { "vault/git/head", "vault/git", "Request" } }],
     Commands,
 }, function(heads, asks, commands)
     for _, head in ipairs(heads:iter()) do
+        if head:has("git/world/head/recheck") then
+            commands:entity(head:id()):try_remove("git/world/head/recheck")
+        end
         local sha = head:get("git/world/head").sha
         local asked = false
         for _, ask in ipairs(asks:iter_many(head:get("Children") or {})) do
