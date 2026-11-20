@@ -10,8 +10,9 @@
 --   WS3 the UV assumption: the mesh has u along its X from the left and v down from the top, so a
 --       ray at the point of a pixel meets the mesh at that pixel's uv
 --   WS3 and a click there, on "List branches", lands on that row and asks root for the branches
---   WS8 the window's mouse moving while the ray rests on the row takes nothing from the pointer: a
---       click still lands on the row
+--   WS8 the window's mouse moving while the ray rests on the row takes nothing from the pointer: the
+--       row stays hovered, and a click still lands on it
+--   WS9 the row the ray rests on shows its hover
 --   WS4 a click 4 m away, past the 3 m reach, asks nothing
 --   WS5 the mouse's own click after that, as Bevy's picking writes it for the real button with the
 --       aim off the screen, clicks nothing on it: the pointer has left the screen's image
@@ -19,6 +20,8 @@
 --   WS7 and while on the screen the wheel is not the camera's: the third-person zoom gets none of it,
 --       and gets it again once the aim is off the screen
 --   WS10 a branch list longer than the screen scrolls under the wheel
+--   WS11 the window's own mouse moves picking only while the ray does not: off with the cursor held
+--        or the ray on the screen, on with the cursor free and the ray off it
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -29,7 +32,9 @@ local Plane3d = require("bevy::math::primitives::Plane3d")
 local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
 local Net = require("modules/core/net/shared/net.lua")
 local bevy = require("bevy::prelude")
-local PointerInput = require("bevy::picking::pointer::PointerInput")
+local WindowEvent = require("bevy::window::WindowEvent")
+local PickingSystems = require("bevy::picking::PickingSystems")
+local PointerInputSettings = require("bevy::picking::input::PointerInputSettings")
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Scroll = require("bevy::picking::prelude::Scroll")
@@ -97,7 +102,7 @@ local function view(world)
 end
 
 local function row(world, label)
-    for _, r in ipairs(world:query({ with = { "scope/portal/console/row", "Text" } })) do
+    for _, r in ipairs(world:query({ with = { "scope/portal/console/row", "Text" }, optional = { "Hovered" } })) do
         if r:get("Text") == label then return r end
     end
 end
@@ -135,27 +140,27 @@ app:add_systems(Update, { Query[{ with = { "zz/player", "input/game/third_person
     if not zooming:is_empty() then zoomed = true end
 end):in_set("zz/console_windowed/zoom")
 
--- The real button, as `bevy_picking`'s mouse input writes it: a press and a release of the mouse
--- pointer, which picking sends to what the pointer hovers. Where it says it is doesn't matter to
--- a press; the screen's image is a location Lua can build.
+-- The real mouse, as the window reports it to `bevy_picking`'s mouse input: a move of the
+-- cursor to a corner of the window, or the left button pressed or released there.
 local mouse = {}
 app:add_systems(First, {
-    Query[{ with = { "zz/screen", "pointer/target" } }],
-    bevy.MessageWriter[PointerInput],
-}, function(screens, pointer)
+    Query[{ with = { "Window", "PrimaryWindow" } }],
+    bevy.MessageWriter[WindowEvent],
+}, function(windows, events)
     local action = table.remove(mouse, 1)
-    local screen = screens:iter()[1]
-    if action == nil or screen == nil then return end
-    pointer:write({
-        pointer_id = "Mouse",
-        location = { target = { Image = screen:get("pointer/target").image }, position = { x = -10, y = -10 } },
-        action = action,
-    })
-end):in_set("zz/console_windowed/mouse")
+    local window = windows:iter()[1]
+    if action == nil or window == nil then return end
+    if action == "move" then
+        events:write({ CursorMoved = { window = window:id(), position = { x = 5, y = 5 } } })
+    else
+        events:write({ MouseButtonInput = { button = "Left", state = action, window = window:id() } })
+    end
+end):in_set("zz/console_windowed/mouse"):before(PickingSystems.Input)
 
 local phase, clock = "spawn", 0
+local before_free
 
-app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Commands }, function(world, ray_cast, materials, commands)
+app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Res[PointerInputSettings], Commands }, function(world, ray_cast, materials, picking, commands)
     clock = clock + (world:delta_time() or 0)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
@@ -212,11 +217,17 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
     elseif phase == "clicked" and (#asks(world) > 0 or clock > 3) then
         T("WS3_and_a_click_on_list_branches_lands_on_its_row", #asks(world) == 1, tostring(#asks(world)) .. " asks")
         for _, a in ipairs(asks(world)) do commands:entity(a:id()):despawn() end
+        local r = row(world, "List branches")
+        local hovered = r ~= nil and r:has("Hovered") and r.Hovered:get()
+        T("WS9_the_row_the_ray_rests_on_shows_its_hover", hovered == true, "Hovered " .. tostring(hovered))
         -- the real mouse moving, as Bevy's picking writes it, somewhere off the row
-        mouse[#mouse + 1] = { Move = { delta = { x = 1, y = 1 } } }
+        mouse[#mouse + 1] = "move"
         step("stolen")
 
     elseif phase == "stolen" and clock > 0.5 then
+        local r = row(world, "List branches")
+        local still = r ~= nil and r:has("Hovered") and r.Hovered:get()
+        T("WS8_the_window_s_mouse_moving_leaves_the_row_hovered", still == true, "Hovered " .. tostring(still))
         press()
         step("stolen_clicked")
 
@@ -233,8 +244,8 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
 
     elseif phase == "far_clicked" and clock > 2 then
         T("WS4_past_3_m_a_click_asks_nothing", #asks(world) == 0, tostring(#asks(world)) .. " asks")
-        mouse[#mouse + 1] = { Press = "Primary" }
-        mouse[#mouse + 1] = { Release = "Primary" }
+        mouse[#mouse + 1] = "Pressed"
+        mouse[#mouse + 1] = "Released"
         step("mouse_clicked")
 
     elseif phase == "mouse_clicked" and clock > 1 then
@@ -296,6 +307,24 @@ app:add_systems(Update, { World, MeshRayCast, Res[Assets[StandardMaterial]], Com
             moved = moved or e:get("ScrollPosition").y > 0
         end
         T("WS10_a_branch_list_longer_than_the_screen_scrolls_under_the_wheel", moved)
+        before_free = { on_screen = picking.is_mouse_enabled }
+        -- the cursor free, and the ray (now through it) off the screen
+        commands:entity(player):insert({ ["input/mode"] = { mode = "input/ui", show_cursor = true } })
+        commands:entity(eye):insert({
+            Transform = { translation = { x = SCREEN_AT.x + 3, y = SCREEN_AT.y, z = SCREEN_AT.z + 2 }, rotation = { x = 0, y = 0, z = 0, w = 1 } },
+        })
+        step("free")
+
+    elseif phase == "free" and clock > 0.5 then
+        before_free.free = picking.is_mouse_enabled
+        commands:entity(player):insert({ ["input/mode"] = { mode = "input/game" } })
+        step("held")
+
+    elseif phase == "held" and clock > 0.5 then
+        T("WS11_the_window_s_mouse_moves_picking_only_while_the_ray_does_not",
+            before_free.on_screen == false and before_free.free == true and picking.is_mouse_enabled == false,
+            string.format("on the screen %s, free %s, held %s", tostring(before_free.on_screen), tostring(before_free.free),
+                tostring(picking.is_mouse_enabled)))
         phase = "done"
         suite.finish("PORTAL_CONSOLE_WINDOWED")
     end

@@ -1,7 +1,9 @@
 -- A ray turned into Bevy's picking on a screen, for this client's own player. When the first thing
 -- the player's `pointer/ray` meets is a pointer target within `range`, Bevy's picking hears it as
--- the carrier's own pointer on that target's image: it moves there, scrolls, presses, and a long
--- press is a right click. A ray source writes the ray and has `pointer` as its base:
+-- Bevy's mouse pointer on that target's image: it moves there, scrolls, presses, and a long press
+-- is a right click. While the ray drives it (on a target, or with the cursor held), the window's
+-- own mouse input to picking is off (`PointerInputSettings.is_mouse_enabled`), so the real mouse
+-- does not move it away. A ray source writes the ray and has `pointer` as its base:
 -- `pointer/view` is the desktop's (the view's centre, or the cursor), `vr/pointer` the VR
 -- controller's. While the ray is on a target the wheel is the screen's: the camera does not zoom.
 --
@@ -30,14 +32,13 @@ local bevy = require("bevy::prelude")
 local MeshRayCast = require("bevy::picking::prelude::MeshRayCast")
 local PointerInput = require("bevy::picking::pointer::PointerInput")
 local Time = require("bevy::time::Time")
+local PointerInputSettings = require("bevy::picking::input::PointerInputSettings")
+local Option = require("std::option::Option")
 
 local MODES = { "input/game", "input/ui" }
 
--- The pointer's own id in Bevy's picking, so the window's mouse never moves it: one pointer per
--- carrier, a fixed id today. The component takes the number, a `PointerInput` the Uuid's text.
-local ID = 1
-local POINTER_ID = { Custom = ID }
-local POINTER = { Custom = string.format("00000000-0000-0000-0000-%012x", ID) }
+-- Bevy's mouse pointer: what Bevy gives the mouse (`Hovered`, scrolling) works for the ray too.
+local POINTER = "Mouse"
 
 --- The pointer's group, the wheel taken or not.
 local function bindings(take)
@@ -57,7 +58,6 @@ app:add_systems(First, {
     -- read now: the change runs after this system, when its parameters are gone
     local take = not hovered:is_empty()
     for _, e in ipairs(players:iter()) do
-        commands:entity(e:id()):insert({ PointerId = POINTER_ID })
         for _, mode in ipairs(MODES) do
             commands:entity(e:id()):entry(mode):or_default():and_modify(function(group)
                 group.pointer = bindings(take)
@@ -81,8 +81,7 @@ app:add_systems(First, {
                     group.pointer = nil
                 end)
             end
-            -- with the parts Bevy's `PointerId` brought
-            player:try_remove("pointer/ray", "pointer/press", "PointerId", "PointerLocation", "PointerPress", "PointerInteraction")
+            player:try_remove("pointer/ray", "pointer/press")
         end
         for _, h in ipairs(hovered:iter()) do
             commands:entity(h:id()):try_remove("pointer/hovered")
@@ -182,8 +181,10 @@ app:add_systems(Update, {
         local at = on:get("pointer/hovered")
         location = { target = { Image = on:get("pointer/target").image }, position = { x = at.x, y = at.y } }
     end
+    -- A move first: Bevy presses what the pointer hovers, and the move makes it this place.
     for _, e in ipairs(pressed:iter()) do
         if location ~= nil then
+            pointer:write({ pointer_id = POINTER, location = location, action = { Move = { delta = { x = 0.001, y = 0.001 } } } })
             pointer:write({ pointer_id = POINTER, location = location, action = { Press = "Primary" } })
             commands:entity(e:id()):insert({
                 ["pointer/press"] = {
@@ -197,6 +198,7 @@ app:add_systems(Update, {
     end
     for _, e in ipairs(released:iter()) do
         if location ~= nil and not e:get("pointer/press").long then
+            pointer:write({ pointer_id = POINTER, location = location, action = { Move = { delta = { x = -0.001, y = -0.001 } } } })
             pointer:write({ pointer_id = POINTER, location = location, action = { Release = "Primary" } })
         end
         commands:entity(e:id()):try_remove("pointer/press")
@@ -227,6 +229,33 @@ app:add_systems(Update, {
         end
     end
 end):in_set("pointer/long_press"):after("pointer/press")
+
+-- The window's mouse moves the same pointer: while the ray drives it, on a target or with the cursor
+-- held (game input), its input to picking is off; with the cursor free and the ray off every
+-- target, and once `pointer` goes, it is on.
+app:add_systems(Update, {
+    Query[{ with = { "pointer" }, optional = { "input/mode" } }],
+    Query[{ with = { "pointer/hovered" } }],
+    -- a world with no picking (headless) has none
+    Option[ResMut[PointerInputSettings]],
+}, function(carriers, hovered, settings)
+    if settings == nil then return end
+    local drives = not hovered:is_empty()
+    for _, e in ipairs(carriers:iter()) do
+        drives = drives or (e:get("input/mode") or {}).show_cursor ~= true
+    end
+    if settings.is_mouse_enabled == drives then settings.is_mouse_enabled = not drives end
+end):in_set("pointer/mouse"):after("pointer/cast"):run_if({
+    Query[{
+        ["or"] = {
+            added = { "pointer", "pointer/hovered" },
+            changed = { "input/mode" },
+            removed = { "pointer", "pointer/hovered" },
+        },
+    }],
+}, function(edges)
+    return not edges:is_empty()
+end)
 
 return {
     defaults = {
