@@ -40,20 +40,17 @@ end
 local WAYS = Query[{ ["or"] = { added = { "scope/portal/from" }, changed = { "scope/portal/from" }, removed = { "scope/portal/from" } } }]
 
 -- One ask per placed portal, its child: it goes with the portal, and root loads each target once
--- however many ask. `hosted` makes root ask once more after a `not-running` refusal. A portal
--- seen being placed asks with `join_only = false`: root starts its world if nobody runs it and
--- this player may (the Gateway's start gate), and otherwise looks in join-only. So does a door, a
--- portal that arrives with its scene (a `SceneRoot` above it): it is dropped as its map loads. A
--- portal that was placed already when it arrived (an invite's portal, one placed before this
--- client came) asks join-only. The ask is not this file's to reap: a reload that took it would
--- make root drop the observed world and load it again.
+-- however many ask. `hosted` makes root ask once more after a `not-running` refusal. Every ask is
+-- `join_only = false`: root starts the target if nobody runs it and this player may (the
+-- Gateway's start gate), and otherwise looks in join-only, so a portal standing when a
+-- collaborator arrives brings its world up as one being placed does. The ask is not this file's
+-- to reap: a reload that took it would make root drop the observed world and load it again.
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal", "scope/portal/view" },
         without = { "placement" },
         optional = { "scope/portal/hosted", "Children", "Name" },
     }],
-    Query[{ with = { "SceneRoot" } }],
     Query[{
         with = { "core/world/observe" },
         without = { "WorldMirror" },
@@ -67,19 +64,11 @@ app:add_systems(Update, {
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
-    Query[{
-        removed = { "placement" },
-        with = { "scope/portal" },
-    }],
     Query[{ with = { "player", "scope/portal/from", "core/net/owner" } }],
     Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(portals, scenes, asks, records, rows, just_placed, players, own, commands)
+}, function(portals, asks, records, rows, players, own, commands)
     local back = ways_back(players, own)
-    local placed = {}
-    for _, p in ipairs(just_placed:iter()) do
-        placed[#placed + 1] = p:id()
-    end
     local me = rows:iter()[1]
     local scope = me and me:get("core/world/status").scope_key
     local libraries = {}
@@ -93,11 +82,6 @@ app:add_systems(Update, {
     for _, p in ipairs(portals:iter()) do
         local target = shown_target(p, p:get("scope/portal"), back)
         local hosted = p:has("scope/portal/hosted") or nil
-        local start = nil
-        for _, id in ipairs(placed) do
-            if id == p:id() then start = false end
-        end
-        if scenes:iter_many(scenes:iter_ancestors(p:id()))[1] ~= nil then start = false end
         local kept
         for _, ask in ipairs(asks:iter_many(p:get("Children") or {})) do
             if kept == nil and target ~= nil and target ~= scope and ask:get("core/world/observe").ref == target then
@@ -108,22 +92,21 @@ app:add_systems(Update, {
         end
         if kept ~= nil then
             local was = kept:get("core/world/observe")
-            if was.hosted ~= hosted or (start == false and was.join_only ~= false) then
+            if was.hosted ~= hosted or was.join_only ~= false then
                 commands:entity(kept:id()):entry("core/world/observe"):and_modify(function(ask)
                     ask.hosted = hosted
-                    if start == false then ask.join_only = false end
+                    ask.join_only = false
                 end)
             end
         elseif target ~= nil and target ~= scope then
             commands:spawn({
-                ["core/world/observe"] = { ref = target, libraries = libraries, hosted = hosted, join_only = start },
+                ["core/world/observe"] = { ref = target, libraries = libraries, hosted = hosted, join_only = false },
                 WorldShared = {},
                 ["core/net/sync"] = false,
                 ["core/script/owner"] = false,
                 ChildOf = p:id(),
             })
-            print(string.format("[SCOPE/PORTAL/VIEW] asking root to look into %s%s", target,
-                start == false and ", starting it if nobody runs it" or ""))
+            print(string.format("[SCOPE/PORTAL/VIEW] asking root to look into %s, starting it if nobody runs it", target))
         end
     end
 end):in_set("scope/portal/view/client")

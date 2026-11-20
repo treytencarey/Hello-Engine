@@ -10,8 +10,8 @@
 --   V15 ...and root allowing a look at this world (another world's portal asked) shows nothing
 --       through it
 --   V4  a portal being placed gets none, and one once placed
---   V14 a portal seen being placed asks to start its world (`join_only = false`); one placed
---       already when it came (one placed before) asks join-only
+--   V14 a portal seen being placed asks to start its world (`join_only = false`), and so does one
+--       placed already when it came (one placed before): root's start gate decides who may
 --   V16 a door, a portal that arrives with its scene (a `SceneRoot` above it, here a real glTF
 --       scene), asks to start its world as it loads
 --   V5  `scope/portal/hosted` puts `hosted` on its ask, and taking it off takes `hosted` out
@@ -168,6 +168,9 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
                 and a[1].entity:has("WorldShared"),
             string.format("asks=%d ref=%s", #a, tostring(ask and ask.ref)))
         T("V2_each_portal_to_one_world_asks", #b == 1 and b[1].ask.ref == OTHER, "asks=" .. #b)
+        -- Read before `hosted` arrives on it, which rewrites the ask.
+        T("V14_one_placed_when_it_came_asks_to_start_its_world_too", ask ~= nil and ask.join_only == false,
+            tostring(ask and ask.join_only))
         T("V3_a_portal_to_this_world_asks_nothing", #asks_of(world, portal(world, "self")) == 0, "")
         T("V4a_a_portal_being_placed_asks_nothing", #asks_of(world, portal(world, "placing")) == 0, "")
         T("V20_a_door_without_target_asks_nothing", #asks_of(world, portal(world, "blank")) == 0,
@@ -182,8 +185,6 @@ app:add_systems(Update, { World, Commands, Res[AssetServer] }, function(world, c
         local door = asks_of(world, portal(world, "door"))
         T("V14_a_portal_seen_being_placed_asks_to_start_its_world", #placing == 1 and placing[1].ask.join_only == false,
             tostring(placing[1] and placing[1].ask.join_only))
-        local before = asks_of(world, portal(world, "a"))
-        T("V14_one_placed_when_it_came_asks_join_only", #before == 1 and before[1].ask.join_only == nil, "")
         T("V16_a_door_that_arrives_with_its_scene_asks_to_start_its_world", #door == 1
             and door[1].ask.join_only == false, tostring(door[1] and door[1].ask.join_only))
         local a = asks_of(world, portal(world, "a"))
