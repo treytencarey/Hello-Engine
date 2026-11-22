@@ -41,6 +41,11 @@
 --       with no owner too: neither stays
 --   R22 a portal opened to place, once placed, gets a return end without `placement` in it or its
 --       sync, here and in the target: that is the placer's client's to write
+--   R23 handed over, the player takes the target's framing (its eye height and scale) and keeps the
+--       look and zoom it left the source with
+--   R24 handed back, the source frames it again as a new player (no eye height of the server's, as
+--       the camera's defaults are its client's, and full size), with the look and zoom it left the
+--       target with
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
@@ -67,9 +72,10 @@ local HERE = "github:zzportalr/here:main"
 local OTHER = "github:zzportalr/other:main"
 local THIRD = "github:zzportalr/third:main"
 local SERVER = "assets/modules/scope/portal/server/init.lua"
--- What each world accepts from a peer, as a world's boot declares it.
+-- What each world accepts from a peer, as a world's boot declares it. `camera` too, as a world that
+-- accepts everything does: what keeps a world's framing must not be the accept list.
 local ACCEPT = { "Transform", "cooldown", "scope/portal", "scope/portal/view", "scope/portal/hosted", "zz/pr/tag",
-    "zz/pr/later" }
+    "zz/pr/later", "camera", "player/spawner/look" }
 -- R4: the target's own link back to the source gets no ticket; a welcome's (which names the
 -- process that dialled) does.
 reg.answer = function(body)
@@ -89,6 +95,7 @@ local DEFAULTS = {
     x_far_hosted = false, x_far_ends = 0, z_mirrors = 0, z_at = "",
     x_copied = "", x_later = false, x_add_later = false, y_copied = "", y_later = false,
     x_end_owner = false, y_owner = "", x_end_placement = true, y_placement = true, x_rogue = false, y_rogue = 0, y_links_up = -1, y_leave = false,
+    x_framed = "", y_framed = "", y_zoom = false,
 }
 local ts = helpers.shared_state("ScopePortalReturnState", DEFAULTS)
 
@@ -102,6 +109,7 @@ local Net = require("modules/core/net/shared/net.lua")
 
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalReturnState", boot.DEFAULTS)
+local function round(v) return v and string.format("%.3f", v) or "nil" end
 local C41
 
 app:add_systems(Startup, { World, Commands }, function(world, commands)
@@ -122,6 +130,8 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
     })
     commands:spawn({ ["core/net/peer/expose"] = { components = "all" }, ["core/net/sync"] = false })
     commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
+    -- Its spawner, which stamps what a leaving player carries; with no point, it spawns nobody.
+    commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
     commands:spawn({
         ["core/world/status"] = { scope_key = boot.HERE, mode = "server", status = "ready",
             ports = { world = 15515, peer = 15518 }, peer_endpoint = "127.0.0.1:15518" },
@@ -183,9 +193,12 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
         ["core/script/owner"] = false,
         ["zz/pr/p"] = { name = "placing" },
     })
+    -- Framed as this world frames its players: full size, and the camera its client sent, the
+    -- defaults' eye 1.5 m up among it.
     commands:spawn({
         player = { client_id = 41 },
-        Transform = { translation = { x = 2, y = 0, z = 1 } },
+        Transform = { translation = { x = 2, y = 0, z = 1 }, scale = { x = 1, y = 1, z = 1 } },
+        camera = { yaw = 0.2, pitch = -0.1, distance = 6, height = 1.5, offset = { x = 1, y = 0, z = 0 } },
         ["core/net/owner"] = c41,
         ["core/net/peer/share"] = { stable_id = "player_41" },
         ["core/net/sync"] = { Transform = { authority = "server", reliable = false } },
@@ -227,8 +240,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local r = ends[1]
     local player = world:query({
         with = { "zz/pr/player" },
-        optional = { "core/net/owner", "core/net/peer/mirror" },
+        optional = { "core/net/owner", "core/net/peer/mirror", "camera", "Transform" },
     })[1]
+    local cam = player and player:get("camera") or {}
+    local body = player and player:get("Transform")
+    ts.x_framed = string.format("height=%s distance=%s pitch=%s scale=%s", round(cam.height), round(cam.distance),
+        round(cam.pitch), round(body and body.scale.y))
     ts.x_hosted = drop ~= nil and drop:has("scope/portal/hosted")
     ts.x_ends = #ends
     ts.x_door = door ~= nil and door:has("scope/portal/hosted") and not door:has("scope/portal/returns")
@@ -318,6 +335,7 @@ local helpers = require("modules/core/test_helpers.lua")
 
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalReturnState", boot.DEFAULTS)
+local function round(v) return v and string.format("%.3f", v) or "nil" end
 
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({
@@ -331,6 +349,9 @@ app:add_systems(Startup, { Commands }, function(commands)
         ["core/net/sync"] = false,
     })
     commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
+    -- Everything, as a production world exposes: its updates of the player reach the source's
+    -- mirror of it.
+    commands:spawn({ ["core/net/peer/expose"] = { components = "all" }, ["core/net/sync"] = false })
     commands:spawn({ ["player/spawner"] = {}, ["core/net/sync"] = false })
     commands:spawn({
         ["core/net/connection"] = { client_id = 41, observer = true },
@@ -346,7 +367,18 @@ app:add_systems(Startup, { Commands }, function(commands)
     })
 end)
 
-local kept, flipped, went = nil, false, ""
+-- This world frames its players as a game's spawner would: eyes 0.595 m up, at 0.85, before core
+-- first sends the player.
+app:add_systems(First, {
+    Query[{ added = { "player/spawner/player" }, with = { Mut["Transform"] }, optional = { Mut["camera"] } }],
+}, function(arrived)
+    for _, p in ipairs(arrived:iter_mut()) do
+        p:get_mut("Transform").scale = { x = 0.85, y = 0.85, z = 0.85 }
+        if p:has("camera") then p:get_mut("camera").height = 0.595 end
+    end
+end):in_set("zz/pr_y_frame"):before("core/net/sync_track")
+
+local kept, flipped, went, zoomed = nil, false, "", false
 app:add_systems(Update, { World, Commands }, function(world, commands)
     local c = world:query({ with = { "zz/pr/connection", "core/net/connection" } })[1]
     local connection = c and c:get("core/net/connection")
@@ -405,9 +437,20 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local p
     for _, e in ipairs(world:query({
         with = { "player" },
-        optional = { "core/net/owner", "core/net/peer/mirror", "scope/portal/cooling" },
+        optional = { "core/net/owner", "core/net/peer/mirror", "scope/portal/cooling", "camera", "Transform" },
     })) do
         if e:get("player").client_id == 41 then p = e end
+    end
+    local cam = p and p:get("camera") or {}
+    local body = p and p:get("Transform")
+    ts.y_framed = string.format("height=%s distance=%s pitch=%s scale=%s", round(cam.height), round(cam.distance),
+        round(cam.pitch), round(body and body.scale.y))
+    -- Its client zoomed in and looked up here, as the owner's camera writes reach the server.
+    if ts.y_zoom and not zoomed and p ~= nil and p:has("camera") then
+        zoomed = true
+        commands:entity(p:id()):entry("camera"):and_modify(function(camera)
+            camera.distance, camera.pitch = 3, 0.25
+        end)
     end
     ts.y_arrived = p ~= nil
     ts.y_owned = p ~= nil and p:has("core/net/owner") and not p:has("core/net/peer/mirror")
@@ -574,6 +617,9 @@ step(within(15, function() return ts.y_owned and ts.y_inside end), function()
         ts.y_owned and ts.y_inside and ts.y_cooling and not ts.x_owned,
         string.format("owned=%s inside=%s cooling=%s source_owned=%s", tostring(ts.y_owned), tostring(ts.y_inside),
             tostring(ts.y_cooling), tostring(ts.x_owned)))
+    T("R23_handed_over_it_takes_the_target_s_framing_and_keeps_its_look_and_zoom",
+        ts.y_framed == "height=0.595 distance=6.000 pitch=-0.100 scale=0.850", "y: " .. ts.y_framed)
+    ts.y_zoom = true
 end)
 step(within(10, function() return ts.y_owned and not ts.y_cooling end), function() end)
 step(after(1.5), function()
@@ -589,6 +635,8 @@ end)
 step(within(10, function() return ts.x_owned and ts.y_handed end), function()
     T("R9_walking_out_and_in_again_hands_it_back", ts.x_owned and ts.y_handed,
         string.format("source_owned=%s target_handed=%s", tostring(ts.x_owned), tostring(ts.y_handed)))
+    T("R24_handed_back_the_source_s_framing_is_its_again_with_the_look_and_zoom_it_left_the_target_with",
+        ts.x_framed == "height=nil distance=3.000 pitch=0.250 scale=1.000", "x: " .. ts.x_framed)
     ts.y_leave = true
 end)
 step(within(5, function() return ts.y_owner == "client=41 connection=false" end), function()

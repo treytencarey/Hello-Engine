@@ -18,6 +18,7 @@
 -- player/spawner/look = {
 --     yaw = <the camera's yaw less the body's facing, radians>,
 --     pitch = <the camera's pitch, radians>,
+--     distance = <the camera's distance, the zoom, metres>,
 -- }: what a handed player looks with, in the switch; in place, core sets it on the player
 
 local Quat = require("bevy::math::Quat")
@@ -32,6 +33,20 @@ local function least_held(ready, held)
         end
     end
     return claim
+end
+
+--- A player's camera as this world frames one arriving, new or back: a new player's, with the
+--- look on it; the camera's defaults and a game's spawner fill the rest. How a world frames a
+--- player (eye height, offset, mode, the body's scale) is that world's; only the look crosses.
+--- Its yaw crossed relative to the body, so it is turned by the facing the body arrives with (a
+--- door's place may turn it).
+local function framed(look, facing)
+    look = look or {}
+    return {
+        yaw = (look.yaw or 0) + Quat.to_euler(facing, "YXZ")[1],
+        pitch = look.pitch,
+        distance = look.distance,
+    }
 end
 
 -- After Bevy's transform propagation: a point spawned this frame has its world place only then. A
@@ -98,23 +113,12 @@ app:add_systems(PostUpdate, {
             local look = handed["player/spawner/look"]
             local at, facing, camera
             local claim = least_held(ready, held)
-            -- A handed player claims a point like any other, and arrives where it stood, with its
-            -- whole camera. The body may arrive turned (a door's place), so only the camera's yaw
-            -- is taken from the look, which crossed relative to the body, turned by the facing it
-            -- arrives with. A copy: the table `get` answers is the connection's own value.
+            -- A handed player claims a point like any other, and arrives where it stood, framed as
+            -- a new player is (`framed`).
             if stood and stood.translation then
                 at = stood.translation
                 facing = stood.rotation or { x = 0, y = 0, z = 0, w = 1 }
-                if handed.camera ~= nil then
-                    camera = {}
-                    for field, value in pairs(handed.camera) do
-                        camera[field] = value
-                    end
-                end
-                if look ~= nil then
-                    camera = camera or { pitch = look.pitch }
-                    camera.yaw = (look.yaw or 0) + Quat.to_euler(facing, "YXZ")[1]
-                end
+                camera = framed(look, facing)
             elseif claim ~= nil then
                 at = claim.point.GlobalTransform:transform_point({ x = 0, y = s.lift, z = 0 })
                 facing = { x = 0, y = 0, z = 0, w = 1 }
@@ -198,11 +202,12 @@ app:add_systems(PreUpdate, {
     end
 end):in_set("player/spawner/left")
 
--- A player handed to another world takes its body's place, its whole camera and its look in the
--- switch itself, which core sends in this same frame: the target's mirror of the player may be an
--- update behind. Core places the body at a door's place there, which may turn it; the camera's yaw
--- does not turn with it, so the look carries the yaw relative to the body, which holds in any
--- frame. Only these entries are written: the portal handing it over puts its timer beside them.
+-- A player handed to another world takes its body's place and its look in the switch itself,
+-- which core sends in this same frame: the target's mirror of the player may be an update behind.
+-- What the player did crosses, and how this world frames it does not: the camera stays here.
+-- Core places the body at a door's place there, which may turn it; the camera's yaw does not turn
+-- with it, so the look carries the yaw relative to the body, which holds in any frame. Only these
+-- entries are written: the portal handing it over puts its timer beside them.
 app:add_systems(PostUpdate, {
     Query[{
         added = { "core/net/peer/switch" },
@@ -213,9 +218,6 @@ app:add_systems(PostUpdate, {
     for _, p in ipairs(leaving:iter_mut()) do
         local share = p:get_mut("core/net/peer/share")
         local carried = share.transfer_data or {}
-        if p:has("camera") then
-            carried.camera = p:get("camera")
-        end
         if p:has("Transform") then
             local body = p:get("Transform")
             carried.Transform = body
@@ -224,6 +226,7 @@ app:add_systems(PostUpdate, {
                 carried["player/spawner/look"] = {
                     yaw = (camera.yaw or 0) - Quat.to_euler(body.rotation, "YXZ")[1],
                     pitch = camera.pitch or 0,
+                    distance = camera.distance,
                 }
             end
         end
@@ -231,26 +234,29 @@ app:add_systems(PostUpdate, {
     end
 end):in_set("player/spawner/left"):before("core/net/peer/authority_switch")
 
--- Back in a world that holds it as a mirror, core sets what was handed whole on the player, its
--- camera and its look among it: the camera's yaw is the one it left with, so the look turns it by
--- the facing the body arrived with, as for a new player, and goes. Before the world net's
--- outbound, so the owner is never sent the yaw of the world it left.
-app:add_systems(Update, {
+-- Back in a world that holds it as a mirror, core sets what was handed on the player whole, its
+-- look among it. While it was away the target's updates wrote its mirror here, camera and scale
+-- too, so it is framed again as a new player is: a new player's camera with the look on it, and
+-- a new player's scale; a game's spawner then frames it its own way on the owner's `added` edge,
+-- as it does a new player. In `First`, after core's peer inbound that re-promotes it, and before
+-- the world net tracks it.
+app:add_systems(First, {
     Query[{
         added = { "player/spawner/look" },
-        with = { "player", "Transform", Mut["camera"] },
+        with = { "player", Mut["Transform"] },
     }],
     Commands,
 }, function(arrived, commands)
     for _, p in ipairs(arrived:iter_mut()) do
-        local look = p:get("player/spawner/look")
-        local body = p:get("Transform")
-        local camera = p:get_mut("camera")
-        camera.yaw = (look.yaw or 0) + Quat.to_euler(body.rotation, "YXZ")[1]
-        camera.pitch = look.pitch or 0
+        local body = p:get_mut("Transform")
+        body.scale = { x = 1, y = 1, z = 1 }
+        commands:entity(p:id()):insert({ camera = framed(p:get("player/spawner/look"), body.rotation) })
         commands:entity(p:id()):remove("player/spawner/look")
     end
 end):in_set("player/spawner/spawn")
+    :after("core/net/peer/server_inbound")
+    :after("core/net/peer/client_inbound")
+    :before("core/net/sync_track")
 
 return {
     defaults = {

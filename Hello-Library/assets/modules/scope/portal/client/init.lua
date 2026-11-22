@@ -14,9 +14,10 @@ end
 
 -- The predicted ask carries where the player stands and looks, for the target's client world to
 -- stand it in: through a door (`at`, on a named node) relative to the door, as the target places
--- it at the node `at` names there; through any other portal as it stands here. The look is the
--- whole camera, which a crossing keeps, with its yaw made relative to the body: only the yaw turns
--- with a turned place. Plain tables: the ask crosses VMs, which refuse a value with a metatable. A
+-- it at the node `at` names there; through any other portal as it stands here. The look is what a
+-- crossing keeps of the camera, as `player/spawner/look` is: its yaw made relative to the body
+-- (only the yaw turns with a turned place), its pitch and its zoom. Plain tables: the ask crosses
+-- VMs, which refuse a value with a metatable. A
 -- player still cooling from its last crossing walks into nothing; the server skips it too, on its
 -- own timer.
 app:add_systems(Update, {
@@ -57,12 +58,11 @@ app:add_systems(Update, {
                 local t = body
                 if door then t = player.GlobalTransform:reparented_to(p:id()) end
                 local camera = player:has("camera") and player:get("camera") or {}
-                local look = {}
-                for field, value in pairs(camera) do
-                    look[field] = value
-                end
-                look.yaw = (camera.yaw or 0) - Quat.to_euler(body.rotation, "YXZ")[1]
-                look.pitch = camera.pitch or 0
+                local look = {
+                    yaw = (camera.yaw or 0) - Quat.to_euler(body.rotation, "YXZ")[1],
+                    pitch = camera.pitch or 0,
+                    distance = camera.distance,
+                }
                 commands:spawn({
                     ["core/world/flip"] = {
                         scope = to,

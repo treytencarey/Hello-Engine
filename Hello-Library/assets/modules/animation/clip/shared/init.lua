@@ -120,7 +120,11 @@ app:add_systems(PostUpdate, {
         end
         if named and file == nil then
             local path = scene_file(scenes, e:id())
-            if path ~= nil then file, differs = asset_server:load(path), true end
+            -- The scene's handle names where its load found the file, which `load` would resolve
+            -- again, against this mod's folder: a file on a landed library's rung (`../.hello/...`)
+            -- became `modules/animation/clip/.hello/...`. Bevy's `load_override` loads that path
+            -- as it is, the scene's own file.
+            if path ~= nil then file, differs = asset_server:load_override(path), true end
         elseif not named and file ~= nil then
             file, differs = nil, true
         end

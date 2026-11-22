@@ -21,6 +21,8 @@
 --   CL15 a clip named by an animation of the node's scene's glTF plays it
 --   CL16 a clip named by an animation of a scene whose file does not exist asks for that file once:
 --        nothing tries it again
+--   CL17 a clip named by an animation of a scene whose file lies outside `assets/`, as a file on a
+--        landed library's rung does, plays it
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
@@ -53,6 +55,14 @@ app:add_systems(Startup, { Res[AssetServer], Commands }, function(asset_server, 
         ["zz/named"] = {},
         SceneRoot = asset_server:load("modules/animation/clip/tests/fixtures/named.gltf#Scene0"),
         Transform = { translation = { x = 5, y = 0, z = 0 } },
+        ["animation/clip"] = { clips = { zz_open = 1 }, speed = 0 },
+    })
+    -- the same glTF by a path that leaves `assets/`, as a landed library's rung hands one back
+    -- (`../.hello/...`): relative to this suite's folder, which the load resolves it against
+    commands:spawn({
+        ["zz/outside"] = {},
+        SceneRoot = asset_server:load("../../../../../assets/modules/animation/clip/tests/fixtures/named.gltf#Scene0"),
+        Transform = { translation = { x = 0, y = 0, z = 5 } },
         ["animation/clip"] = { clips = { zz_open = 1 }, speed = 0 },
     })
     commands:spawn({
@@ -244,6 +254,14 @@ app:add_systems(Update, {
         local a = g and np and g.nodes.zz_open and np.AnimationPlayer:animation(g.nodes.zz_open) or nil
         T("CL15_a_clip_named_by_its_scene_s_gltf_plays_it", a ~= nil and a.weight == 1 and a.speed == 0,
             g and ("node " .. tostring(g.nodes.zz_open) .. ", " .. (a and "playing" or "not playing")) or "no graph")
+        local outside = world:query({ with = { "zz/outside", "SceneRoot" }, optional = { "animation/clip/graph" } })[1]
+        local og = outside and outside:get("animation/clip/graph")
+        local op = outside and players:iter_many(world:descendants(outside:id()))[1]
+        local o = og and op and og.nodes.zz_open and op.AnimationPlayer:animation(og.nodes.zz_open) or nil
+        T("CL17_a_clip_named_by_a_scene_whose_file_lies_outside_assets_plays_it",
+            o ~= nil and o.weight == 1 and tostring(outside:get("SceneRoot"):path()):sub(1, 3) == "../",
+            string.format("scene %s, %s", tostring(outside and outside:get("SceneRoot"):path()),
+                og and ("node " .. tostring(og.nodes.zz_open) .. ", " .. (o and "playing" or "not playing")) or "no graph"))
         -- the suite has run for several seconds by now: a clip retrying each frame asks hundreds of times
         T("CL16_a_scene_file_that_does_not_exist_is_asked_for_once", missing_failures >= 1 and missing_failures <= 2,
             tostring(missing_failures) .. " failed loads")

@@ -11,10 +11,13 @@
 --   HS2 root's predicted ask naming this world through a door makes the stand-in at once, with no
 --       body while its place has not landed
 --   HS3 ...and its body once the place lands: at the place times where the player stood relative
---       to the door, turned likewise, with the player's whole camera, its yaw turned by its facing,
---       local and never synced
+--       to the door, turned likewise, with this world's camera and the look on it (its yaw turned by
+--       its facing, its pitch and zoom), local and never synced; the eye height and the scale of the
+--       world it left stay behind
 --   HS4 confirmed (`promoting`), it stays
---   HS5 the real player arriving takes its place and its whole camera, and it goes
+--   HS5 the real player arriving takes its place (translation, rotation) and look (yaw, pitch,
+--       zoom), and it goes; the rest of its camera and its scale, which its server gave it for this
+--       world, stay
 --   HS6 a prediction through any other portal stands it where the player stood
 --   HS7 the prediction failing takes it away
 require("modules/core/init.lua")
@@ -75,7 +78,8 @@ local function ask(scope, status, at, from)
                 place = {
                     translation = { x = -2, y = 1, z = 2 },
                     rotation = { x = q.x, y = q.y, z = q.z, w = q.w },
-                    scale = { x = 1, y = 1, z = 1 },
+                    -- The world it left draws its players at half size, eyes 2 m up.
+                    scale = { x = 0.5, y = 0.5, z = 0.5 },
                 },
                 look = { yaw = 0.8, pitch = -0.1, distance = 6, height = 2 },
             },
@@ -155,14 +159,17 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local cam = s and s:get("camera") or {}
         -- Relative (-2, 1, 2) at (10, 0, 5) half turned is (12, 1, 3); the body turned 0.5 - pi/2
         -- there is turned pi/2 + 0.5, and the look 0.8 to its left is pi/2 + 1.3.
-        T("HS3_once_the_place_lands_it_stands_there_turned_with_the_whole_camera_local_and_never_synced",
+        T("HS3_once_the_place_lands_it_stands_there_turned_with_its_camera_local_and_never_synced",
             #all == 1 and s:has("player") and s:get("RigidBody3d") == "Dynamic" and s:has("Collider3d")
                 and s:has("movement") and s:has("camera/third_person") and s:get("core/net/owner") == world_net
                 and s:get("core/net/sync") == false
                 and near(at.x, 12) and near(at.z, 3) and near(yaw_of(t.rotation), math.pi / 2 + 0.5)
-                and near(cam.yaw, math.pi / 2 + 1.3) and near(cam.pitch, -0.1) and cam.distance == 6 and cam.height == 2,
+                and near(cam.yaw, math.pi / 2 + 1.3) and near(cam.pitch, -0.1) and cam.distance == 6,
             string.format("stand-ins=%d at=%s,%s,%s turned=%s yaw=%s distance=%s", #all, tostring(at.x), tostring(at.y),
                 tostring(at.z), tostring(t and yaw_of(t.rotation)), tostring(cam.yaw), tostring(cam.distance)))
+        T("HS3_the_eye_height_and_the_scale_of_the_world_it_left_stay_behind",
+            t ~= nil and cam.height ~= 2 and near(t.scale.x, 1) and near(t.scale.y, 1),
+            string.format("height=%s scale=%s", tostring(cam.height), tostring(t and t.scale.y)))
         commands:entity(rooted):entry("core/world/flip"):and_modify(function(flip) flip.status = "promoting" end)
         step("confirmed")
 
@@ -171,11 +178,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("HS4_confirmed_it_stays", #all == 1, "stand-ins=" .. #all)
         commands:spawn({
             player = { client_id = 7, spawn_index = 1 },
-            Transform = { translation = { x = 0, y = 50, z = 0 } },
+            -- This world's: its server draws players at 0.85, eyes 0.595 m up.
+            Transform = { translation = { x = 0, y = 50, z = 0 }, scale = { x = 0.85, y = 0.85, z = 0.85 } },
             RigidBody3d = "KinematicPositionBased",
             Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
             LockedAxes3d = "ROTATION_LOCKED",
-            camera = { yaw = 0, pitch = 0 },
+            camera = { yaw = 0, pitch = 0, distance = 8, height = 0.595, offset = { x = 0.5, y = 0, z = 0 } },
             -- As the server's player lands: owned by this client's connection, its net entity.
             ["core/net/owner"] = world_net,
             ["core/net/sync"] = false,
@@ -188,11 +196,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local t = real and real:get("Transform")
         local at = t and t.translation or {}
         local cam = real and real:get("camera") or {}
-        T("HS5_the_real_player_takes_its_place_and_whole_camera_and_it_goes",
+        T("HS5_the_real_player_takes_its_place_and_look_and_it_goes",
             #standins(world) == 0 and near(at.x, 12) and near(at.z, 3) and near(yaw_of(t.rotation), math.pi / 2 + 0.5)
-                and near(cam.yaw, math.pi / 2 + 1.3) and near(cam.pitch, -0.1) and cam.distance == 6 and cam.height == 2,
+                and near(cam.yaw, math.pi / 2 + 1.3) and near(cam.pitch, -0.1) and cam.distance == 6,
             string.format("stand-ins=%d at=%s,%s turned=%s yaw=%s", #standins(world), tostring(at.x), tostring(at.z),
                 tostring(t and yaw_of(t.rotation)), tostring(cam.yaw)))
+        T("HS5_it_keeps_the_rest_of_the_camera_and_the_scale_its_server_gave_it",
+            t ~= nil and near(cam.height, 0.595) and near((cam.offset or {}).x, 0.5) and near(t.scale.x, 0.85)
+                and near(t.scale.y, 0.85),
+            string.format("height=%s offset=%s scale=%s", tostring(cam.height), tostring((cam.offset or {}).x),
+                tostring(t and t.scale.y)))
         commands:entity(real:id()):despawn()
         commands:entity(rooted):entry("core/world/flip"):and_modify(function(flip) flip.status = "done" end)
         rooted = commands:spawn(ask(HERE, "predicted", nil, 0)):id()

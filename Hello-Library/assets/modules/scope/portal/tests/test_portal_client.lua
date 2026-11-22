@@ -6,8 +6,8 @@
 -- the player's owner.
 --
 --   C1  the local player walking into a portal asks one predicted flip, shared with root, carrying
---       `player/spawner/standin`, its place where it stands and its look: its whole camera, the yaw
---       relative to its body; and no plain flip
+--       `player/spawner/standin`, its place where it stands and its look: the yaw relative to its body,
+--       the pitch and the zoom, and nothing else of the camera (not its height); and no plain flip
 --   C2  walking into a hosted one asks the same: hosted or not, only the server decides
 --   C3  a portal to this world's own scope asks none
 --   C4  a remote player walking in asks none
@@ -195,10 +195,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local place = ask and ask.place or {}
         local at = place.translation or {}
         local look = ask and ask.look or {}
-        T("C1_walking_in_asks_one_predicted_flip_with_its_place_and_its_whole_camera_and_no_plain_one",
+        T("C1_walking_in_asks_one_predicted_flip_with_its_place_and_its_look_and_no_plain_one",
             predicted == 1 and plain == 0 and shaped and ask.at == nil
                 and near(at.x, 3) and near(at.y, 1) and near(at.z, 4) and near(look.yaw, 0.8) and near(look.pitch, -0.1)
-                and look.distance == 6 and look.height == 2,
+                and look.distance == 6 and look.height == nil,
             string.format("predicted=%d plain=%d shaped=%s at=%s,%s,%s yaw=%s distance=%s height=%s", predicted, plain,
                 tostring(shaped), tostring(at.x), tostring(at.y), tostring(at.z), tostring(look.yaw),
                 tostring(look.distance), tostring(look.height)))

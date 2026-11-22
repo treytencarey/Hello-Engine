@@ -12,13 +12,13 @@ local TransformSystems = require("bevy::transform::TransformSystems")
 -- Only root's ask counts, a mirror from VM 0: any world could share one naming this world.
 -- Through a door the stand-in stands where the player stood relative to the door, at the node the
 -- door's `at` names here, turned likewise; through any other portal, where it stood. Its camera is
--- the player's whole camera (the look), its yaw turned by its facing; a copy, as the table `get`
--- answers is the ask's own value. The node is found by `Name` alone, and never per frame: the
--- stand-in is made at once, with one pass over every `Name`, and while it has no body yet (the map
--- still landing) only the `Name`s added since are checked; root rewrites the ask every frame while
--- it waits, so the ask's own edges cannot say when to pass. Never synced, and not this world's
--- player: the world net's observer gate keeps it from making the world `owned`. Not reaped with
--- this mod: it goes with its ask.
+-- this world's defaults with the look on it (yaw turned by its facing, pitch, zoom), and its body
+-- has no scale: how a world frames a player is that world's. The node is found by `Name` alone,
+-- and never per frame: the stand-in is made at once, with one pass over every `Name`, and while it
+-- has no body yet (the map still landing) only the `Name`s added since are checked; root rewrites
+-- the ask every frame while it waits, so the ask's own edges cannot say when to pass. Never synced,
+-- and not this world's player: the world net's observer gate keeps it from making the world
+-- `owned`. Not reaped with this mod: it goes with its ask.
 app:add_systems(PostUpdate, {
     Query[{ with = { "core/world/flip", "player/spawner/standin", "WorldMirror" } }],
     Query[{
@@ -73,16 +73,16 @@ app:add_systems(PostUpdate, {
         local stood = Mat4.to_scale_rotation_translation(Mat4.mul(
             Mat4.from_scale_rotation_translation(place.scale, place.rotation, place.translation),
             Mat4.from_scale_rotation_translation(from.scale, from.rotation, from.translation)))
-        local camera = {}
-        for field, value in pairs(shown.look or {}) do
-            camera[field] = value
-        end
-        camera.yaw = (camera.yaw or 0) + Quat.to_euler(stood.rotation, "YXZ")[1]
-        camera.pitch = camera.pitch or 0
+        local look = shown.look or {}
+        local camera = {
+            yaw = (look.yaw or 0) + Quat.to_euler(stood.rotation, "YXZ")[1],
+            pitch = look.pitch or 0,
+            distance = look.distance,
+        }
         local net = nets:iter()[1]
         commands:entity(id):insert({
             player = {},
-            Transform = { translation = stood.translation, rotation = stood.rotation, scale = stood.scale },
+            Transform = { translation = stood.translation, rotation = stood.rotation },
             RigidBody3d = "Dynamic",
             Collider3d = { capsule_y = { radius = 0.4, half_height = 0.5 } },
             LockedAxes3d = "ROTATION_LOCKED",
@@ -164,14 +164,17 @@ end):in_set("player/spawner/left"):run_if({
     return not (touched:is_empty() or standins:is_empty())
 end)
 
--- The real player, arriving, takes the stand-in's place and look, which its client then sends as
--- its own (both are the owner's), and the stand-in goes. With no stand-in it stands where its
--- server put it.
+-- The real player, arriving, takes the stand-in's place (translation, rotation) and look (yaw,
+-- pitch, zoom), which its client then sends as its own (both are the owner's), and the stand-in
+-- goes. Nothing else: the rest of its camera and its scale are what its server set for this
+-- world, and the client sending its own whole values would replace them there. With no stand-in it
+-- stands where its server put it.
 app:add_systems(Update, {
     Query[{
         ["or"] = { added = { "core/net/owner" }, changed = { "core/net/owner" } },
         with = { "player" },
         without = { "player/spawner/standin" },
+        optional = { "Transform", "camera" },
     }],
     Query[{ with = { "core/net", "core/net/owns" } }],
     Query[{
@@ -184,7 +187,17 @@ app:add_systems(Update, {
     for _, p in ipairs(arrived:iter()) do
         for _, s in ipairs(own:contains(p:get("core/net/owner")) and standins:iter() or {}) do
             if s:has("Transform") and s:has("camera") then
-                commands:entity(p:id()):insert({ Transform = s:get("Transform"), camera = s:get("camera") })
+                local stood, look = s:get("Transform"), s:get("camera")
+                local body = { translation = stood.translation, rotation = stood.rotation }
+                if p:has("Transform") then body.scale = p:get("Transform").scale end
+                -- A copy: the table `get` answers is the row's own value.
+                local camera = {}
+                for field, value in pairs(p:has("camera") and p:get("camera") or {}) do
+                    camera[field] = value
+                end
+                camera.yaw, camera.pitch = look.yaw, look.pitch
+                camera.distance = look.distance or camera.distance
+                commands:entity(p:id()):insert({ Transform = body, camera = camera })
             end
             commands:entity(s:id()):try_despawn()
         end
