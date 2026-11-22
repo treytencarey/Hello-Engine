@@ -1,17 +1,19 @@
 -- --host
--- scope/portal on a server. The target's server is stubbed by its row and by a real peer listener
--- in this VM that answers as the target's scope; the link the portal makes dials it and is
--- welcomed. Walking in is `collision_trigger` as the trigger mod writes it. A portal being placed
--- is spawned as `git/panel`'s server half spawns one.
+-- scope/portal on a server. The portals' world (HERE) is its own VM; the target (OTHER) is another,
+-- with a real peer listener and its row, and the doors' place there; FOURTH's row names an address
+-- nobody answers at. Every link names only its world and finds it through this process's Gateway
+-- world, as production does, and is proved with the registry's tickets (answered by root). Walking
+-- in is `collision_trigger` as the trigger mod writes it. A portal being placed is spawned as
+-- `git/panel`'s server half spawns one. The cases run in HERE's VM; root reports them.
 --
---   P6  one identity link to each target running here, however many portals name it
+--   P6  one identity link to each target, naming only the world, however many portals name it
 --   P25 a door (`at`, on a named node) to the same target gets a link of its own, its child, named
 --       for the door, carrying `at` and the door's world transform; a door to a target whose
 --       link is not welcomed gets its own too
 --   P7  a welcomed link marks the portals to its target hosted, and a door's own welcomed link
 --       (its place found there) marks the door
 --   P8  a link that is not welcomed marks nothing
---   P9  a target with no row here gets no link and no mark
+--   P9  a target that runs nowhere gets its link all the same, which finds nothing, and no mark
 --   P10 a player walking into a hosted portal is handed over to its target, on its identity link
 --   P26 a player walking into a door is handed over on the door's link
 --   P11 with no welcomed link to the target, the player is handed over all the same (core releases
@@ -34,9 +36,9 @@
 --   P31 a door crossing puts `scope/portal/from` in `transfer_data`: this world, and the door it
 --       lands at; a crossing through a portal that is not a door puts an empty one
 --   P32 a door without `target` links back to each world its players came from through it, at its
---       own `at`; none to an origin not running here
+--       own `at`, one that runs nowhere too
 --   P33 ...walking into it hands a player back to where it came from, on that link; a player that
---       came another way crosses nothing, and one from an origin not running is released
+--       came another way crosses nothing, and one from an origin that runs nowhere is released
 --   P34 ...and the link back goes when no player names it
 --   P20 with real physics: a hosted portal dropped where a player stands reads it inside and hands
 --       it nobody over, as only walking in counts
@@ -47,10 +49,78 @@
 require("modules/core/init.lua")
 require("modules/core/mod_registry/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
-local Quat = require("bevy::math::Quat")
 
 local suite = helpers.create_suite("ScopePortalServerSuite")
-local T = suite.assert_test
+
+local HERE = "github:zzportal/here:main"
+local OTHER = "github:zzportal/other:main"
+local FOURTH = "github:zzportal/fourth:main"
+
+-- The registry and this process's Gateway world, as production has them: every link names only its
+-- world, asks root for a ticket, and finds where that world takes peers through the Gateway world,
+-- which answers from each world's row (`peer_endpoint`). Root's registry calls are answered here,
+-- with a throwaway key.
+local Shared = require("modules/core/world/shared.lua")
+local GATEWAY_PEER = 47738
+local reg = helpers.peer_registry({ gateway_peer = "127.0.0.1:" .. GATEWAY_PEER })
+helpers.make_fixture("modules/test_fixtures/gen_portal_server_gateway.lua", string.format([=[
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({ ["core/net/peer/listen"] = { name = "zz_gateway_peer", port = %d, scope_key = %q, world_port = %d },
+        ["core/net/peer"] = {}, ["core/net/sync"] = false })
+end)
+]=], GATEWAY_PEER, Shared.LOCAL_GATEWAY_SCOPE, GATEWAY_PEER + 1))
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_server_gateway.lua", nil, { headless = true }), Shared.LOCAL_GATEWAY_SCOPE)
+
+-- OTHER: its listener, its row, the place the doors name, and FOURTH's row, whose address nobody
+-- answers at.
+helpers.make_fixture("modules/test_fixtures/gen_portal_server_other.lua", string.format([=[
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({
+        ["core/net/peer/listen"] = { port = 47731, name = "peer_zzportal", scope_key = %q, world_port = 47730 },
+        ["core/net/peer"] = {},
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({
+        ["core/world/status"] = { scope_key = %q, mode = "server", status = "ready",
+            ports = { world = 47730, peer = 47731 }, peer_endpoint = "127.0.0.1:47731" },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({
+        ["core/world/status"] = { scope_key = %q, mode = "server", status = "ready",
+            ports = { world = 47732, peer = 47733 }, peer_endpoint = "127.0.0.1:47733" },
+        WorldShared = {},
+        ["core/net/sync"] = false,
+    })
+    commands:spawn({ Name = "zz_arrival", Transform = { translation = { x = 0, y = 1, z = -9 } }, ["core/net/sync"] = false })
+end)
+]=], OTHER, OTHER, FOURTH))
+
+helpers.make_fixture("modules/test_fixtures/gen_portal_server_here.lua", [==[
+require("modules/core/net/server/init.lua")
+require("modules/core/net/peer/init.lua")
+require("modules/core/mod_registry/init.lua")
+local helpers = require("modules/core/test_helpers.lua")
+local Quat = require("bevy::math::Quat")
+local rep = helpers.shared_state("ScopePortalServerReport", {})
+
+-- A verdict is reported to root, which asserts it.
+local reported = 0
+local function T(name, ok, detail)
+    reported = reported + 1
+    rep["v" .. reported] = { name = name, ok = ok == true, detail = tostring(detail or "") }
+    rep.count = reported
+end
+local function finish() rep.done = true end
+-- OTHER is up once its row is here, mirrored from its VM.
+local other_up = false
+app:add_systems(Update, { World }, function(world)
+    for _, e in ipairs(world:query({ with = { "core/world/status", "WorldShared" } })) do
+        if e:get("core/world/status").scope_key == "github:zzportal/other:main" then other_up = true end
+    end
+end):in_set("zz/portal_other_up")
 
 local HERE = "github:zzportal/here:main"
 local OTHER = "github:zzportal/other:main"
@@ -65,8 +135,14 @@ end
 app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
     commands:spawn({
-        ["core/world/status"] = { scope_key = HERE, mode = "server", status = "ready" },
+        ["core/world/status"] = { scope_key = HERE, mode = "server", status = "ready", peer_endpoint = "127.0.0.1:47735" },
         WorldShared = {},
+        ["core/net/sync"] = false,
+    })
+    -- This world says who it is to a peer through its own listener.
+    commands:spawn({
+        ["core/net/peer/listen"] = { port = 47735, name = "peer_zzportal_here", scope_key = HERE, world_port = 47734 },
+        ["core/net/peer"] = {},
         ["core/net/sync"] = false,
     })
 end)
@@ -129,7 +205,6 @@ app:add_systems(PostUpdate, { World }, function(world)
         solid = solid + #world:query({ with = { "scope/portal", "Collider3d" }, without = { "Sensor3d" } })
     end
 end):in_set("zz/portal_solid")
-local bound_port
 local link_holder
 
 app:add_systems(Update, { World, Commands }, function(world, commands)
@@ -137,11 +212,6 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     local function step(next_phase) phase, clock = next_phase, 0 end
 
     if phase == "listen" then
-        commands:spawn({
-            ["core/net/peer/listen"] = { port = 47731, name = "peer_zzportal", scope_key = OTHER, world_port = 47730 },
-            ["core/net/peer"] = {},
-            ["core/net/sync"] = false,
-        })
         commands:spawn({
             ["scope/portal"] = { target = OTHER },
             ["scope/portal/view"] = { mode = "3d" },
@@ -158,25 +228,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "binding" then
         local listener = world:query({ with = { "core/net/peer/state", "core/net/peer/listen" } })[1]
-        if listener and listener:get("core/net/peer/state").bound then
-            bound_port = listener:get("core/net/peer/listen").port
-            commands:spawn({
-                ["core/world/status"] = { scope_key = OTHER, mode = "server", status = "ready",
-                    ports = { world = 47730, peer = bound_port } },
-                ["core/net/sync"] = false,
-            })
-            commands:spawn({
-                ["core/world/status"] = { scope_key = FOURTH, mode = "server", status = "ready",
-                    ports = { world = 47732, peer = 47733 } },
-                ["core/net/sync"] = false,
-            })
+        if listener and listener:get("core/net/peer/state").bound and other_up then
             for _, p in ipairs({ { "l1", OTHER }, { "l2", OTHER }, { "l4", FOURTH }, { "l5", THIRD } }) do
                 commands:spawn({ ["scope/portal"] = { target = p[2] }, ["core/net/sync"] = false, ["zz/portal/p"] = { name = p[1] } })
             end
-            -- Map doors, as a scene's nodes are: named, never placed. The listener answers as OTHER
-            -- in this VM, so the place its doors name stands here.
-            commands:spawn({ Name = "zz_arrival", Transform = { translation = { x = 0, y = 1, z = -9 } },
-                ["core/net/sync"] = false })
+            -- Map doors, as a scene's nodes are: named, never placed. The place they name stands in
+            -- OTHER.
             commands:spawn({ ["scope/portal"] = { target = OTHER, at = "zz_arrival" }, Name = "zz_door",
                 Transform = { translation = { x = 8, y = 0, z = 3 }, rotation = Quat.from_rotation_y(math.pi / 2) },
                 ["core/net/sync"] = false, ["zz/portal/p"] = { name = "door_o" } })
@@ -196,15 +253,16 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local up = links(world, OTHER)[1]
         local st = up and up:get("core/net/peer/link/state")
         if (st and st.welcomed and named(world, "zz/portal/p", "l1"):has("scope/portal/hosted")
-                and named(world, "zz/portal/p", "door_o"):has("scope/portal/hosted")) or clock > 8 then
+                and named(world, "zz/portal/p", "door_o"):has("scope/portal/hosted")) or clock > 15 then
             local others, fourths = links(world, OTHER), links(world, FOURTH)
             local cfg = others[1] and others[1]:get("core/net/peer/link")
             local l1, l2 = named(world, "zz/portal/p", "l1"), named(world, "zz/portal/p", "l2")
             link_holder = others[1] and others[1]:get("ChildOf")
-            T("P6_one_identity_link_to_each_running_target",
-                #others == 1 and #fourths == 1 and cfg.name == "peer_to_127.0.0.1_47730" and cfg.port == bound_port
-                    and cfg.server_addr == "127.0.0.1" and (link_holder == l1:id() or link_holder == l2:id()),
-                string.format("links to OTHER=%d FOURTH=%d", #others, #fourths))
+            T("P6_one_identity_link_to_each_target_naming_only_the_world",
+                #others == 1 and #fourths == 1 and cfg.name == "peer_to_" .. OTHER and cfg.port == nil
+                    and cfg.server_addr == nil and (link_holder == l1:id() or link_holder == l2:id()),
+                string.format("links to OTHER=%d FOURTH=%d name=%s port=%s addr=%s", #others, #fourths,
+                    tostring(cfg and cfg.name), tostring(cfg and cfg.port), tostring(cfg and cfg.server_addr)))
             local door_o, door_4 = named(world, "zz/portal/p", "door_o"), named(world, "zz/portal/p", "door_4")
             local doors, doors4 = links(world, OTHER, true), links(world, FOURTH, true)
             local dcfg = doors[1] and doors[1]:get("core/net/peer/link")
@@ -214,7 +272,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             local d4 = doors4[1] and doors4[1]:get("core/net/peer/link")
             T("P25_a_door_gets_a_link_of_its_own_named_for_it_with_at_and_its_frame",
                 #doors == 1 and dcfg.name == "peer_to_" .. OTHER .. "@zz_door" and dcfg.at == "zz_arrival"
-                    and dcfg.port == bound_port and doors[1]:get("ChildOf") == door_o:id()
+                    and dcfg.port == nil and dcfg.server_addr == nil and doors[1]:get("ChildOf") == door_o:id()
                     and near(at.x, 8) and near(at.y, 0) and near(at.z, 3) and near(yaw, math.pi / 2)
                     and #doors4 == 1 and d4.name == "peer_to_" .. FOURTH .. "@zz_door4"
                     and doors4[1]:get("ChildOf") == door_4:id(),
@@ -231,8 +289,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             T("P8_a_link_not_welcomed_marks_nothing",
                 not l4:has("scope/portal/hosted") and not door_4:has("scope/portal/hosted")
                     and not (st4 and st4.welcomed), "")
-            T("P9_a_target_with_no_row_gets_no_link",
-                #links(world, THIRD) == 0 and not named(world, "zz/portal/p", "l5"):has("scope/portal/hosted"), "")
+            local thirds = links(world, THIRD)
+            local st3 = thirds[1] and thirds[1]:get("core/net/peer/link/state")
+            T("P9_a_target_running_nowhere_gets_its_link_which_finds_nothing_and_no_mark",
+                #thirds == 1 and st3 ~= nil and not st3.welcomed and st3.reason == "not-running"
+                    and not named(world, "zz/portal/p", "l5"):has("scope/portal/hosted"),
+                string.format("links=%d reason=%s", #thirds, tostring(st3 and st3.reason)))
             local placing = named(world, "zz/portal/p", "a1")
             T("P13a_a_portal_still_being_placed_has_no_body_and_no_trigger",
                 placing:has("placement") and not placing:has("RigidBody3d") and not placing:has("Collider3d")
@@ -303,13 +365,13 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "walked" and clock > 0.3 then
         T("P10_walking_into_a_hosted_portal_hands_the_player_over_on_its_identity_link",
-            switched.h7 == OTHER and via.h7 == "peer_to_127.0.0.1_47730", tostring(switched.h7) .. " " .. tostring(via.h7))
+            switched.h7 == OTHER and via.h7 == "peer_to_" .. OTHER, tostring(switched.h7) .. " " .. tostring(via.h7))
         T("P10b_taking_a_3_s_crossing_timer_in_transfer_data", carried.h7 == 3, tostring(carried.h7))
         T("P26_walking_into_a_door_hands_the_player_over_on_the_door_s_link",
             switched.hdo == OTHER and via.hdo == "peer_to_" .. OTHER .. "@zz_door" and carried.hdo == 3,
             tostring(switched.hdo) .. " " .. tostring(via.hdo))
         T("P11_with_no_welcomed_link_it_is_handed_over_all_the_same_on_its_join_s_link",
-            switched.h8 == FOURTH and via.h8 == "peer_to_127.0.0.1_47732"
+            switched.h8 == FOURTH and via.h8 == "peer_to_" .. FOURTH
                 and switched.hd4 == FOURTH and via.hd4 == "peer_to_" .. FOURTH .. "@zz_door4",
             string.format("portal: %s %s door: %s %s", tostring(switched.h8), tostring(via.h8), tostring(switched.hd4),
                 tostring(via.hd4)))
@@ -328,19 +390,22 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         for _, l in ipairs(world:query({ with = { "core/net/peer/link", "ChildOf" } })) do
             if l:get("ChildOf") == entry:id() then
                 local cfg = l:get("core/net/peer/link")
-                if cfg.scope_key == OTHER and cfg.name == "peer_to_" .. OTHER .. "@zz_entry" and cfg.at == "zz_arrival" then
-                    backs[#backs + 1] = cfg
+                local origin = cfg.scope_key == OTHER or cfg.scope_key == THIRD
+                if origin and cfg.name == "peer_to_" .. cfg.scope_key .. "@zz_entry" and cfg.at == "zz_arrival"
+                        and cfg.port == nil then
+                    backs[cfg.scope_key] = true
                 else
                     wrong = wrong + 1
                 end
             end
         end
-        T("P32_a_door_without_target_links_back_to_where_its_players_came_from_at_its_own_at", #backs == 1 and wrong == 0,
-            string.format("back links=%d others=%d", #backs, wrong))
+        T("P32_a_door_without_target_links_back_to_where_its_players_came_from_at_its_own_at",
+            backs[OTHER] and backs[THIRD] and wrong == 0,
+            string.format("back to OTHER=%s THIRD=%s others=%d", tostring(backs[OTHER]), tostring(backs[THIRD]), wrong))
         T("P33_walking_in_hands_a_player_back_on_that_link", switched.hb == OTHER and via.hb == "peer_to_" .. OTHER .. "@zz_entry",
             tostring(switched.hb) .. " " .. tostring(via.hb))
         T("P33_a_player_that_came_another_way_crosses_nothing", crossed.hx == nil, tostring(switched.hx))
-        T("P33_one_from_an_origin_not_running_is_released", switched.ht == THIRD, tostring(switched.ht))
+        T("P33_one_from_an_origin_running_nowhere_is_released", switched.ht == THIRD, tostring(switched.ht))
         for _, name in ipairs({ "hb", "ht" }) do
             local h = named(world, "zz/portal/h", name)
             if h ~= nil then commands:entity(h:id()):try_remove("scope/portal/from") end
@@ -519,12 +584,31 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             read and switched.hw == nil, string.format("inside=%s switched=%s", tostring(read), tostring(switched.hw)))
         T("P24_no_portal_reaches_rapier_as_a_solid_ball", solid == 0, "frames with a solid portal: " .. solid)
         phase = "done"
-        suite.finish("ScopePortalServerSuite")
+        finish()
     end
 
-    if phase ~= "done" and clock > 12 then
-        T("P0_reached_" .. phase, false, "stuck in phase '" .. phase .. "' for 12 s")
+    if phase ~= "done" and clock > 20 then
+        T("P0_reached_" .. phase, false, "stuck in phase '" .. phase .. "' for 20 s")
         phase = "done"
-        suite.finish("ScopePortalServerSuite")
+        finish()
     end
 end):in_set("zz/portal_server_suite")
+]==])
+
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_server_other.lua", nil, { headless = true }), OTHER)
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_server_here.lua", nil, { headless = true }), HERE)
+
+local rep = helpers.shared_state("ScopePortalServerReport", {})
+local t, done = 0, false
+app:add_systems(Update, { World }, function(world)
+    if done then return end
+    t = t + (world:delta_time() or 0)
+    if not (rep.done or t > 240) then return end
+    done = true
+    for i = 1, rep.count or 0 do
+        local v = rep["v" .. i] or {}
+        suite.assert_test(tostring(v.name), v.ok == true, v.detail)
+    end
+    if not rep.done then suite.assert_test("P0_the_cases_finished", false, "HERE never finished") end
+    suite.finish("ScopePortalServerSuite")
+end):in_set("zz/portal_server_report")

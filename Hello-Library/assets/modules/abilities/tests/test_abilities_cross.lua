@@ -15,6 +15,8 @@ local helpers = require("modules/core/test_helpers.lua")
 
 local suite = helpers.create_suite("AbilitiesCrossSuite")
 local T = suite.assert_test
+-- The registry, answered here: the link is proved with a ticket root asks it for.
+local reg = helpers.peer_registry()
 
 local DEFAULTS = {
     s_ready = false, t_mirror = false, press = "",
@@ -131,8 +133,8 @@ app:add_systems(Update, {
 end):in_set("zz/ac_t")
 ]=])
 
-helpers.spawn_vm("modules/test_fixtures/gen_abilities_cross_t.lua", { DEFAULTS = DEFAULTS }, { headless = true })
-helpers.spawn_vm("modules/test_fixtures/gen_abilities_cross_s.lua", { DEFAULTS = DEFAULTS }, { headless = true })
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_abilities_cross_t.lua", { DEFAULTS = DEFAULTS }, { headless = true }), "zz:ac:t")
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_abilities_cross_s.lua", { DEFAULTS = DEFAULTS }, { headless = true }), "zz:ac:s")
 
 local steps, at, t, mark = {}, 1, 0, 0
 local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act } end

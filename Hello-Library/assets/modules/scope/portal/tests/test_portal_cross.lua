@@ -25,6 +25,22 @@ local helpers = require("modules/core/test_helpers.lua")
 local suite = helpers.create_suite("ScopePortalCrossSuite")
 local T = suite.assert_test
 
+-- The registry and this process's Gateway world, as production has them: every link names only its
+-- world, asks root for a ticket, and finds where that world takes peers through the Gateway world,
+-- which answers from each world's row (`peer_endpoint`). Root's registry calls are answered here,
+-- with a throwaway key.
+local Shared = require("modules/core/world/shared.lua")
+local GATEWAY_PEER = 15491
+local reg = helpers.peer_registry({ gateway_peer = "127.0.0.1:" .. GATEWAY_PEER })
+helpers.make_fixture("modules/test_fixtures/gen_portal_cross_gateway.lua", string.format([=[
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({ ["core/net/peer/listen"] = { name = "zz_gateway_peer", port = %d, scope_key = %q, world_port = %d },
+        ["core/net/peer"] = {}, ["core/net/sync"] = false })
+end)
+]=], GATEWAY_PEER, Shared.LOCAL_GATEWAY_SCOPE, GATEWAY_PEER + 1))
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_cross_gateway.lua", nil, { headless = true }), Shared.LOCAL_GATEWAY_SCOPE)
+
 local HERE = "github:zzportalx/here:main"
 local OTHER = "github:zzportalx/other:main"
 -- What each world accepts from a peer, as a world's boot declares it.
@@ -97,7 +113,8 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
     commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
     -- This world's own row, which names it to its portals.
     commands:spawn({
-        ["core/world/status"] = { scope_key = boot.HERE, mode = "server", status = "ready", ports = { world = 15495, peer = 15498 } },
+        ["core/world/status"] = { scope_key = boot.HERE, mode = "server", status = "ready", ports = { world = 15495, peer = 15498 },
+            peer_endpoint = "127.0.0.1:15498" },
         WorldShared = {},
         ["core/net/sync"] = false,
     })
@@ -199,7 +216,8 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/net/peer/expose"] = { components = "all" }, ["core/net/sync"] = false })
     commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
     commands:spawn({
-        ["core/world/status"] = { scope_key = boot.OTHER, mode = "server", status = "ready", ports = { world = 15496, peer = 15497 } },
+        ["core/world/status"] = { scope_key = boot.OTHER, mode = "server", status = "ready", ports = { world = 15496, peer = 15497 },
+            peer_endpoint = "127.0.0.1:15497" },
         WorldShared = {},
         ["core/net/sync"] = false,
     })
@@ -288,10 +306,10 @@ app:add_systems(Update, {
 end):in_set("zz/px_target")
 ]=])
 
-helpers.spawn_vm("modules/test_fixtures/gen_portal_cross_target.lua",
-    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
-helpers.spawn_vm("modules/test_fixtures/gen_portal_cross_source.lua",
-    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_cross_target.lua",
+    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true }), OTHER)
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_cross_source.lua",
+    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true }), HERE)
 
 local steps, at, t, mark = {}, 1, 0, 0
 local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act } end

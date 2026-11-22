@@ -412,7 +412,8 @@ app:add_systems(Update, {
         with = { "core/world/status" },
         without = { "WorldMirror" },
     }],
-    Query[{ with = { "scope/portal", "core/net/owner" } }],
+    -- A return end has its portal's owner, and is not another portal of theirs.
+    Query[{ with = { "scope/portal", "core/net/owner" }, without = { "scope/portal/return" } }],
     Query[{ with = { "core/world/load" } }],
     Query[{ with = { "sidebar/invites/request" } }],
     Commands,

@@ -71,7 +71,8 @@ app:add_systems(Update, {
         without = { "WorldMirror", "core/net/peer/mirror" },
         optional = { "git/panel/response", "Transform" },
     }],
-    Query[{ with = { "scope/portal", "core/net/owner" } }],
+    -- A return end has its portal's owner, and is not another portal of theirs.
+    Query[{ with = { "scope/portal", "core/net/owner" }, without = { "scope/portal/return" } }],
     Query[{
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },

@@ -43,7 +43,7 @@ The target is the chosen repository's canonical key, `github:<owner>/<name>[/<fo
 
 ## The portal the server opens
 
-On an ask with `op = "portal"` or `"drop_portal"`, the server checks only that `target_sk` is a string, not empty, at most 512 bytes, and not this world's own scope (`scope_key` of this world's own `core/world/status`, with `WorldShared` and without `WorldMirror`), and that the owner holds fewer than 8 portals here (counted by query over `scope/portal` with `core/net/owner`, grouped by the owner entity, with the ones this run opened). No library mod checks that a scope key is canonical: root canonicalizes the target when a client's view observes it, and a target root refuses ends as a locked portal with root's reason (`scope/portal/view`).
+On an ask with `op = "portal"` or `"drop_portal"`, the server checks only that `target_sk` is a string, not empty, at most 512 bytes, and not this world's own scope (`scope_key` of this world's own `core/world/status`, with `WorldShared` and without `WorldMirror`), and that the owner holds fewer than 8 portals here (counted by query over `scope/portal` with `core/net/owner` and without `scope/portal/return`, as a portal's return end carries its owner too, grouped by the owner entity, with the ones this run opened). No library mod checks that a scope key is canonical: root canonicalizes the target when a client's view observes it, and a target root refuses ends as a locked portal with root's reason (`scope/portal/view`).
 
 A refused ask is answered `failed` with its reason and opens nothing. An accepted one is answered `opened`, with the op it answers. For `portal` the server spawns, for everyone to see and the owner to place:
 

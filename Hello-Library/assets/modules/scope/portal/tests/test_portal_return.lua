@@ -1,6 +1,7 @@
 -- --host
 -- A portal's return end, between worlds, each its own isolated VM, as worlds of one process are in
--- production: each world's row, shared, is what the others' servers link by. A player drops a
+-- production: each world's links find the others through this process's Gateway world, which answers
+-- from each world's row, and every link is proved with the registry's tickets. A player drops a
 -- portal in the source world to the target; once it is hosted it stands in the target too, leading
 -- back. The player crosses through it, then walks back through the return end. The target's client
 -- is a connection that only watches until the handover lands; its `player/spawner` is real, and so
@@ -13,14 +14,17 @@
 --      has no link and no mark
 --   R3 a scene's door and a portal still being placed get none; a second later, the target has
 --      made none of its own for the mirror, and the source holds no mirror of a portal
---   R4 the target's server hosts it: its link to the source is up
+--   R4 the target's server hosts it on the source's proved connection alone: the registry gives the
+--      target no ticket for a link of its own back to the source
 --   R5 in the source, walking into the return end hands nobody over
 --   R6 a reload of the server half keeps one return end, the same, and one mirror in the target
 --   R7 a player handed over through the portal arrives inside the return end, cooling
 --   R8 ...and staying inside after the timer ends, it is not handed back
 --   R9 ...walking out and in again hands it back to the source
---   R10 the target's link going takes the return end, here and in the target
---   R11 ...and it comes back with the link
+--   R21 the placer's connection leaving the target takes it out of the mirror's owner, and the return
+--       end stays, hosted
+--   R10 the target stopping takes the return end here
+--   R11 ...and it comes back when the target runs again
 --   R12 the portal despawned takes its return end, here and in the target
 --   R13 the portal that was being placed, once placed, gets its own, at its place
 --   R14 `scope/portal` taken off it, the entity staying, takes its return end, here and there
@@ -31,11 +35,33 @@
 --       portal, here and in the target, with no list of them in the server half
 --   R17 ...and a component synced on the portal after its return end stood reaches it too, here
 --       and in the target's sync, by a new return end
+--   R18 the return end carries the portal's owner, and in the target its mirror names the target's
+--       own connection of that client
+--   R19 a portal the source stands in the target that leads elsewhere is refused there, and one
+--       with no owner too: neither stays
+--   R22 a portal opened to place, once placed, gets a return end without `placement` in it or its
+--       sync, here and in the target: that is the placer's client's to write
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
 local suite = helpers.create_suite("ScopePortalReturnSuite")
 local T = suite.assert_test
+
+-- The registry and this process's Gateway world, as production has them: every link names only its
+-- world, asks root for a ticket, and finds where that world takes peers through the Gateway world,
+-- which answers from each world's row (`peer_endpoint`). Root's registry calls are answered here,
+-- with a throwaway key.
+local Shared = require("modules/core/world/shared.lua")
+local GATEWAY_PEER = 15511
+local reg = helpers.peer_registry({ gateway_peer = "127.0.0.1:" .. GATEWAY_PEER })
+helpers.make_fixture("modules/test_fixtures/gen_portal_return_gateway.lua", string.format([=[
+app:add_systems(Startup, { Commands }, function(commands)
+    commands:spawn({ ["core/world/net"] = { mode = "server" }, ["core/net/sync"] = false })
+    commands:spawn({ ["core/net/peer/listen"] = { name = "zz_gateway_peer", port = %d, scope_key = %q, world_port = %d },
+        ["core/net/peer"] = {}, ["core/net/sync"] = false })
+end)
+]=], GATEWAY_PEER, Shared.LOCAL_GATEWAY_SCOPE, GATEWAY_PEER + 1))
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_return_gateway.lua", nil, { headless = true }), Shared.LOCAL_GATEWAY_SCOPE)
 
 local HERE = "github:zzportalr/here:main"
 local OTHER = "github:zzportalr/other:main"
@@ -44,6 +70,14 @@ local SERVER = "assets/modules/scope/portal/server/init.lua"
 -- What each world accepts from a peer, as a world's boot declares it.
 local ACCEPT = { "Transform", "cooldown", "scope/portal", "scope/portal/view", "scope/portal/hosted", "zz/pr/tag",
     "zz/pr/later" }
+-- R4: the target's own link back to the source gets no ticket; a welcome's (which names the
+-- process that dialled) does.
+reg.answer = function(body)
+    if body.from == OTHER and body.to == HERE and body.to_instance == nil then
+        return { status = "refused", reason = "not-yours" }
+    end
+    return nil
+end
 
 local DEFAULTS = {
     x_hosted = false, x_ends = 0, x_end_ok = false, x_end = "", x_door = false, x_placing = false,
@@ -54,6 +88,7 @@ local DEFAULTS = {
     y_mark = false, y_go = "", y_status = "ready",
     x_far_hosted = false, x_far_ends = 0, z_mirrors = 0, z_at = "",
     x_copied = "", x_later = false, x_add_later = false, y_copied = "", y_later = false,
+    x_end_owner = false, y_owner = "", x_end_placement = true, y_placement = true, x_rogue = false, y_rogue = 0, y_links_up = -1, y_leave = false,
 }
 local ts = helpers.shared_state("ScopePortalReturnState", DEFAULTS)
 
@@ -67,6 +102,7 @@ local Net = require("modules/core/net/shared/net.lua")
 
 local boot = Instances.boot_data()
 local ts = helpers.shared_state("ScopePortalReturnState", boot.DEFAULTS)
+local C41
 
 app:add_systems(Startup, { World, Commands }, function(world, commands)
     -- declared first, as the net does when it starts: an owner stored before it gets no owner edge
@@ -78,6 +114,7 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
     })
     -- The client's connection, as the world net spawns one: it owns what the client owns here.
     local c41 = commands:spawn({ ["core/net/connection"] = { client_id = 41 }, ["core/net/sync"] = false, ChildOf = wn:id() }):id()
+    C41 = c41
     commands:spawn({
         ["core/net/peer/listen"] = { name = "zzpr_x_peer", port = 15518, scope_key = boot.HERE, world_port = 15515 },
         ["core/net/peer"] = {},
@@ -87,7 +124,7 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
     commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
     commands:spawn({
         ["core/world/status"] = { scope_key = boot.HERE, mode = "server", status = "ready",
-            ports = { world = 15515, peer = 15518 } },
+            ports = { world = 15515, peer = 15518 }, peer_endpoint = "127.0.0.1:15518" },
         WorldShared = {},
         ["core/net/sync"] = false,
     })
@@ -158,6 +195,7 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
 end)
 
 local kept, walked_end, walked, gone, placed, unportaled, added_later = nil, false, false, false, false, false, false
+local rogued = false
 app:add_systems(Update, { World, Commands }, function(world, commands)
     local portals = {}
     for _, e in ipairs(world:query({
@@ -173,10 +211,12 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         with = { "scope/portal", "core/net/peer/share" },
         without = { "core/net/peer/mirror" },
         optional = { "scope/portal/return", "scope/portal/hosted", "Transform", "scope/portal/view", "zz/pr/tag",
-            "zz/pr/later" },
+            "zz/pr/later", "core/net/owner", "placement", "core/net/sync" },
     })) do
         local link = e:get("scope/portal/return")
-        if far ~= nil and link ~= nil and link.entity == far:id() then
+        if e:has("placement") then
+            -- R19's: not a return end
+        elseif far ~= nil and link ~= nil and link.entity == far:id() then
             far_ends = far_ends + 1
         else
             ends[#ends + 1] = e
@@ -216,8 +256,23 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local view, tag, later = r:get("scope/portal/view"), r:get("zz/pr/tag"), r:get("zz/pr/later")
         ts.x_copied = string.format("view=%s tag=%s", tostring(view and view.mode), tostring(tag and tag.n))
         ts.x_later = later ~= nil and later.n == 9
+        ts.x_end_owner = C41 ~= nil and r:get("core/net/owner") == C41
+        local rs = r:get("core/net/sync")
+        ts.x_end_placement = r:has("placement") or (type(rs) == "table" and rs.placement ~= nil)
     else
-        ts.x_end_ok, ts.x_end, ts.x_same, ts.x_copied, ts.x_later = false, "none", false, "", false
+        ts.x_end_ok, ts.x_end, ts.x_same, ts.x_copied, ts.x_later, ts.x_end_owner = false, "none", false, "", false, false
+    end
+    -- R19: what a hostile source could share to the target. `placement` keeps this world's own
+    -- portal systems off them; it is not synced, so the target never sees it.
+    if ts.x_rogue and not rogued then
+        rogued = true
+        local sync = { Transform = { authority = "server" }, ["scope/portal"] = { authority = "server" } }
+        commands:spawn({ ["scope/portal"] = { target = boot.THIRD }, placement = {}, Transform = { translation = { x = 30, y = 0, z = 0 } },
+            ["core/net/sync"] = sync, ["core/net/owner"] = C41, ["core/script/owner"] = false,
+            ["core/net/peer/share"] = { stable_id = "zz_rogue_elsewhere", to = { boot.OTHER } } })
+        commands:spawn({ ["scope/portal"] = { target = boot.HERE }, placement = {}, Transform = { translation = { x = 31, y = 0, z = 0 } },
+            ["core/net/sync"] = sync, ["core/script/owner"] = false,
+            ["core/net/peer/share"] = { stable_id = "zz_rogue_ownerless", to = { boot.OTHER } } })
     end
     if ts.x_mark and kept == nil and r ~= nil then kept = r:id() end
     if ts.x_add_later and not added_later and drop ~= nil then
@@ -284,7 +339,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     })
     commands:spawn({
         ["core/world/status"] = { scope_key = boot.OTHER, mode = "server", status = "ready",
-            ports = { world = 15516, peer = 15517 } },
+            ports = { world = 15516, peer = 15517 }, peer_endpoint = "127.0.0.1:15517" },
         WorldShared = {},
         ["core/net/sync"] = false,
         ["zz/pr/row"] = {},
@@ -300,13 +355,27 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         flipped = true
         commands:entity(c:id()):entry("core/net/connection"):and_modify(function(conn) conn.observer = false end)
     end
-    local mirrors = world:query({
+    local mirrors, rogue = {}, 0
+    for _, e in ipairs(world:query({
         with = { "scope/portal", "core/net/peer/mirror" },
         optional = { "scope/portal/hosted", "Transform", "scope/portal/view", "collision_trigger", "core/net/sync",
-            "RigidBody3d", "zz/pr/tag", "zz/pr/later" },
-    })
+            "RigidBody3d", "zz/pr/tag", "zz/pr/later", "placement" },
+    })) do
+        local id = e:get("core/net/peer/mirror").stable_id
+        if tostring(id):find("^zz_rogue") then rogue = rogue + 1 else mirrors[#mirrors + 1] = e end
+    end
+    ts.y_rogue = rogue
     local m = mirrors[1]
     ts.y_mirrors = #mirrors
+    local up = 0
+    for _, l in ipairs(world:query({ with = { "core/net/peer/link", "core/net/peer/link/state" } })) do
+        if l:get("core/net/peer/link/state").welcomed then up = up + 1 end
+    end
+    ts.y_links_up = up
+    local owner = m and m:get("core/net/peer/mirror").owner
+    ts.y_owner = type(owner) == "table" and string.format("client=%s connection=%s", tostring(owner.client),
+        tostring(owner.connection ~= nil and c ~= nil and owner.connection == c:id())) or "none"
+    if ts.y_leave and c ~= nil then commands:entity(c:id()):despawn() end
     ts.y_returns = #world:query({ with = { "scope/portal/return" } })
     ts.y_hosted = m ~= nil and m:has("scope/portal/hosted")
     if m ~= nil then
@@ -328,6 +397,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             tostring(type(sync) == "table" and sync["zz/pr/tag"] ~= nil))
         ts.y_later = later ~= nil and later.n == 9 and type(sync) == "table" and sync["zz/pr/later"] ~= nil
         ts.y_at_x = at.x or 0
+        ts.y_placement = m:has("placement") or (type(sync) == "table" and sync.placement ~= nil)
         if ts.y_mark and kept == nil then kept = m:id() end
     else
         ts.y_end_ok, ts.y_end, ts.y_same, ts.y_at_x, ts.y_copied, ts.y_later = false, "none", false, 0, "", false
@@ -392,7 +462,7 @@ app:add_systems(Startup, { Commands }, function(commands)
     commands:spawn({ ["core/net/peer/accept"] = { components = boot.ACCEPT }, ["core/net/sync"] = false })
     commands:spawn({
         ["core/world/status"] = { scope_key = boot.THIRD, mode = "server", status = "ready",
-            ports = { world = 15513, peer = 15514 } },
+            ports = { world = 15513, peer = 15514 }, peer_endpoint = "127.0.0.1:15514" },
         WorldShared = {},
         ["core/net/sync"] = false,
     })
@@ -413,12 +483,28 @@ app:add_systems(Update, { World }, function(world)
 end):in_set("zz/pr_z")
 ]=])
 
-helpers.spawn_vm("modules/test_fixtures/gen_portal_return_y.lua",
-    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }, { headless = true })
-helpers.spawn_vm("modules/test_fixtures/gen_portal_return_z.lua",
-    { DEFAULTS = DEFAULTS, THIRD = THIRD, ACCEPT = ACCEPT }, { headless = true })
-helpers.spawn_vm("modules/test_fixtures/gen_portal_return_x.lua",
-    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, THIRD = THIRD, ACCEPT = ACCEPT }, { headless = true })
+local Y_DATA = { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, ACCEPT = ACCEPT }
+local y_vm = helpers.spawn_vm("modules/test_fixtures/gen_portal_return_y.lua", Y_DATA, { headless = true })
+reg.started(y_vm, OTHER)
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_return_z.lua",
+    { DEFAULTS = DEFAULTS, THIRD = THIRD, ACCEPT = ACCEPT }, { headless = true }), THIRD)
+reg.started(helpers.spawn_vm("modules/test_fixtures/gen_portal_return_x.lua",
+    { DEFAULTS = DEFAULTS, HERE = HERE, OTHER = OTHER, THIRD = THIRD, ACCEPT = ACCEPT }, { headless = true }), HERE)
+
+-- R10, R11: the target stops, then runs again, a new VM that root records as it starts a world.
+local stop_y, start_y = false, false
+app:add_systems(Update, { Commands }, function(commands)
+    if stop_y then
+        stop_y = false
+        pcall(vm.stop, y_vm)
+    end
+    if start_y then
+        start_y = false
+        y_vm = helpers.spawn_vm("modules/test_fixtures/gen_portal_return_y.lua", Y_DATA, { headless = true })
+        local pin = commands:spawn({ ["core/world/instance/pin"] = { scope_key = OTHER, mode = "server" }, ["core/net/sync"] = false })
+        commands:spawn({ ["core/world/started"] = { entity = pin:id(), world_id = y_vm }, ["core/net/sync"] = false })
+    end
+end):in_set("zz/pr_restart")
 
 local steps, at, t, mark = {}, 1, 0, 0
 local function step(ready, act) steps[#steps + 1] = { ready = ready, act = act } end
@@ -442,7 +528,11 @@ end), function()
         ends())
     T("R3_a_door_and_a_portal_being_placed_get_none", ts.x_door and ts.x_placing,
         string.format("door=%s placing=%s", tostring(ts.x_door), tostring(ts.x_placing)))
-    T("R4_the_target_hosts_it", ts.y_hosted, ends())
+    T("R4_the_target_hosts_it_on_the_source_s_connection_alone", ts.y_hosted and ts.y_links_up == 0,
+        ends() .. " y links up=" .. tostring(ts.y_links_up))
+    T("R18_the_return_end_carries_the_portal_s_owner_named_there_as_its_own_connection",
+        ts.x_end_owner and ts.y_owner == "client=41 connection=true",
+        "x owner=" .. tostring(ts.x_end_owner) .. " y: " .. ts.y_owner)
     T("R16_it_is_what_the_portal_syncs_its_view_and_another_mod_s_component_here_and_there",
         ts.x_copied == "view=3d tag=7" and ts.y_end_ok and ts.y_copied == "tag=7 synced=true",
         string.format("x: %s | y: %s view ok=%s", ts.x_copied, ts.y_copied, tostring(ts.y_end_ok)))
@@ -452,6 +542,11 @@ step(within(15, function() return ts.x_later and ts.y_later and ts.y_end_ok and 
     T("R17_a_component_synced_on_the_portal_later_reaches_it_here_and_in_the_target_s_sync",
         ts.x_later and ts.y_later and ts.x_ends == 1 and ts.y_mirrors == 1,
         string.format("x later=%s y later=%s; %s", tostring(ts.x_later), tostring(ts.y_later), ends()))
+    ts.x_rogue = true
+end)
+step(after(2), function()
+    T("R19_a_portal_leading_elsewhere_or_with_no_owner_is_refused_in_the_target", ts.y_rogue == 0 and ts.y_mirrors == 1,
+        string.format("rogue mirrors standing=%d; %s", ts.y_rogue, ends()))
     ts.x_walk_end = true
 end)
 step(after(1), function()
@@ -494,14 +589,21 @@ end)
 step(within(10, function() return ts.x_owned and ts.y_handed end), function()
     T("R9_walking_out_and_in_again_hands_it_back", ts.x_owned and ts.y_handed,
         string.format("source_owned=%s target_handed=%s", tostring(ts.x_owned), tostring(ts.y_handed)))
-    ts.y_status = "starting"
+    ts.y_leave = true
 end)
-step(within(10, function() return not ts.x_hosted and ts.x_ends == 0 and ts.y_mirrors == 0 end), function()
-    T("R10_the_link_going_takes_the_return_end_here_and_there",
-        not ts.x_hosted and ts.x_ends == 0 and ts.y_mirrors == 0, ends())
-    ts.y_status = "ready"
+step(within(5, function() return ts.y_owner == "client=41 connection=false" end), function()
+    T("R21_the_placer_leaving_the_target_takes_its_connection_out_and_the_return_end_stays",
+        ts.y_owner == "client=41 connection=false" and ts.y_mirrors == 1 and ts.y_hosted, "y: " .. ts.y_owner .. "; " .. ends())
+    ts.y_leave = false
+    stop_y = true
+    -- What the stopped target last said is not what the next one will.
+    ts.y_end_ok, ts.y_mirrors, ts.y_hosted, ts.y_owner = false, 0, false, "none"
 end)
-step(within(15, function() return ts.x_hosted and ts.x_end_ok and ts.y_end_ok end), function()
+step(within(40, function() return not ts.x_hosted and ts.x_ends == 0 end), function()
+    T("R10_the_target_stopping_takes_the_return_end_here", not ts.x_hosted and ts.x_ends == 0, ends())
+    start_y = true
+end)
+step(within(45, function() return ts.x_hosted and ts.x_end_ok and ts.y_end_ok end), function()
     T("R11_it_comes_back_with_the_link", ts.x_ends == 1 and ts.x_end_ok and ts.y_mirrors == 1 and ts.y_end_ok, ends())
     ts.x_despawn = true
 end)
@@ -512,6 +614,8 @@ end)
 step(within(10, function() return ts.x_ends == 1 and ts.y_mirrors == 1 and ts.y_at_x == 9 end), function()
     T("R13_once_placed_the_other_portal_gets_its_own_at_its_place",
         ts.x_ends == 1 and ts.y_mirrors == 1 and ts.y_at_x == 9, ends())
+    T("R22_its_return_end_leaves_placement_out_here_and_there", not ts.x_end_placement and not ts.y_placement,
+        string.format("placement here=%s there=%s", tostring(ts.x_end_placement), tostring(ts.y_placement)))
     ts.x_unportal = true
 end)
 step(within(10, function() return ts.x_ends == 0 and ts.y_mirrors == 0 end), function()

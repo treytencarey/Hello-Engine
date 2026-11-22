@@ -1,7 +1,7 @@
--- The server half of a portal: it keeps the peer links to each target this process runs, marks a
--- portal whose link is up `scope/portal/hosted`, stands such a portal in its target too, leading
--- back, and hands a player who walks into one to the target's server, unless the player is still
--- cooling from its last crossing.
+-- The server half of a portal: it keeps a peer link to each world a portal names, which core finds
+-- wherever that world runs, marks a portal `scope/portal/hosted` once that world is linked with this
+-- one, stands such a portal in its target too, leading back, and hands a player who walks into one
+-- to the target's server, unless the player is still cooling from its last crossing.
 --
 -- scope/portal/return = { entity = <the portal it stands for> }: on a return end
 -- scope/portal/returns: a portal's return end, kept by the engine
@@ -29,14 +29,21 @@ local function way_back(p, portal, player)
     if from ~= nil and from.target ~= nil and from.door == p:get("Name").name then return from.target end
 end
 
-local function link_at(commands, p, name, target, row, at)
+-- A mirrored portal is another world's return end, which stands here once this world holds its
+-- placer's connection (`core/net/peer/mirror.owner.connection`): until then it links, hosts and
+-- hands over nothing. Once hosted it stays when the placer leaves, as this world's own portals stay
+-- when their owner does.
+local function waiting(p)
+    local m = p:has("core/net/peer/mirror") and p:get("core/net/peer/mirror") or nil
+    return m ~= nil and (type(m.owner) ~= "table" or m.owner.connection == nil) and not p:has("scope/portal/hosted")
+end
+
+local function link_at(commands, p, name, target, at)
     local t = p.GlobalTransform:compute_transform()
     commands:spawn({
         ["core/net/peer/link"] = {
             name = name,
-            port = row.ports.peer,
             scope_key = target,
-            server_addr = "127.0.0.1",
             at = at,
             frame = {
                 translation = { x = t.translation.x, y = t.translation.y, z = t.translation.z },
@@ -50,8 +57,8 @@ local function link_at(commands, p, name, target, row, at)
     })
 end
 
--- The links to each target a placed portal names that runs as a server in this process: its row,
--- mirrored from the sibling world's VM, is ready with a peer port. One identity link per target,
+-- The links to each target a placed portal names, wherever it runs: each names only the world, and
+-- core finds where it takes peers through that world's Gateway. One identity link per target,
 -- a child of a portal naming it, so the last portal to a target takes its link along, and the
 -- next run gives the target's link to another portal still naming it. One link per door, its
 -- child, carrying the door's `at` and its world transform (`frame`), which core places what
@@ -65,9 +72,8 @@ app:add_systems(Update, {
     Query[{
         with = { "scope/portal" },
         without = { "placement" },
-        optional = { "Name", "GlobalTransform" },
+        optional = { "Name", "GlobalTransform", "core/net/peer/mirror", "scope/portal/hosted" },
     }],
-    Query[{ with = { "core/world/status" } }],
     Query[{
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
@@ -75,7 +81,7 @@ app:add_systems(Update, {
     Query[{ with = { Mut["core/net/peer/link"], "ChildOf" } }],
     Query[{ with = { "player", "scope/portal/from" }, optional = { "core/net/owner", "core/net/peer/mirror" } }],
     Commands,
-}, function(portals, rows, mine_rows, links, arrived, commands)
+}, function(portals, mine_rows, links, arrived, commands)
     local me = mine_rows:iter()[1]
     local mine = me and me:get("core/world/status").scope_key
     -- door Name -> the worlds its players came from
@@ -91,37 +97,31 @@ app:add_systems(Update, {
             back[from.door][from.target] = true
         end
     end
-    local running, named = {}, {}
-    for _, r in ipairs(rows:iter()) do
-        local row = r:get("core/world/status")
-        if row.mode == "server" and row.status == "ready" and row.ports and row.ports.peer then
-            running[row.scope_key] = row
-        end
-    end
+    local named = {}
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
-        if portal.target ~= nil and portal.target ~= mine and door_link(p, portal) == nil then named[portal.target] = true end
+        if portal.target ~= nil and portal.target ~= mine and door_link(p, portal) == nil and not waiting(p) then
+            named[portal.target] = true
+        end
     end
     local linked = {}
     for _, l in ipairs(links:iter_mut()) do
         local parent = portals:get(l:get("ChildOf"))
         if parent ~= nil then
             local cfg = l:get("core/net/peer/link")
-            local row = running[cfg.scope_key]
             local portal = parent:get("scope/portal")
             local door = door_link(parent, portal)
-            local keep
+            -- A link that names an address is an older one's, made before links found their world.
+            local keep = cfg.port == nil and cfg.server_addr == nil and not waiting(parent)
             if cfg.at == nil then
-                keep = row ~= nil and named[cfg.scope_key] and not linked[cfg.name]
-                    and cfg.port == row.ports.peer
-                    and cfg.name == "peer_to_127.0.0.1_" .. tostring(row.ports.world or row.port)
+                keep = keep and named[cfg.scope_key] and not linked[cfg.name] and cfg.name == "peer_to_" .. cfg.scope_key
             elseif portal.target ~= nil then
-                keep = row ~= nil and portal.target ~= mine and cfg.name == door and not linked[cfg.name]
-                    and cfg.at == portal.at and cfg.scope_key == portal.target and cfg.port == row.ports.peer
+                keep = keep and portal.target ~= mine and cfg.name == door and not linked[cfg.name]
+                    and cfg.at == portal.at and cfg.scope_key == portal.target
             else
                 local origins = parent:has("Name") and back[parent:get("Name").name] or {}
-                keep = row ~= nil and origins[cfg.scope_key] and cfg.name == door_link(parent, portal, cfg.scope_key)
-                    and not linked[cfg.name] and cfg.at == portal.at and cfg.port == row.ports.peer
+                keep = keep and origins[cfg.scope_key] and cfg.name == door_link(parent, portal, cfg.scope_key)
+                    and not linked[cfg.name] and cfg.at == portal.at
             end
             if keep then
                 linked[cfg.name] = true
@@ -146,38 +146,31 @@ app:add_systems(Update, {
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
         local target = portal.target
-        local row = target ~= nil and running[target] or nil
         local door = door_link(p, portal)
-        local identity = row and "peer_to_127.0.0.1_" .. tostring(row.ports.world or row.port)
-        if row ~= nil and door == nil and named[target] and not linked[identity] then
+        local identity = target ~= nil and "peer_to_" .. target or nil
+        if waiting(p) then
+            -- Nothing yet: it links once its placer's connection is here.
+        elseif identity ~= nil and door == nil and named[target] and not linked[identity] then
             linked[identity] = true
             commands:spawn({
-                ["core/net/peer/link"] = {
-                    name = identity,
-                    port = row.ports.peer,
-                    scope_key = target,
-                    server_addr = "127.0.0.1",
-                },
+                ["core/net/peer/link"] = { name = identity, scope_key = target },
                 ["core/net/sync"] = false,
                 ["core/script/owner"] = false,
                 ChildOf = p:id(),
             })
-            print(string.format("[SCOPE/PORTAL] %s runs here: linking to its peer port %s", target,
-                tostring(row.ports.peer)))
-        elseif row ~= nil and door ~= nil and target ~= mine and not linked[door] and p:has("GlobalTransform") then
+            print(string.format("[SCOPE/PORTAL] linking to %s", target))
+        elseif target ~= nil and door ~= nil and target ~= mine and not linked[door] and p:has("GlobalTransform") then
             linked[door] = true
-            link_at(commands, p, door, target, row, portal.at)
-            print(string.format("[SCOPE/PORTAL] %s runs here: linking door %s to its place '%s'", target, door,
-                portal.at))
+            link_at(commands, p, door, target, portal.at)
+            print(string.format("[SCOPE/PORTAL] linking door %s to its place '%s' in %s", door, portal.at, target))
         elseif target == nil and portal.at ~= nil and p:has("Name") and p:has("GlobalTransform") then
             for origin in pairs(back[p:get("Name").name] or {}) do
-                local from_row = running[origin]
                 local name = door_link(p, portal, origin)
-                if from_row ~= nil and not linked[name] then
+                if not linked[name] then
                     linked[name] = true
-                    link_at(commands, p, name, origin, from_row, portal.at)
-                    print(string.format("[SCOPE/PORTAL] %s runs here: linking door %s back to its place '%s'", origin,
-                        name, portal.at))
+                    link_at(commands, p, name, origin, portal.at)
+                    print(string.format("[SCOPE/PORTAL] linking door %s back to its place '%s' in %s", name, portal.at,
+                        origin))
                 end
             end
         end
@@ -191,6 +184,8 @@ end):in_set("scope/portal/server")
                 removed = { "scope/portal", "placement", "core/world/status", "core/net/peer/link" },
             },
         }],
+        -- a return end's placer arriving or leaving here
+        Query[{ changed = { "core/net/peer/mirror" }, with = { "scope/portal" } }],
         Query[{
             changed = { "GlobalTransform" },
             with = { "scope/portal" },
@@ -204,8 +199,8 @@ end):in_set("scope/portal/server")
                 removed = { "scope/portal/from", "core/net/owner" },
             },
         }],
-    }, function(touched, moved, ways)
-        return not (touched:is_empty() and moved:is_empty() and ways:is_empty())
+    }, function(touched, placers, moved, ways)
+        return not (touched:is_empty() and placers:is_empty() and moved:is_empty() and ways:is_empty())
     end)
 
 -- `scope/portal` was taken off an entity that stays: its links and its return end go. A despawned
@@ -229,18 +224,21 @@ app:add_systems(Update, {
 end):in_set("scope/portal/server")
 
 -- Hosted means the server can hand a player over on the portal's own join: the identity link to
--- the target, or the door's, was welcomed by a world of that scope. A door's is welcomed only once
--- the target has found its place. A portal a scene spawned is marked too, but it is never synced,
--- so the client's copy of it never hears.
+-- the target, or the door's, was welcomed by a world of that scope, or, for the identity join, a
+-- world of that scope dialled this one and proved itself (core hands a player over on any identity
+-- connection of the target's scope). A door's is welcomed only once the target has found its
+-- place. A portal a scene spawned is marked too, but it is never synced, so the client's copy of it
+-- never hears. A return end still waiting for its placer here is never hosted.
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal" },
         without = { "placement" },
-        optional = { "scope/portal/hosted", "Name" },
+        optional = { "scope/portal/hosted", "Name", "core/net/peer/mirror" },
     }],
     Query[{ with = { "core/net/peer/link", "core/net/peer/link/state" } }],
+    Query[{ with = { "core/net/peer/state" } }],
     Commands,
-}, function(portals, links, commands)
+}, function(portals, links, listeners, commands)
     local up, doors_up = {}, {}
     for _, l in ipairs(links:iter()) do
         local st = l:get("core/net/peer/link/state")
@@ -249,11 +247,16 @@ app:add_systems(Update, {
             if cfg.at == nil then up[st.scope_key] = true else doors_up[cfg.name] = true end
         end
     end
+    for _, e in ipairs(listeners:iter()) do
+        for _, peer in pairs(e:get("core/net/peer/state").inbound or {}) do
+            if peer.ready and peer.scope_key ~= nil and peer.at == nil and not peer.find then up[peer.scope_key] = true end
+        end
+    end
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
         local target = portal.target
         local door = door_link(p, portal)
-        local hosted = (door == nil and up[target]) or (door ~= nil and doors_up[door]) or false
+        local hosted = not waiting(p) and ((door == nil and up[target]) or (door ~= nil and doors_up[door])) or false
         if hosted and not p:has("scope/portal/hosted") then
             commands:entity(p:id()):insert({ ["scope/portal/hosted"] = {} })
             print(string.format("[SCOPE/PORTAL] portal to %s is hosted: its link is up", target))
@@ -265,8 +268,8 @@ end):in_set("scope/portal/server")
     :run_if({
         Query[{
             ["or"] = {
-                added = { "scope/portal", "core/net/peer/link/state" },
-                changed = { "scope/portal", "core/net/peer/link/state" },
+                added = { "scope/portal", "core/net/peer/link/state", "core/net/peer/state" },
+                changed = { "scope/portal", "core/net/peer/link/state", "core/net/peer/state", "core/net/peer/mirror" },
                 removed = { "placement", "core/net/peer/link", "core/net/peer/link/state" },
             },
         }],
@@ -284,12 +287,18 @@ end):in_set("scope/portal/server")
 -- world's portal, and its return end is that world's to make.
 --
 -- The return end is what the portal syncs: each component its `core/net/sync` names, copied, under
--- the same sync, with `scope/portal.target` turned back here, so whatever another mod syncs on a
+-- the same sync, with `scope/portal.target` turned back here, and the portal's owner, which core
+-- names to the target as the person (it gives the placer's client authority only over what the
+-- sync makes the client's, as on the portal; a placed portal's is the server's), so whatever another mod syncs on a
 -- dropped portal stands in the target too. `scope/portal/hosted` is this half's mark and is not
 -- copied: here the return end is never hosted, and there the target's server marks it. The names
 -- come from data, so the copy reads through `with_columns`. A portal that comes to sync a name its
 -- return end lacks gets a new one, a run later: the target keeps a mirror's sync as it arrived, and
 -- a despawn and spawn of one id sent in one frame would reach it spawn first.
+-- Left out of the copy and its sync: `placement` is the placer's while placing, synced from their
+-- client, and on a return end it would let that client write it there and into the target's mirror.
+local LEFT_OUT = { placement = true }
+
 app:add_systems(Update, {
     Query[{
         with = { "scope/portal", "Transform", "core/net/sync" },
@@ -321,7 +330,7 @@ app:add_systems(Update, {
             local carried = r:get("core/net/sync")
             local covers = type(carried) == "table"
             for name, entry in pairs(type(sync) == "table" and sync or {}) do
-                if type(entry) == "table" and covers and carried[name] == nil then covers = false end
+                if type(entry) == "table" and not LEFT_OUT[name] and covers and carried[name] == nil then covers = false end
             end
             if ours and covers and not held and not kept[id] then
                 held, kept[id] = true, true
@@ -336,22 +345,24 @@ app:add_systems(Update, {
         if id ~= nil and not held then
             wanting[#wanting + 1] = { portal = p:id(), target = target, id = id }
             for name, entry in pairs(sync) do
-                if type(entry) == "table" and not named[name] then
+                if type(entry) == "table" and not LEFT_OUT[name] and not named[name] then
                     named[name] = true
                     names[#names + 1] = name
                 end
             end
         end
     end
+    names[#names + 1] = "core/net/owner"
     local copied = synced:with_columns({ optional = names })
     for _, w in ipairs(wanting) do
         local row = copied:get(w.portal)
         if row ~= nil and not kept[w.id] then
             kept[w.id] = true
             local sync = row:get("core/net/sync")
-            local spawn = {}
+            local spawn, carried = {}, {}
             for name, entry in pairs(sync) do
-                if type(entry) == "table" and name ~= "scope/portal/hosted" then
+                if not LEFT_OUT[name] then carried[name] = entry end
+                if type(entry) == "table" and name ~= "scope/portal/hosted" and not LEFT_OUT[name] then
                     spawn[name] = row:get(name)
                 end
             end
@@ -368,7 +379,8 @@ app:add_systems(Update, {
             spawn["scope/portal"] = back
             spawn["scope/portal/return"] = { entity = w.portal }
             spawn["core/net/peer/share"] = { stable_id = w.id, to = { w.target } }
-            spawn["core/net/sync"] = sync
+            spawn["core/net/sync"] = carried
+            spawn["core/net/owner"] = row:get("core/net/owner")
             spawn["core/script/owner"] = false
             commands:spawn(spawn)
             print(string.format("[SCOPE/PORTAL] %s: the portal stands in its target too, leading back", w.id))
@@ -402,7 +414,7 @@ app:add_systems(Update, {
         changed = { "collision_trigger" },
         with = { "scope/portal" },
         without = { "placement" },
-        optional = { "Name" },
+        optional = { "Name", "core/net/peer/mirror", "scope/portal/hosted" },
     }],
     Query[{
         with = { "player", "core/net/owner", "core/net/peer/share" },
@@ -421,12 +433,13 @@ app:add_systems(Update, {
     local identity = {}
     for _, l in ipairs(links:iter()) do
         local cfg = l:get("core/net/peer/link")
-        if cfg.at == nil then identity[cfg.scope_key] = cfg.name end
+        -- Not a find link core opened under a link: it names no world, only the one it asks about.
+        if cfg.at == nil and cfg.scope_key ~= nil and cfg.find == nil then identity[cfg.scope_key] = cfg.name end
     end
     for _, p in ipairs(portals:iter()) do
         local portal = p:get("scope/portal")
         local target = portal.target
-        local entered = p:get("collision_trigger").entered or {}
+        local entered = waiting(p) and {} or p:get("collision_trigger").entered or {}
         local door = portal.at ~= nil and p:has("Name")
         for _, player in ipairs(players:iter_many(entered)) do
             local to = target or way_back(p, portal, player)
@@ -449,6 +462,53 @@ app:add_systems(Update, {
                 print(string.format("[SCOPE/PORTAL] client %s walks into %s: handing the player over on %s",
                     tostring(player:get("player").client_id), to, tostring(link)))
             end
+        end
+    end
+end):in_set("scope/portal/server")
+
+-- A return end follows its portal's owner: core tells the target who owns it now.
+app:add_systems(Update, {
+    Query[{
+        ["or"] = { added = { "core/net/owner" }, changed = { "core/net/owner" }, removed = { "core/net/owner" } },
+        with = { "scope/portal", "scope/portal/returns" },
+        optional = { "core/net/owner" },
+    }],
+    Commands,
+}, function(portals, commands)
+    for _, p in ipairs(portals:iter()) do
+        local owner = p:get("core/net/owner")
+        for _, r in ipairs(p:get("scope/portal/returns") or {}) do
+            if owner ~= nil then
+                commands:entity(r):insert({ ["core/net/owner"] = owner })
+            else
+                commands:entity(r):remove("core/net/owner")
+            end
+        end
+    end
+end):in_set("scope/portal/server")
+
+-- A PORTAL ANOTHER WORLD STANDS HERE (a mirrored portal: its return end) stays only if it leads
+-- back to the world that sent it (`core/net/peer/mirror.source_peer`, the proved scope, so a world
+-- can stand here only a way back to itself), names no place (`at`: a return end never does) and
+-- names its placer; it stands once this world holds the placer's connection (`waiting`, above). One
+-- refused is despawned with one line, before it is linked or hosted. The source's later re-send is
+-- refused the same way.
+app:add_systems(Update, {
+    Query[{
+        ["or"] = { added = { "core/net/peer/mirror" }, changed = { "core/net/peer/mirror", "scope/portal" } },
+        with = { "scope/portal", "core/net/peer/mirror" },
+    }],
+    Commands,
+}, function(mirrored, commands)
+    for _, p in ipairs(mirrored:iter()) do
+        local portal, m = p:get("scope/portal"), p:get("core/net/peer/mirror")
+        local why = (portal.target ~= m.source_peer and "leads-elsewhere")
+            or (portal.at ~= nil and "at-on-return")
+            or ((type(m.owner) ~= "table" or m.owner.client == nil) and "no-owner")
+            or nil
+        if why ~= nil then
+            commands:entity(p:id()):despawn()
+            print(string.format("[SCOPE/PORTAL] a portal %s stood here refused: %s", tostring(m.source_peer), why))
         end
     end
 end):in_set("scope/portal/server")
