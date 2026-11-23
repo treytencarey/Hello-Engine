@@ -76,6 +76,21 @@ local function watch(commands, c, owned)
         commands:entity(c:id()):entry("core/net/connection"):and_modify(function(conn) conn.observer = observe end)
     end
 end
+-- Presence lands where production applies it: in `First`, as the world net's inbound does, before
+-- core's peer systems that act on it.
+app:add_systems(First, {
+    Query[{ with = { "zz/px/connection", "core/net/connection" } }],
+    Query[{ with = { "player", "core/net/owner" }, optional = { "core/net/peer/mirror" } }],
+    Commands,
+}, function(connections, players, commands)
+    local c = connections:iter()[1]
+    if c == nil then return end
+    local owned = nil
+    for _, p in ipairs(players:iter()) do
+        if p:get("core/net/owner") == c:id() and not p:has("core/net/peer/mirror") then owned = p end
+    end
+    watch(commands, c, owned)
+end):in_set("zz/px_presence"):after("core/net/server_inbound"):before("core/net/peer/client_inbound")
 ]=]
 
 helpers.make_fixture("modules/test_fixtures/gen_portal_cross_source.lua", [=[
@@ -163,7 +178,6 @@ app:add_systems(Update, {
         any = any or p
         if c ~= nil and p:get("core/net/owner") == c:id() and not p:has("core/net/peer/mirror") then player = p end
     end
-    if c ~= nil then watch(commands, c, player) end
     ts.s_hosted = door ~= nil and door:has("scope/portal/hosted") and door:has("CollidingEntities3d")
     ts.s_plain = portal ~= nil and portal:has("scope/portal/hosted") and portal:has("CollidingEntities3d")
     ts.s_handed = player == nil and any ~= nil
@@ -267,7 +281,6 @@ app:add_systems(Update, {
     for _, p in ipairs(players:iter()) do
         if c ~= nil and p:get("core/net/owner") == c:id() and not p:has("core/net/peer/mirror") then owned = p end
     end
-    if c ~= nil then watch(commands, c, owned) end
     ts.t_owned = owned ~= nil
     if owned ~= nil then
         local sync = owned:get("core/net/sync")
