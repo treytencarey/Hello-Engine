@@ -419,7 +419,7 @@ app:add_systems(Update, {
     Query[{
         with = { "player", "core/net/owner", "core/net/peer/share" },
         without = { "core/net/peer/mirror", "WorldMirror", "scope/portal/cooling" },
-        optional = { "scope/portal/from" },
+        optional = { "scope/portal/from", "cooldown", "cooldown/left" },
     }],
     Query[{ with = { "core/net/peer/link" } }],
     Query[{
@@ -445,6 +445,16 @@ app:add_systems(Update, {
             local to = target or way_back(p, portal, player)
             local link = door_link(p, portal, to) or (to ~= nil and identity[to] or nil)
             if to ~= nil and to ~= mine then
+                do -- ZZPROBE: temporary, why a player was handed over
+                    local names = {}
+                    for k in pairs(player:get("cooldown") or {}) do names[#names + 1] = k end
+                    local left = {}
+                    for k, v in pairs(player:get("cooldown/left") or {}) do left[#left + 1] = k .. "=" .. tostring(v) end
+                    local f = player:get("scope/portal/from")
+                    print(string.format("[ZZPROBE] hand %s door=%s portal_target=%s cooldown=[%s] left=[%s] from=%s",
+                        tostring(player:id()), tostring(p:has("Name") and p:get("Name").name), tostring(target),
+                        table.concat(names, ","), table.concat(left, ","), f and (tostring(f.target) .. "|" .. tostring(f.door)) or "-"))
+                end
                 -- Only through a door to a target: a world the player comes back to, by the way back
                 -- or through a portal that is not a door, keeps where the player came to it from,
                 -- which this one would replace. Cleared on every other crossing, as the share keeps
