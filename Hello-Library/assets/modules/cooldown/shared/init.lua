@@ -13,9 +13,13 @@
 
 local Time = require("bevy::time::Time")
 
+-- Not on a peer's mirror, which carries its source's timers as sent: a copy run here would still be
+-- running when the entity comes back with a fresh timer of that name, which it would not start, and
+-- would end that one with it.
 app:add_systems(First, {
     Query[{
         changed = { "cooldown" },
+        without = { "core/net/peer/mirror" },
         optional = { "cooldown/left" },
     }],
     Commands,
@@ -44,6 +48,7 @@ app:add_systems(First, {
     Res[Time],
     Query[{
         with = { "cooldown/left" },
+        without = { "core/net/peer/mirror" },
         optional = { "cooldown" },
     }],
     Commands,

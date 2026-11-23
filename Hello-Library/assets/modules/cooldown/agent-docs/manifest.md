@@ -38,3 +38,4 @@ commands:entity(player):patch({ cooldown = { ["abilities/dash/cooling"] = null }
 
 - Two mods that name the same component share one timer. Name timers after a component your mod owns.
 - Timed work polls: `cooldown/tick` runs every frame, but only over entities with a running timer.
+- No timer runs on a peer's mirror (`core/net/peer/mirror`): it carries its source's `cooldown` as sent. A copy run here would still be running when the entity comes back with a fresh timer of that name, which `cooldown/start` would not start, and would end it with the copy (a player handed home would lose its crossing timer and walk straight back out through the door it came in by).
