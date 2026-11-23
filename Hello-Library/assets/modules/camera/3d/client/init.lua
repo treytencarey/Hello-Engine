@@ -214,8 +214,8 @@ app:add_systems(Last, {
     local parts = {}
     for _, c in ipairs(containers:iter()) do
         local target = zz_field(c, "ComputedUiTargetCamera")
-        parts[#parts + 1] = string.format("%s{display=%s target=%s size=%s visible=%s parent=%s}", tostring(c:id()),
-            zz_field(c, "Node", "display"), target, zz_field(c, "ComputedNode", "size"),
+        parts[#parts + 1] = string.format("%s{display=%s target=%s visible=%s parent=%s}", tostring(c:id()),
+            zz_field(c, "Node", "display"), target,
             zz_field(c, "InheritedVisibility"), tostring(c:get("ChildOf")))
     end
     local held = {}
@@ -234,6 +234,39 @@ app:add_systems(Last, {
             tostring(me and me:get("core/world/status").scope_key), line))
     end
 end)
+
+-- ZZPROBE: temporary. Just before the sidebar's cleanup: what lost `sidebar`, `input` or `player`,
+-- whether a container went, and each sidebar player's `input` and owner as the cleanup sees them.
+app:add_systems(First, {
+    Query[{ removed = { "sidebar" } }],
+    Query[{ removed = { "input" } }],
+    Query[{ removed = { "player" } }],
+    Query[{ removed = { "sidebar/container" } }],
+    Query[{ with = { "sidebar" }, optional = { "input", "core/net/owner", "core/net/peer/mirror", "player" } }],
+    Query[{ with = { "sidebar/container" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
+    Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
+}, function(lost_sidebar, lost_input, lost_player, lost_container, carriers, containers, own, rows)
+    if lost_sidebar:is_empty() and lost_input:is_empty() and lost_player:is_empty() and lost_container:is_empty() then
+        return
+    end
+    local function ids(q)
+        local out = {}
+        for _, e in ipairs(q:iter()) do out[#out + 1] = tostring(e:id()) end
+        return "[" .. table.concat(out, " ") .. "]"
+    end
+    local held = {}
+    for _, p in ipairs(carriers:iter()) do
+        local owner = p:get("core/net/owner")
+        held[#held + 1] = string.format("%s{input=%s owner=%s mine=%s mirror=%s player=%s}", tostring(p:id()),
+            tostring(p:has("input")), tostring(owner), tostring(owner ~= nil and own:contains(owner)),
+            tostring(p:has("core/net/peer/mirror")), tostring(p:has("player")))
+    end
+    local me = rows:iter()[1]
+    print(string.format("[ZZPROBE-EDGE] in %s: lost sidebar %s input %s player %s container %s | %d container(s) | carriers: %s",
+        tostring(me and me:get("core/world/status").scope_key), ids(lost_sidebar), ids(lost_input), ids(lost_player),
+        ids(lost_container), #containers:iter(), table.concat(held, " ")))
+end):before("sidebar/removed")
 
 return {
     base = "camera",
