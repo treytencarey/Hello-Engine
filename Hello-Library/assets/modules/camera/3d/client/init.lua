@@ -164,6 +164,32 @@ app:add_systems(Update, {
     end
 end):in_set("camera/3d/aim")
 
+-- ZZPROBE: temporary. Every camera in this world and which carry the default UI marker, logged
+-- whenever that changes.
+local zz_last
+app:add_systems(Last, {
+    Query[{ with = { "Camera" }, optional = { "IsDefaultUiCamera", "camera/3d/eye", "ChildOf" } }],
+    Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
+}, function(cameras, rows)
+    local parts, marked = {}, 0
+    for _, c in ipairs(cameras:iter()) do
+        local ok, cam = pcall(function() return c:get("Camera") end)
+        local ui = c:has("IsDefaultUiCamera")
+        if ui then marked = marked + 1 end
+        parts[#parts + 1] = string.format("%s{ui=%s active=%s order=%s eye=%s parent=%s}", tostring(c:id()), tostring(ui),
+            tostring(ok and cam and cam.is_active), tostring(ok and cam and cam.order), tostring(c:has("camera/3d/eye")),
+            tostring(c:get("ChildOf")))
+    end
+    table.sort(parts)
+    local line = table.concat(parts, " ")
+    if line ~= zz_last then
+        zz_last = line
+        local me = rows:iter()[1]
+        print(string.format("[ZZPROBE] cameras in %s: %d marked of %d: %s",
+            tostring(me and me:get("core/world/status").scope_key), marked, #parts, line))
+    end
+end)
+
 return {
     base = "camera",
     defaults = {
