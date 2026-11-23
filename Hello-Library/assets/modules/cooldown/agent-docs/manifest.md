@@ -18,7 +18,7 @@ Named timers on an entity. While a timer runs, the entity carries the component 
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `cooldown/start` | On a changed `cooldown`, start each new timer and add its component. A timer already running is not restarted, so writing its entry again while it runs does nothing |
+| First, after `core/net/peer/server_inbound` and `core/net/peer/client_inbound` | `cooldown/start` | On a changed `cooldown`, start each new timer and add its component. A timer already running is not restarted, so writing its entry again while it runs does nothing. A timer handed in with an entity (core sets what was handed in its peer inbound) has its component in that frame's `Update`: a portal would otherwise hand a player standing in the door it came back by straight back |
 | First | `cooldown/tick` | Count running timers down; at zero, remove the timer's component and entry. A cancelled timer's component is removed |
 
 ## Use

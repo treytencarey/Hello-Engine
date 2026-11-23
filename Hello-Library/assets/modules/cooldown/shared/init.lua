@@ -34,6 +34,10 @@ app:add_systems(First, {
         end
     end
 end):in_set("cooldown/start")
+    -- A timer handed in with an entity runs from the frame it lands: core sets what was handed in
+    -- its peer inbound, and a portal would hand a player standing in the door it came back by
+    -- straight back in that frame's `Update`.
+    :after("core/net/peer/server_inbound"):after("core/net/peer/client_inbound")
 
 -- Timed work polls, but only entities with a timer running.
 app:add_systems(First, {
