@@ -106,7 +106,9 @@ end):in_set("player/spawner/spawn"):after(TransformSystems.Propagate):run_if({
         with = { "core/world/status", "WorldShared" },
         without = { "WorldMirror" },
     }],
-}, function(asks, standing, rows)
+    Query[{ with = { "player", "core/net/owner" }, without = { "player/spawner/standin" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
+}, function(asks, standing, rows, players, own)
     local me = rows:iter()[1]
     local scope = me and me:get("core/world/status").scope_key
     local shown = false
@@ -115,6 +117,11 @@ end):in_set("player/spawner/spawn"):after(TransformSystems.Propagate):run_if({
         if a:get("WorldMirror").world_id == 0 and flip.scope == scope and flip.status == "predicted" then
             shown = true
         end
+    end
+    -- The real player can arrive while root's ask still shows the prediction: a second stand-in
+    -- would add the camera shown last, and take it with it when the ask is done.
+    for _, p in ipairs(shown and players:iter() or {}) do
+        if own:contains(p:get("core/net/owner")) then return false end
     end
     return shown and standing:is_empty()
 end)

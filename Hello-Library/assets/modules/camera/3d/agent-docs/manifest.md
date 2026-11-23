@@ -23,7 +23,7 @@ Camera mods that look through a 3D eye (`camera/first_person`, `camera/third_per
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `camera/3d/spawn` | On the local carrier, spawn the eye already aimed, or turn the existing eye back on. Nothing while the carrier has `camera/3d/viewed_by`, so a reload during a view spawns no eye |
+| First | `camera/3d/spawn` | On the local carrier, spawn the eye already aimed. Back from another world, its eye turned off when it left is despawned and a fresh one spawned, as the screen shows the camera added last; an eye still on (a switch of camera mod) stays. Nothing while the carrier has `camera/3d/viewed_by`, so a reload during a view spawns no eye |
 | First | `camera/3d/yield` | When `camera/3d/viewed_by` is added, despawn the carrier's eye |
 | First | `camera/3d/resume` | When `camera/3d/viewed_by` is removed, spawn a fresh eye, already aimed |
 | First | `camera/3d/teardown` | When the player leaves for another world (its `core/net/owner` removed, or no longer one of this client's own nets), turn the eye off |

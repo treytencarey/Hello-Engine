@@ -63,11 +63,17 @@ app:add_systems(First, {
 }, function(carriers, all_eyes, own, commands)
     for _, e in ipairs(carriers:iter()) do
         if own:contains(e:get("core/net/owner")) then
-            local eyes = all_eyes:iter_many_mut(e:get("Children") or {})
-            for _, old in ipairs(eyes) do
-                old:patch({ Camera = { is_active = true } })
+            -- Back from another world, a fresh eye, never the one turned off when it left: the
+            -- screen shows the camera added last. One still on (a switch of camera mod) stays.
+            local on = false
+            for _, old in ipairs(all_eyes:iter_many_mut(e:get("Children") or {})) do
+                if old:get("Camera").is_active == false then
+                    commands:entity(old:id()):despawn()
+                else
+                    on = true
+                end
             end
-            if #eyes == 0 then
+            if not on then
                 commands:entity(e:id()):add_child(commands:spawn(eye(e:get("camera"), e:get("camera/3d"))):id())
             end
         end

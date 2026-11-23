@@ -155,8 +155,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "back" and clock > 0.2 then
         local eye = eye_of(world, me)
         local eyes = #world:query({ iter_many = world:descendants(me:id()), with = { "camera/3d/eye" } })
-        suite.assert_test("F7_coming_back_turns_the_same_eye_on",
-            eyes == 1 and eye:id() == first_eye and eye:get("Camera").is_active == true, "eyes=" .. eyes)
+        suite.assert_test("F7_coming_back_gets_a_fresh_eye",
+            eyes == 1 and eye:id() ~= first_eye and eye:get("Camera").is_active == true, "eyes=" .. eyes)
         me:remove("camera/first_person")
         step("removed")
 

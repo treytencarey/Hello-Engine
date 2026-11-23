@@ -154,9 +154,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "back" and clock > 0.2 then
         local eyes = eyes_of(world, me)
-        suite.assert_test("D7_coming_back_turns_the_same_eye_on",
-            #eyes == 1 and eyes[1]:id() == first_eye and eyes[1]:get("Camera").is_active == true,
+        suite.assert_test("D7_coming_back_gets_a_fresh_eye",
+            #eyes == 1 and eyes[1]:id() ~= first_eye and eyes[1]:get("Camera").is_active == true,
             "eyes=" .. #eyes)
+        first_eye = eyes[1] and eyes[1]:id()
         sources[1] = source(commands, me:id())
         step("viewed")
 
