@@ -36,12 +36,10 @@ app:add_systems(First, {
             changed = { "core/net/owner" },
         },
         with = { "sidebar", "core/net/owner", "input" },
-        optional = { "sidebar/open" },
     }],
-    Query[{ with = { "sidebar/container" } }],
     Query[{ with = { "core/net", "core/net/owns" } }],
     Commands,
-}, function(players, containers, own, commands)
+}, function(players, own, commands)
     local arrived = {}
     for _, e in ipairs(players:iter()) do
         if own:contains(e:get("core/net/owner")) then arrived[#arrived + 1] = e end
@@ -52,12 +50,39 @@ app:add_systems(First, {
             ["input/ui"] = { sidebar = { toggle = { key = "Escape" } } },
         })
     end
-    -- One container for every local player. A UI root of its own: a UI node under the player
-    -- would not be laid out. Shown if the sidebar is open already (a reload: `sidebar/open`
-    -- gets no new edge). The bar gets its parent in the flush that spawns it, so it is never
-    -- laid out as a UI root.
-    local first = arrived[1]
-    if first ~= nil and containers:is_empty() then
+end):in_set("sidebar/setup")
+
+-- One container for every local player with `input`: built when one is here and there is none, and
+-- despawned when `sidebar` goes and none is left. A player leaving for another world loses its
+-- owner, not `sidebar`, so it finds the same sidebar when it comes back. Each edge has this system
+-- look again at who is here now. Two can hold the
+-- sidebar at once (a predicted crossing's stand-in, then the real player), and their edges come
+-- in either order. A UI root of its own: a UI node under the player would not be laid out. Shown if
+-- the sidebar is open already (a reload: `sidebar/open` gets no new edge). The bar gets its parent
+-- in the flush that spawns it, so it is never laid out as a UI root.
+app:add_systems(First, {
+    Query[{
+        ["or"] = {
+            added = { "sidebar", "core/net/owner", "input" },
+            changed = { "core/net/owner" },
+        },
+    }],
+    Query[{ removed = { "sidebar" } }],
+    Query[{ with = { "sidebar", "core/net/owner", "input" }, optional = { "sidebar/open" } }],
+    Query[{ with = { "sidebar/container" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
+    Commands,
+}, function(touched, dropped, players, containers, own, commands)
+    if touched:is_empty() and dropped:is_empty() then return end
+    local first
+    for _, p in ipairs(players:iter()) do
+        if first == nil and own:contains(p:get("core/net/owner")) then first = p end
+    end
+    if first == nil and not dropped:is_empty() then
+        for _, c in ipairs(containers:iter()) do
+            commands:entity(c:id()):despawn()
+        end
+    elseif first ~= nil and containers:is_empty() then
         local container = commands:spawn({
             ["sidebar/container"] = {},
             Node = {
@@ -84,7 +109,7 @@ app:add_systems(First, {
             ["ui/style"] = { background = "icon_bar_bg" },
         }):id())
     end
-end):in_set("sidebar/setup")
+end):in_set("sidebar/build")
 
 -- The player left this world, or is another connection's now: its sidebar closes. The edge also
 -- comes for a player that despawned, which `try_remove` leaves alone.
@@ -107,31 +132,17 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/away")
 
--- `sidebar` removed: its UI goes, with every button and panel in it, once no local player is left
--- to use it. Two can hold it at once: a predicted crossing's stand-in builds it, the real player
--- arrives to find it built, and then the stand-in goes. The edge also comes for a player that
--- despawned: only bindings still there are taken off.
+-- `sidebar` removed: its bindings go. The edge also comes for a player that despawned: only
+-- bindings still there are taken off.
 app:add_systems(First, {
     Query[{
         removed = { "sidebar" },
         optional = { "input" },
     }],
-    Query[{ with = { "sidebar/container" } }],
-    Query[{ with = { "sidebar", "core/net/owner", "input" } }],
-    Query[{ with = { "core/net", "core/net/owns" } }],
     Query[{ with = { Mut["input/game"] } }],
     Query[{ with = { Mut["input/ui"] } }],
-    Commands,
-}, function(removed, containers, players, own, game_bindings, ui_bindings, commands)
+}, function(removed, game_bindings, ui_bindings)
     for _, e in ipairs(removed:iter()) do
-        local container = containers:iter()[1]
-        local staying = false
-        for _, p in ipairs(players:iter()) do
-            staying = staying or own:contains(p:get("core/net/owner"))
-        end
-        if container ~= nil and not staying then
-            commands:entity(container:id()):despawn()
-        end
         -- If `input` went too, its bindings go with it, and a patch landing after that would bring them back.
         if e:has("input") then
             for _, b in ipairs(game_bindings:iter_many_mut({ e:id() })) do

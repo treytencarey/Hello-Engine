@@ -22,9 +22,10 @@ Panel mods extend it without the sidebar naming them: the client adds the panels
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `sidebar/setup` | For the local player with `input`, on its `sidebar`, `input` or `core/net/owner` edge, bind Escape in `input/game` and `input/ui` (again when `input` is added back), and build the container and bar, hidden unless the sidebar is open already (a reload) |
+| First | `sidebar/setup` | For the local player with `input`, on its `sidebar`, `input` or `core/net/owner` edge, bind Escape in `input/game` and `input/ui` (again when `input` is added back) |
+| First | `sidebar/build` | On any `sidebar`, `input` or `core/net/owner` edge, looks at who is here now: with a local player with `sidebar` and `input` and no container, build the container and bar, hidden unless the sidebar is open already (a reload); with `sidebar` removed and no such player left, despawn the container with everything in it. A player leaving for another world loses its owner, not `sidebar`, so its container waits for it |
 | First | `sidebar/away` | When the player stops being this client's (its `core/net/owner` removed or given to another connection: it left for another world), close the sidebar |
-| First | `sidebar/removed` | When `sidebar` is removed, unbind, and despawn the container with everything in it once no local player with `sidebar` and `input` is left |
+| First | `sidebar/removed` | When `sidebar` is removed, unbind |
 | Update | `sidebar/toggle` | Escape in game input opens the sidebar; in UI input it closes the newest open panel, or the sidebar |
 | Update, after `sidebar/toggle` | `sidebar/show` | On opening: show the container, UI input with the cursor |
 | Update, after `sidebar/toggle` | `sidebar/hide` | On closing: hide, game input, close every panel |
@@ -82,5 +83,5 @@ for _, _ in ipairs(buttons:iter_many(closed_ids)) do ... end
 - A sub-component named under `sidebar/` on the player, a panel mod's included, goes when `sidebar` is taken off. The panel mod's own component stays.
 - A key held through a mode switch waits for its release (`input`), so the Escape that opens the sidebar does not also close it.
 - The container is a UI root of its own: a UI node under the player would not be laid out.
-- One container serves every local player. Two hold `sidebar` at once during a predicted crossing: the stand-in (`player/spawner/standin`) builds the container, the real player arrives to find it built, and the container stays when the stand-in goes.
+- One container serves every local player. Two hold `sidebar` at once during a predicted crossing: the stand-in (`player/spawner/standin`) builds the container, the real player arrives to find it built, and the container stays when the stand-in goes. Their edges come in either order; one system decides from who is here, so no order leaves the player without a container.
 - Layout and clicks need a window: the main suite runs windowed; the hand-over from a stand-in to the real player runs headless (`tests/test_sidebar_handover.lua`). It stands in for a world VM (an instance id), where spawns carry their mod's stamp, plays a panel mod that spawns two buttons into each new bar, and reloads the sidebar by rewriting its file with the same bytes.
