@@ -121,8 +121,9 @@ app:add_systems(Update, {
     for _, e in ipairs(carriers:iter_mut()) do
         local cam = e:get("camera")
         -- `camera` arrives as `{}` and gets its defaults when its own mod loads, which can
-        -- be a frame later. Filling them is a change to `camera`, which runs this again.
-        if cam.distance ~= nil then
+        -- be a frame later; one written over whole (a stand-in handing its look over) gets none
+        -- until its fields come. Filling them is a change to `camera`, which runs this again.
+        if cam.distance ~= nil and cam.height ~= nil and cam.offset ~= nil then
             local back = Quat.mul_vec3(Quat.from_rotation_x(cam.pitch),
                 { x = 0, y = 0, z = cam.distance })
             e:patch({

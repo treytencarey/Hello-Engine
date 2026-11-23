@@ -286,6 +286,41 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "input back" and clock > 0.3 then
         local who = carrier(world, "me")
         suite.assert_test("T14b_input_added_again_binds_again", (world:get_entity(who:id()):get("input/game") or {}).third_person ~= nil, "")
+        -- As a stand-in hands the look over: `camera` with its yaw, pitch and zoom only, before its
+        -- defaults fill the rest.
+        commands:spawn({
+            ["zz/carrier"] = { name = "handed" },
+            ["core/net/owner"] = world_net,
+            input = {},
+            ["core/net/sync"] = false,
+            Transform = { translation = { x = 5, y = 0, z = 0 } },
+            camera = { yaw = -0.4, pitch = -0.2, distance = 5 },
+            ["camera/third_person"] = {},
+        })
+        step("handed")
+
+    elseif phase == "handed" and clock > 0.5 then
+        local handed = carrier(world, "handed")
+        local eye = eyes_of(world, handed)[1]
+        local cam = handed:get("camera")
+        local ok, got = false, "no eye"
+        if eye ~= nil then ok, got = placed(world, eye:id(), { x = 5, y = 0, z = 0 }, cam) end
+        suite.assert_test("T15_a_camera_handed_over_with_only_its_look_reaches_its_orbit",
+            ok and near(cam.distance, 5) and cam.height ~= nil and cam.offset ~= nil, got)
+        -- Written over whole with the look only, as the stand-in's arrival does: no defaults come.
+        commands:entity(handed:id()):insert({ camera = { yaw = 0.3, pitch = -0.1, distance = 6 } })
+        step("replaced")
+
+    elseif phase == "replaced" and clock > 0.3 then
+        carrier(world, "handed"):patch({ camera = { height = 2, offset = { x = 0.5, y = 0, z = 0 } } })
+        step("filled")
+
+    elseif phase == "filled" and clock > 0.3 then
+        local handed = carrier(world, "handed")
+        local eye = eyes_of(world, handed)[1]
+        local ok, got = false, "no eye"
+        if eye ~= nil then ok, got = placed(world, eye:id(), { x = 5, y = 0, z = 0 }, handed:get("camera")) end
+        suite.assert_test("T16_a_camera_written_over_with_its_look_only_orbits_once_its_fields_come", ok, got)
         phase = "done"
         suite.finish("ThirdPersonSuite")
     end
