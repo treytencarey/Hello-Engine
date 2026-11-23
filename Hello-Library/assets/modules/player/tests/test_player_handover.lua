@@ -86,8 +86,12 @@ app:add_systems(First, { World, Commands }, function(world, commands)
     if repromote then
         repromote = false
         -- What was handed: its body placed turned 1.0 at a door's place here, at the scale of the
-        -- world it left, the shadow seeded there, and its look.
-        commands:entity(player_of(world, 7):id()):insert({
+        -- world it left, the shadow seeded there, and its look; and its owner back, as a demoted
+        -- player has none.
+        local id, owner = player_of(world, 7):id(), connection_of(world, 7)
+        commands:entity(id):remove("core/net/owner")
+        commands:entity(id):insert({
+            ["core/net/owner"] = owner,
             Transform = { translation = { x = 4, y = 0, z = 4 }, rotation = Quat.from_rotation_y(1.0),
                 scale = { x = 0.5, y = 0.5, z = 0.5 } },
             ["core/net/sync/Transform"] = { translation = { x = 4, y = 0, z = 4 }, rotation = Quat.from_rotation_y(1.0) },

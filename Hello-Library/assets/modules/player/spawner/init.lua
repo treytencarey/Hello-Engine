@@ -49,6 +49,16 @@ local function framed(look, facing)
     }
 end
 
+--- What a body with `camera` looks with: the yaw relative to the body, which holds in any frame.
+local function look_of(body, camera)
+    if camera == nil then return nil end
+    return {
+        yaw = (camera.yaw or 0) - Quat.to_euler(body.rotation, "YXZ")[1],
+        pitch = camera.pitch or 0,
+        distance = camera.distance,
+    }
+end
+
 -- After Bevy's transform propagation: a point spawned this frame has its world place only then. A
 -- player's place and camera ride its spawn, as the owning client keeps its own after that; so do
 -- the camera's sync and that of the timers a handed player carries (a portal's crossing timer),
@@ -221,37 +231,40 @@ app:add_systems(PostUpdate, {
         if p:has("Transform") then
             local body = p:get("Transform")
             carried.Transform = body
-            if p:has("camera") then
-                local camera = p:get("camera")
-                carried["player/spawner/look"] = {
-                    yaw = (camera.yaw or 0) - Quat.to_euler(body.rotation, "YXZ")[1],
-                    pitch = camera.pitch or 0,
-                    distance = camera.distance,
-                }
-            end
+            carried["player/spawner/look"] = look_of(body, p:get("camera"))
         end
         share.transfer_data = carried
     end
 end):in_set("player/spawner/left"):before("core/net/peer/authority_switch")
 
--- Back in a world that holds it as a mirror, core sets what was handed on the player whole, its
--- look among it. While it was away the target's updates wrote its mirror here, camera and scale
--- too, so it is framed again as a new player is: a new player's camera with the look on it, and
--- a new player's scale; a game's spawner then frames it its own way on the owner's `added` edge,
--- as it does a new player. In `First`, after core's peer inbound that re-promotes it, and before
--- the world net tracks it.
+-- Back in a world that holds it as a mirror, core makes the player its own again: with what was
+-- handed set whole, its look among it, or, when the world it went to died, where that world last
+-- had it, with the look it had there. While it was away the target's updates wrote its mirror here,
+-- camera and scale too, so it is framed again as a new player is: a new player's camera with the
+-- look on it, and a new player's scale; a game's spawner then frames it its own way on the owner's
+-- `added` edge, as it does a new player. In `First`, after core's peer inbound that re-promotes it,
+-- and before the world net tracks it, on the owner's `added` edge; a new player, whose link to its
+-- spawner is added with its owner, is framed already, and a game frames it on the same edge. The
+-- mirror's `removed` edge comes a frame late, after the world net sent the body with the far camera.
 app:add_systems(First, {
     Query[{
-        added = { "player/spawner/look" },
+        added = { "core/net/owner" },
         with = { "player", Mut["Transform"] },
+        optional = { "player/spawner/look", "camera" },
     }],
+    Query[{ added = { "player/spawner/player" }, with = { "player" } }],
     Commands,
-}, function(arrived, commands)
+}, function(arrived, new, commands)
+    local fresh = {}
+    for _, p in ipairs(new:iter()) do fresh[p:id()] = true end
     for _, p in ipairs(arrived:iter_mut()) do
         local body = p:get_mut("Transform")
-        body.scale = { x = 1, y = 1, z = 1 }
-        commands:entity(p:id()):insert({ camera = framed(p:get("player/spawner/look"), body.rotation) })
-        commands:entity(p:id()):remove("player/spawner/look")
+        if body ~= nil and not fresh[p:id()] then
+            body.scale = { x = 1, y = 1, z = 1 }
+            local look = p:get("player/spawner/look") or look_of(body, p:get("camera"))
+            commands:entity(p:id()):insert({ camera = framed(look, body.rotation) })
+            commands:entity(p:id()):try_remove("player/spawner/look")
+        end
     end
 end):in_set("player/spawner/spawn")
     :after("core/net/peer/server_inbound")
