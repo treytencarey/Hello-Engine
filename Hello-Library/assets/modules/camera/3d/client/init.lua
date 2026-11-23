@@ -190,6 +190,51 @@ app:add_systems(Last, {
     end
 end)
 
+-- ZZPROBE: temporary. The sidebar's containers, the camera Bevy gave each, its laid-out size and
+-- display, and the players holding the sidebar, logged whenever that changes.
+local zz_ui_last
+local function zz_field(c, name, key)
+    local ok, v = pcall(function() return c:get(name) end)
+    if not ok or v == nil then return "nil" end
+    if type(v) ~= "table" then return tostring(v) end
+    if key then return tostring(v[key]) end
+    local parts = {}
+    for k, x in pairs(v) do parts[#parts + 1] = tostring(k) .. "=" .. tostring(type(x) == "table" and (x.x and (x.x .. "x" .. tostring(x.y))) or x) end
+    table.sort(parts)
+    return table.concat(parts, ",")
+end
+app:add_systems(Last, {
+    Query[{ with = { "sidebar/container" }, optional = { "Node", "ComputedNode", "ComputedUiTargetCamera", "InheritedVisibility", "ChildOf" } }],
+    Query[{ with = { "Node" }, without = { "ChildOf" } }],
+    Query[{ with = { "sidebar", "core/net/owner" }, optional = { "sidebar/open" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
+    Query[{ with = { "Camera" } }],
+    Query[{ with = { "core/world/status", "WorldShared" }, without = { "WorldMirror" } }],
+}, function(containers, roots, players, own, cameras, rows)
+    local parts = {}
+    for _, c in ipairs(containers:iter()) do
+        local target = zz_field(c, "ComputedUiTargetCamera")
+        parts[#parts + 1] = string.format("%s{display=%s target=%s size=%s visible=%s parent=%s}", tostring(c:id()),
+            zz_field(c, "Node", "display"), target, zz_field(c, "ComputedNode", "size"),
+            zz_field(c, "InheritedVisibility"), tostring(c:get("ChildOf")))
+    end
+    local held = {}
+    for _, p in ipairs(players:iter()) do
+        held[#held + 1] = string.format("%s{mine=%s open=%s}", tostring(p:id()),
+            tostring(own:contains(p:get("core/net/owner"))), tostring(p:has("sidebar/open")))
+    end
+    table.sort(parts)
+    table.sort(held)
+    local line = string.format("%d container(s): %s | %d UI root(s), %d camera(s) | players: %s", #parts,
+        table.concat(parts, " "), #roots:iter(), #cameras:iter(), table.concat(held, " "))
+    if line ~= zz_ui_last then
+        zz_ui_last = line
+        local me = rows:iter()[1]
+        print(string.format("[ZZPROBE-UI] sidebar in %s: %s",
+            tostring(me and me:get("core/world/status").scope_key), line))
+    end
+end)
+
 return {
     base = "camera",
     defaults = {
