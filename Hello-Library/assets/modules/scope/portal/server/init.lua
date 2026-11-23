@@ -445,9 +445,11 @@ app:add_systems(Update, {
             local to = target or way_back(p, portal, player)
             local link = door_link(p, portal, to) or (to ~= nil and identity[to] or nil)
             if to ~= nil and to ~= mine then
-                -- Written on every crossing, an empty one through a portal that is not a door: the share
-                -- keeps its `transfer_data`, and a world the player comes back to keeps what it had.
-                local from = door and mine ~= nil and { target = mine, door = portal.at } or {}
+                -- Only through a door to a target: a world the player comes back to, by the way back
+                -- or through a portal that is not a door, keeps where the player came to it from,
+                -- which this one would replace. Cleared on every other crossing, as the share keeps
+                -- its `transfer_data`.
+                local from = door and target ~= nil and mine ~= nil and { target = mine, door = portal.at } or nil
                 commands:entity(player:id()):insert({
                     ["core/net/peer/switch"] = { target_scope = to, link = link },
                 })

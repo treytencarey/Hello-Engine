@@ -34,7 +34,7 @@
 --   P29 ...given a target, it gets its door link
 --   P30 ...and its target taken away again, the link goes
 --   P31 a door crossing puts `scope/portal/from` in `transfer_data`: this world, and the door it
---       lands at; a crossing through a portal that is not a door puts an empty one
+--       lands at; a crossing through a portal that is not a door puts none
 --   P32 a door without `target` links back to each world its players came from through it, at its
 --       own `at`, one that runs nowhere too
 --   P33 ...walking into it hands a player back to where it came from, on that link; a player that
@@ -383,7 +383,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local fd, fp = from.hdo or {}, from.h7
         T("P31_a_door_crossing_carries_where_from_and_the_door_it_lands_at", fd.target == HERE and fd.door == "zz_arrival",
             tostring(fd.target) .. " " .. tostring(fd.door))
-        T("P31_a_crossing_through_a_portal_not_a_door_carries_an_empty_one", type(fp) == "table" and next(fp) == nil,
+        T("P31_a_crossing_through_a_portal_not_a_door_carries_none", fp == nil,
             tostring(fp))
         local entry = named(world, "zz/portal/p", "entry")
         local backs, wrong = {}, 0

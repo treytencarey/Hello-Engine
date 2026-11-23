@@ -13,12 +13,10 @@
 --      to its owner
 --   X4 the door it came out of, which has no target, links back to that world at its own `at`
 --   X5 walking into that door hands the player back, arriving at the door it left by, where it
---      stood at the other door, with `from` naming the world it came back from
---   X6 ...and the link back goes once no player of that world names it: its handed player's mirror
---      keeps it, as the link carries the hand-over, until the player is back another way
---   X7 crossing through portals that are not doors, the player arrives with no `from`: in a world
---      it was spawned in from the hand-over, and back in the world whose entity it was, which still
---      held the `from` of its last arrival
+--      stood at the other door, with the `from` it had here (an earlier arrival, from a third world)
+--   X6 ...and the link back stays while the player that world kept names it, back another way too
+--   X7 crossing through portals that are not doors carries no `from`: each world the player comes
+--      back to keeps the one it had
 require("modules/core/init.lua")
 local helpers = require("modules/core/test_helpers.lua")
 
@@ -134,6 +132,8 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
         Transform = { translation = { x = 2, y = 0, z = 1 } },
         ["core/net/owner"] = c31,
         ["core/net/peer/share"] = { stable_id = "player_31" },
+        -- An earlier arrival here, from a third world.
+        ["scope/portal/from"] = { target = "zz:px:third", door = "zz_x" },
         ["core/net/sync"] = { Transform = { authority = "server", reliable = false } },
         ["core/script/owner"] = false,
     })
@@ -338,19 +338,19 @@ step(within(6, function() return not ts.t_cooling end), function() ts.move = tru
 step(after(0.5), function() ts.walk_back = true end)
 step(within(10, function() return ts.s_back and ts.s_from ~= "" end), function()
     T("X5_walking_in_hands_it_back_arriving_at_the_door_it_left_by", ts.s_back and ts.s_at == "5.00,0.00,1.00"
-        and ts.s_from == OTHER .. "|zz_d", string.format("back=%s at=%s from=%s", tostring(ts.s_back), ts.s_at, ts.s_from))
+        and ts.s_from == "zz:px:third|zz_x", string.format("back=%s at=%s from=%s", tostring(ts.s_back), ts.s_at, ts.s_from))
 end)
 step(within(6, function() return not ts.s_cooling and ts.s_plain end), function() ts.walk_plain = true end)
 step(within(10, function() return ts.t_owned and not ts.s_back end), function()
-    T("X7_through_a_portal_not_a_door_it_arrives_with_no_from", ts.t_owned and ts.t_from == "",
+    T("X7_through_a_portal_not_a_door_back_in_the_target_it_keeps_the_from_it_had", ts.t_owned and ts.t_from == HERE .. "|zz_e",
         string.format("owned=%s from=%s", tostring(ts.t_owned), ts.t_from))
 end)
-step(within(5, function() return ts.t_links == 0 end), function()
-    T("X6_the_link_back_goes_once_no_player_of_that_world_names_it", ts.t_links == 0, "links=" .. tostring(ts.t_links))
+step(after(1), function()
+    T("X6_the_link_back_stays_while_the_player_it_kept_names_it", ts.t_links == 1, "links=" .. tostring(ts.t_links))
 end)
 step(within(6, function() return not ts.t_cooling and ts.t_plain end), function() ts.walk_home = true end)
 step(within(10, function() return ts.s_back and not ts.t_owned end), function()
-    T("X7_back_in_the_world_whose_entity_it_was_it_has_no_from", ts.s_back and ts.s_from == "",
+    T("X7_back_in_the_world_whose_entity_it_was_it_keeps_the_from_it_had", ts.s_back and ts.s_from == "zz:px:third|zz_x",
         string.format("back=%s from=%s", tostring(ts.s_back), ts.s_from))
 end)
 
