@@ -107,21 +107,29 @@ app:add_systems(First, {
     end
 end):in_set("sidebar/away")
 
--- `sidebar` removed: its UI goes, with every button and panel in it. The edge also comes for a
--- player that despawned: only bindings still there are taken off.
+-- `sidebar` removed: its UI goes, with every button and panel in it, once no local player is left
+-- to use it. Two can hold it at once: a predicted crossing's stand-in builds it, the real player
+-- arrives to find it built, and then the stand-in goes. The edge also comes for a player that
+-- despawned: only bindings still there are taken off.
 app:add_systems(First, {
     Query[{
         removed = { "sidebar" },
         optional = { "input" },
     }],
     Query[{ with = { "sidebar/container" } }],
+    Query[{ with = { "sidebar", "core/net/owner", "input" } }],
+    Query[{ with = { "core/net", "core/net/owns" } }],
     Query[{ with = { Mut["input/game"] } }],
     Query[{ with = { Mut["input/ui"] } }],
     Commands,
-}, function(removed, containers, game_bindings, ui_bindings, commands)
+}, function(removed, containers, players, own, game_bindings, ui_bindings, commands)
     for _, e in ipairs(removed:iter()) do
         local container = containers:iter()[1]
-        if container ~= nil then
+        local staying = false
+        for _, p in ipairs(players:iter()) do
+            staying = staying or own:contains(p:get("core/net/owner"))
+        end
+        if container ~= nil and not staying then
             commands:entity(container:id()):despawn()
         end
         -- If `input` went too, its bindings go with it, and a patch landing after that would bring them back.
