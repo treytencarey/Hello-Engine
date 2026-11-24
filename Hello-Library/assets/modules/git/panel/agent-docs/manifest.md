@@ -67,7 +67,7 @@ A refused ask is answered `failed` with its reason and opens nothing. An accepte
 
 The owner's client finds it in its own net's `core/net/owns` and places it (`placement`); confirming hands its `Transform` back to the server.
 
-It starts 3 m ahead, not at the carrier, so it is in view before the pointer moves it, and a portal placed where it started holds nobody who asked for it. For `drop_portal` the server spawns the same portal with no `placement`, already placed, at that same point, 3 m ahead of the carrier on the ground plane (the carrier's translation plus 3 times the x and z of its rotation applied to +Z, Bevy's `back()`, as v0.7.0 did; the height kept), with `Transform` synced from the server (`{ authority = "server" }`) and no `placement` sync.
+It starts 3 m ahead, not at the carrier, so it is in view before the pointer moves it, and a portal placed where it started holds nobody who asked for it. For `drop_portal` the server spawns the same portal with no `placement`, already placed, at that same point, 3 m ahead of the carrier on the ground plane (the carrier's translation plus 3 times the x and z of its rotation applied to +Z, Bevy's `back()`; the height kept), with `Transform` synced from the server (`{ authority = "server" }`) and no `placement` sync.
 
 Either portal is the world's, not the panel's: closing the panel, taking `git/panel` off, reloading either half, or its placer leaving the world (gone off to another, only watching here) keeps it. Its `core/net/owner` names the placer's connection; when the placer leaves, the connection going takes the owner off (core) and the portal stays, unowned. The server despawns no entity for an owner that leaves.
 

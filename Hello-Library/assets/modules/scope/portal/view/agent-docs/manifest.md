@@ -31,14 +31,14 @@ None of these run in a world that only observes (its own `core/world/status` say
 `git/panel`'s server half spawns a player's portal with `scope/portal/view { mode = "3d" }`. A scene door names `"none"`:
 
 ```json
-{ "scope/portal": { "target": "github:treytencarey/hello-backrooms:new-room" },
+{ "scope/portal": { "target": "github:<owner>/<repository>:new-room" },
   "scope/portal/view": { "mode": "none" } }
 ```
 
 A door that shows its target from a node of the target's map, here one named `arrival`:
 
 ```json
-{ "scope/portal": { "target": "github:treytencarey/hello-backrooms:new-room", "at": "arrival" },
+{ "scope/portal": { "target": "github:<owner>/<repository>:new-room", "at": "arrival" },
   "scope/portal/view": { "mode": "none" } }
 ```
 
