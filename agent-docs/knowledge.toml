@@ -1,0 +1,3 @@
+# Hello Knowledge publishing config: the paths listed here are public to every Hello member.
+# Only the default branch of a repository the operator allowed to publish is public; everything else stays private to the repository.
+public = ["**/agent-docs/**"]
