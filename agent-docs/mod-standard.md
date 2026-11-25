@@ -234,6 +234,7 @@ return {
 ## Queries and writes
 
 - Setup happens on an `added` edge: one query, with `optional` columns for what the setup reads. Setup that a later change must redo reacts to `changed` (which also fires on add) in the same system. A system that fills a computed field writes only when it is missing: the fill is itself a change, and an unconditional one would run every frame.
+- A system decides from data that is complete on its edge. It never acts and then corrects itself on a later edge, such as spawning something and then despawning it because it shouldn't have been spawned. When what it needs can arrive later, whoever owns that data puts it on the entity in the same insert, or the system waits for it with `with`.
 - No early-return gates in a system body (`if q:is_empty() then return end`). The loop over the edge query is the gate. To skip a whole run on what changed, use a run condition (Systems), where `is_empty` is what Bevy's own helper does.
 - Combine `changed` and `removed` handling in one query with `["or"]` where you can. `changed` also fires on add.
 - A query answers only the columns it names. `get()` and `has()` read the row, so a component the query did not list in `with`, `optional`, `any_of`, `added` or `changed` reads as absent even when the entity has it, and the failure is silent. Name what you read, even when it may be missing (`Query[{ changed = { "animation" }, optional = { "Children" } }]`). Read another entity's data through a declared query (`parents:get(e:get("ChildOf"))`); a mod has no world to read it from.
