@@ -205,6 +205,9 @@ app:add_systems(Update, {
                 camera.yaw, camera.pitch = look.yaw, look.pitch
                 camera.distance = look.distance or camera.distance
                 commands:entity(p:id()):insert({ Transform = body, camera = camera })
+                print(string.format("[PLAYER/SPAWNER/STANDIN] the real player takes the stand-in's place:"
+                    .. " camera height %s as it arrived, %s on the stand-in",
+                    tostring(camera.height), tostring(look.height)))
             end
             commands:entity(s:id()):try_despawn()
         end
