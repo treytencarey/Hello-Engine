@@ -89,6 +89,11 @@ app:add_systems(Update, {
         -- `camera` arrives as `{}` and gets its defaults when its own mod loads, which can
         -- be a frame later. Filling them is a change to `camera`, which runs this again.
         if cam.height ~= nil then
+            local was = (e:get("camera/3d").offset or {}).y
+            if was ~= cam.height then
+                print(string.format("[CAMERA/FIRST_PERSON] entity %s: eye height %s (was %s)",
+                    tostring(e:id()), tostring(cam.height), tostring(was)))
+            end
             e:patch({ ["camera/3d"] = { offset = { x = 0, y = cam.height, z = 0 } } })
         end
     end
