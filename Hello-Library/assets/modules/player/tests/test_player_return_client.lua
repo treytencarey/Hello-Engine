@@ -10,6 +10,7 @@
 --   RC3 handed back: A's player is its own here again, the same entity, its body dynamic
 --   RC4 ...and B's player is not the client's there
 --   RC5 ...and its camera here is whole: a distance, a height and an offset
+--   RC6 ...at the height this world's game gives it, not the one the world it went to gave it
 -- The return is a predicted crossing, as a portal's is: root's ask arrives here stubbed, an entity
 -- carrying `WorldMirror { world_id = 0 }`, before the switch.
 --   RS1 the predicted return stands the player in here
@@ -27,7 +28,7 @@ local reg = helpers.peer_registry()
 local A_PORT, B_PORT, PLAYER = 15971, 15974, 41
 local A, B = "zz:rc:a", "zz:rc:b"
 local DEFAULTS = { a_ready = false, b_ready = false, linked = false, to_b = false, to_a = false,
-    b_net = false, b_owned = false, b_present = "", a_srv = "", b_srv = "" }
+    b_net = false, b_owned = false, b_present = "", a_srv = "", b_srv = "", a_height = false }
 local ts = helpers.shared_state("ZzReturnClientState", DEFAULTS)
 
 local SERVER = [=[
@@ -106,8 +107,12 @@ app:add_systems(Update, { World }, function(world)
     local st = wn and wn:get("core/net/state") or {}
     ts.b_net = st.connected == true
     local owned = false
-    for _, p in ipairs(world:query({ with = { "player", "core/net/owner" } })) do
-        if wn and p:get("core/net/owner") == wn:id() then owned = true end
+    for _, p in ipairs(world:query({ with = { "player", "core/net/owner", "camera" } })) do
+        if wn and p:get("core/net/owner") == wn:id() then
+            owned = true
+            -- The game here frames its own eye height.
+            if p:get("camera").height ~= 1.5 then world:get_entity(p:id()):patch({ camera = { height = 1.5 } }) end
+        end
     end
     ts.b_owned = owned
 end):in_set("zz/rc_b_client")
@@ -130,6 +135,18 @@ local function present(world, commands, scope, observer, from)
     commands:spawn({ ["core/world/presence"] = { scope_key = scope, observer = observer, from = (not observer) and from or nil },
         WorldShared = {} })
 end
+
+-- A's game: a mod on its players that gives their camera its own height, as a game's player does.
+helpers.make_fixture("modules/test_fixtures/gen_rc_game/init.lua", [[
+return { defaults = { camera = { height = 0.42 } } }
+]])
+app:add_systems(Update, { Query[{ added = { "player" }, without = { "player/spawner/standin" } }], Commands },
+    function(arrived, commands)
+        for _, p in ipairs(arrived:iter()) do
+            -- Its carrier default would have filled the arriving camera; this mod lands after it.
+            commands:entity(p:id()):patch({ ["test_fixtures/gen_rc_game"] = {}, camera = { height = 0.42 } })
+        end
+    end)
 
 -- This VM's copy of A's map, and its own row.
 app:add_systems(Startup, { Commands }, function(commands)
@@ -216,6 +233,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local p, mine, body = a_player(world)
         if not (mine and body == "Dynamic" and ts.b_net and clock > 1) and clock < 20 then return end
         first = p and p:id()
+        ts.a_height = p and (world:get_entity(p:id()):get("camera") or {}).height
         T("RC1_the_client_s_player_in_a_is_its_own_its_body_dynamic", mine and body == "Dynamic", say(world))
         ts.to_b = true
         step("switching_to_b")
@@ -273,6 +291,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             cam.distance ~= nil and cam.height ~= nil and cam.offset ~= nil,
             string.format("distance=%s height=%s offset=%s yaw=%s", tostring(cam.distance), tostring(cam.height),
                 tostring(cam.offset and cam.offset.x), tostring(cam.yaw)))
+        T("RC6_at_the_height_this_world_s_game_gives_it", cam.height == 0.42,
+            string.format("height=%s (A's game 0.42, B's 1.5) at_first=%s", tostring(cam.height), tostring(ts.a_height)))
         phase = "done"
         suite.finish("PlayerReturnClientSuite")
     end
