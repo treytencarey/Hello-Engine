@@ -11,6 +11,9 @@
 --   P2 before any ask, "Points to <branch>" and "List branches"; a click asks root for this world's
 --      repository's branches, under the console
 --   P3 a refused list says why, and "List branches" stays
+--  P10 a list root answers `not-installed` shows "the Hello Engine app isn't installed on
+--      <owner>/<name>" with Install, and no branch rows; Install asks root's `vault/open_url` for
+--      root's `install_url`, under the console, and root's answer closes it
 --   P4 the branches, the door's own marked, then "New branch"; the ask goes
 --   P5 a click on a branch asks the server to re-point the door, on this client's own player
 --   P6 "New branch" opens the name field and gives the player UI input; typing writes the name
@@ -39,6 +42,7 @@ world_id = 7
 
 local ROOT = "github:zzscreen/world"
 local AUTHORED = ROOT .. ":prologue"
+local INSTALL_URL = "https://github.com/apps/zz-app/installations/new"
 
 local own_net, player, screen, camera
 
@@ -200,6 +204,42 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("listing_again")
 
     elseif phase == "listing_again" and (#asks(world, "vault/github/branches") > 0 or clock > 5) then
+        local a = asks(world, "vault/github/branches")[1]
+        commands:entity(a:id()):insert({ ["vault/github/branches/reply"] = {
+            error = "http-404", status = 404, reason = "not-installed", install_url = INSTALL_URL,
+        } })
+        step("missing")
+
+    elseif phase == "missing" and (rows["Install"] ~= nil or clock > 5) then
+        T("P10_not_installed_shows_the_line_with_install", said(world):find("the Hello Engine app isn't installed on zzscreen/world", 1, true) ~= nil
+            and rows["Install"] ~= nil and not said(world):find("http-404", 1, true), said(world))
+        T("P10_and_no_branch_rows", rows["New branch"] == nil and rows["main"] == nil and rows["List branches"] ~= nil, said(world))
+        if rows["Install"] == nil then
+            phase = "done"
+            suite.finish("PORTAL_CONSOLE_SCREEN")
+            return
+        end
+        click(commands, rows["Install"])
+        step("install")
+
+    elseif phase == "install" and (#asks(world, "vault/open_url") > 0 or clock > 5) then
+        local o = asks(world, "vault/open_url")
+        T("P10_install_asks_root_to_open_its_install_url", #o == 1 and o[1]:get("vault/open_url").url == INSTALL_URL
+            and o[1]:get("ChildOf") == console_of(world):id(), tostring(#o))
+        if o[1] == nil then
+            phase = "done"
+            suite.finish("PORTAL_CONSOLE_SCREEN")
+            return
+        end
+        commands:entity(o[1]:id()):insert({ ["vault/open_url/reply"] = { status = "opened" } })
+        step("installed")
+
+    elseif phase == "installed" and (#asks(world, "vault/open_url") == 0 or clock > 5) then
+        T("P10_root_s_answer_closes_the_ask", #asks(world, "vault/open_url") == 0)
+        click(commands, rows["List branches"])
+        step("listing_third")
+
+    elseif phase == "listing_third" and (#asks(world, "vault/github/branches") > 0 or clock > 5) then
         local a = asks(world, "vault/github/branches")[1]
         commands:entity(a:id()):insert({ ["vault/github/branches/reply"] = { branches = { "main", "prologue", "feature" } } })
         step("listed")

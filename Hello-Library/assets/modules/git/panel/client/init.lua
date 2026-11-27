@@ -1,7 +1,10 @@
 -- The client half of the "GitHub" sidebar panel: the player's repositories and a repository's
 -- branches, asked of root, with Switch to move to a branch's world, Portal to ask the world's server
 -- for a portal to it, Pull on this world's own branch, and the branch's latest commits. Root holds
--- the token and makes every GitHub call; the panel asks root and shows only what root answers.
+-- the token and makes every GitHub call; the panel asks root and shows only what root answers. A
+-- repository the Hello Engine app isn't installed on offers Install, and the REPOSITORY picker
+-- "+ Add a repository…": both ask root's `vault/open_url` for root's install page. A read the player
+-- denied says so, and is asked again only on a new choice or a new panel.
 -- `git/panel` arrives from the server, on the owner's own player only; the state and the UI this
 -- half adds stay on this client.
 --
@@ -51,6 +54,17 @@ end
 local function split(repo)
     if repo == nil then return nil end
     return repo:match("^([^/]+)/(.+)$")
+end
+
+-- A canonical key, `github:<owner>/<name>[/<folder>]:<branch>`, read back: the owner and the name
+-- lowered as core writes them, the folder and the branch as they are. Nil for any other key.
+local function parse_scope(key)
+    if type(key) ~= "string" then return nil end
+    local path, branch = key:match("^github:([^:]+):(.+)$")
+    if path == nil then return nil end
+    local owner, name, folder = path:match("^([^/]+)/([^/]+)/?(.*)$")
+    if owner == nil then return nil end
+    return { owner = owner:lower(), name = name:lower(), folder = folder ~= "" and folder or nil, branch = branch }
 end
 
 -- The base repository first, when root names one; the rest in GitHub's order, most recently
@@ -138,9 +152,32 @@ local function ask_commits(commands, carrier, owner, name, branch)
 end
 
 -- An answer root gave while signed out is stale once signed in, and one it gave signed in is stale
--- once signed out.
+-- once signed out. A read the player denied, or one root says the app can't make, is no signed-out
+-- answer: it is asked again only on a new choice or a new panel.
 local function stale(said, reply)
+    if reply ~= nil and (reply.error == "denied" or reply.reason ~= nil) then return false end
     return reply ~= nil and (said.login ~= nil) == (reply.error ~= nil)
+end
+
+-- Root's install page for the Hello Engine app, through root's `vault/open_url`, whose dialog shows
+-- the player the address before anything opens. A click closes an earlier ask root hasn't answered
+-- and opens one in its place.
+local function ask_open(commands, carrier, url, earlier)
+    for _, ask in ipairs(earlier) do
+        commands:entity(ask:id()):despawn()
+    end
+    commands:spawn({
+        ["vault/open_url"] = { url = url },
+        Request = {},
+        ["core/script/owner"] = false,
+        ChildOf = carrier,
+    })
+end
+
+local ADD_REPOSITORY = "+ Add a repository…"
+local DENIED = "GitHub access not allowed"
+local function not_installed(repo)
+    return "⚠ the Hello Engine app isn't installed on " .. tostring(repo)
 end
 
 local function close(nodes, arrows, picker)
@@ -248,7 +285,7 @@ local function spawn_picker(commands, scroll, label, chosen, open, options)
             ChildOf = row,
         })
         if not option.selected then
-            picks[#picks + 1] = { button = row, value = option.value }
+            picks[#picks + 1] = { button = row, value = option.value, open = option.open }
         end
     end
     return { trigger = trigger, arrow = arrow, list = list:id(), picks = picks }
@@ -316,7 +353,7 @@ app:add_systems(First, {
     }],
     Query[{
         any_of = {
-            "vault/github/repos", "vault/github/branches", "vault/github/commits",
+            "vault/github/repos", "vault/github/branches", "vault/github/commits", "vault/open_url",
             "core/registry/sessions", "core/registry/despawn", "core/world/unload", "core/world/restart",
         },
         with = { "Request" },
@@ -379,6 +416,25 @@ app:add_systems(Update, {
                 refused[wish.scope] = time:elapsed_secs()
                 carrier:get_mut("git/panel/state").refused = refused
             end
+        end
+    end
+end):in_set("git/panel")
+
+-- An install ask answered, opened or refused: root's dialog has gone, and the ask closes.
+app:add_systems(Update, {
+    Query[{
+        ["or"] = {
+            added = { "vault/open_url/reply" },
+            changed = { "vault/open_url/reply" },
+        },
+        with = { "vault/open_url", "Request", "ChildOf" },
+    }],
+    Query[{ with = { "git/panel" } }],
+    Commands,
+}, function(answered, carriers, commands)
+    for _, ask in ipairs(answered:iter()) do
+        if carriers:contains(ask:get("ChildOf")) then
+            commands:entity(ask:id()):despawn()
         end
     end
 end):in_set("git/panel")
@@ -450,16 +506,33 @@ app:add_systems(Update, {
         optional = { "vault/github/branches/reply" },
     }],
     Query[{ with = { "vault/github/commits", "Request" } }],
+    Query[{
+        with = { "core/world/status", "WorldShared" },
+        without = { "WorldMirror" },
+    }],
     Commands,
-}, function(carriers, repo_asks, branch_asks, commit_asks, commands)
+}, function(carriers, repo_asks, branch_asks, commit_asks, statuses, commands)
+    -- The defaults are this world's own repository, folder and branch, so the panel opens on the
+    -- world the player stands in; until this world's row is here, nothing is chosen.
+    local me = statuses:iter()[1]
+    local here = me and parse_scope(me:get("core/world/status").scope_key)
     for _, carrier in ipairs(carriers:iter_mut()) do
         local kids = carrier:get("Children") or {}
         local state = carrier:get_mut("git/panel/state")
         local answered = repo_asks:iter_many(kids)[1]
         local said = answered and answered:has("vault/github/repos/reply") and answered:get("vault/github/repos/reply")
-        local first = said and said.repos and listed(said.repos)[1]
-        if state.repo == nil and first then
-            state.repo = first.owner .. "/" .. first.name
+        local options = said and said.repos and listed(said.repos) or {}
+        -- Only this world's own repository is chosen for the player: any other would be asked for
+        -- its branches unbidden, a read of a repository the player never picked. With it not listed,
+        -- none is chosen until the player picks one.
+        if state.repo == nil and here ~= nil then
+            for _, r in ipairs(options) do
+                if r.owner:lower() == here.owner and tostring(r.name):lower() == here.name then
+                    state.repo = r.owner .. "/" .. r.name
+                    state.folder = here.folder
+                    break
+                end
+            end
         end
 
         local owner, name = split(state.repo)
@@ -477,7 +550,8 @@ app:add_systems(Update, {
         end
         local branches = kept and kept:has("vault/github/branches/reply") and kept:get("vault/github/branches/reply").branches
         if state.branch == nil and branches and branches[1] ~= nil then
-            state.branch = branches[1]
+            local mine = here ~= nil and owner:lower() == here.owner and name:lower() == here.name
+            state.branch = mine and here.branch or branches[1]
         end
 
         local branch = state.branch
@@ -497,8 +571,8 @@ app:add_systems(Update, {
 end):in_set("git/panel"):run_if({
     Query[{
         ["or"] = {
-            added = { "git/panel/state" },
-            changed = { "git/panel/state", "vault/github/repos/reply", "vault/github/branches/reply" },
+            added = { "git/panel/state", "core/world/status" },
+            changed = { "git/panel/state", "vault/github/repos/reply", "vault/github/branches/reply", "core/world/status" },
         },
     }],
 }, function(touched)
@@ -654,9 +728,17 @@ app:add_systems(Update, {
         with = { "git/panel/button" },
     }],
     Query[{ with = { "sidebar/container" } }],
-    Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
+    Query[{ with = { "git/panel", Mut["git/panel/state"] }, optional = { "Children" } }],
+    Query[{
+        any_of = { "vault/github/repos", "vault/github/branches", "vault/github/commits" },
+        with = { "Request" },
+        optional = {
+            "vault/github/branches", "vault/github/commits",
+            "vault/github/repos/reply", "vault/github/branches/reply", "vault/github/commits/reply",
+        },
+    }],
     Commands,
-}, function(opened, containers, carriers, commands)
+}, function(opened, containers, carriers, reads, commands)
     for _, _ in ipairs(opened:iter()) do
         local container = containers:iter()[1]
         local carrier = carriers:iter_mut()[1]
@@ -666,6 +748,22 @@ app:add_systems(Update, {
                 ["git/panel/view"] = {},
                 ChildOf = container:id(),
             })
+            -- A new panel asks again what the player denied, each in its ask's place.
+            for _, ask in ipairs(reads:iter_many(carrier:get("Children") or {})) do
+                local said = opt(ask, "vault/github/repos/reply") or opt(ask, "vault/github/branches/reply")
+                    or opt(ask, "vault/github/commits/reply")
+                if said ~= nil and said.error == "denied" then
+                    commands:entity(ask:id()):despawn()
+                    local b, c = opt(ask, "vault/github/branches"), opt(ask, "vault/github/commits")
+                    if b ~= nil then
+                        ask_branches(commands, carrier:id(), b.owner, b.name)
+                    elseif c ~= nil then
+                        ask_commits(commands, carrier:id(), c.owner, c.name, c.branch)
+                    else
+                        ask_repos(commands, carrier:id())
+                    end
+                end
+            end
             if not carrier:get("git/panel/state").open then
                 carrier:get_mut("git/panel/state").open = true
             end
@@ -815,10 +913,22 @@ app:add_systems(Update, {
         local owner, name = split(state.repo)
 
         local repos, branches, commits, signed_out = {}, {}, {}, false
+        -- `add_url`: root's install page, on its repositories reply. `denied`: a read the player
+        -- denied. `missing`: the chosen repository's reply says the app isn't installed on it.
+        local add_url, denied, missing = nil, false, nil
+        local function read(said)
+            if said and said.error == "denied" then
+                denied = true
+            elseif said and said.reason == "not-installed" then
+                missing = { url = type(said.install_url) == "string" and said.install_url or nil }
+            end
+        end
         for _, ask in ipairs(asks:iter_many(carrier:get("Children") or {})) do
             if ask:has("vault/github/repos") then
                 local said = ask:has("vault/github/repos/reply") and ask:get("vault/github/repos/reply")
                 repos = said and said.repos and listed(said.repos) or repos
+                if said and type(said.install_url) == "string" then add_url = said.install_url end
+                denied = denied or (said and said.error == "denied") or false
                 for _, s in ipairs(asks:iter_many(ask:get("Children") or {})) do
                     local who = s:has("vault/github/signin/reply") and s:get("vault/github/signin/reply")
                     signed_out = signed_out or (who and who.login == nil)
@@ -826,16 +936,26 @@ app:add_systems(Update, {
             elseif ask:has("vault/github/branches") then
                 local wish = ask:get("vault/github/branches")
                 local said = ask:has("vault/github/branches/reply") and ask:get("vault/github/branches/reply")
-                if wish.owner == owner and wish.name == name and said and said.branches then
-                    branches = said.branches
+                if wish.owner == owner and wish.name == name then
+                    if said and said.branches then branches = said.branches end
+                    read(said)
                 end
             elseif ask:has("vault/github/commits") then
                 local wish = ask:get("vault/github/commits")
                 local said = ask:has("vault/github/commits/reply") and ask:get("vault/github/commits/reply")
-                if wish.owner == owner and wish.name == name and wish.branch == state.branch and said and said.commits then
-                    commits = said.commits
+                if wish.owner == owner and wish.name == name and wish.branch == state.branch then
+                    if said and said.commits then commits = said.commits end
+                    read(said)
                 end
             end
+        end
+        -- One line under the actions: the denied read, else the app missing from the chosen
+        -- repository, with Install when root names its install page.
+        local notice = nil
+        if denied then
+            notice = { text = DENIED }
+        elseif missing ~= nil then
+            notice = { text = not_installed(state.repo), url = missing.url }
         end
 
         local shown, open, draft = {}, {}, nil
@@ -855,6 +975,9 @@ app:add_systems(Update, {
         for _, r in ipairs(repos) do
             local full = r.owner .. "/" .. r.name
             repo_options[#repo_options + 1] = { text = r.name, value = full, selected = full == state.repo }
+        end
+        if add_url ~= nil then
+            repo_options[#repo_options + 1] = { text = ADD_REPOSITORY, open = add_url }
         end
         local branch_options = {}
         for _, b in ipairs(branches) do
@@ -1020,6 +1143,10 @@ app:add_systems(Update, {
                 if current then wanted[#wanted + 1] = pulling and "⏳ Pulling…" or "⭳ Pull" end
                 wanted[#wanted + 1] = "🌀 Portal"
             end
+            if notice ~= nil then
+                wanted[#wanted + 1] = notice.text
+                if notice.url ~= nil then wanted[#wanted + 1] = "Install" end
+            end
             if refused ~= nil then wanted[#wanted + 1] = refused end
             wanted[#wanted + 1] = "SESSIONS"
             if header_line ~= nil then wanted[#wanted + 1] = header_line end
@@ -1094,24 +1221,47 @@ app:add_systems(Update, {
                         end
                     end)
                 end
-                for _, pick in ipairs(pickers[1].picks) do
-                    local value = pick.value
-                    commands:entity(pick.button):observe(On[Pointer[Click]], {
-                        Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
+                -- An option with an address is "+ Add a repository…": it asks root to open the
+                -- install page, and the choice stays as it was.
+                local function install_on_click(button, url, picker)
+                    commands:entity(button):observe(On[Pointer[Click]], {
+                        Query[{ with = { "git/panel" }, optional = { "Children" } }],
+                        Query[{ with = { "vault/open_url", "Request" } }],
                         Query[{ with = { Mut["Node"] } }],
                         Query[{ with = { Mut["Text"] } }],
                         Query[{ with = { "core/net", "core/net/owns" } }],
-                    }, function(_, owners, nodes, arrows, own)
+                        Commands,
+                    }, function(_, owners, opens, nodes, arrows, own, click_commands)
                         for _, n in ipairs(own:iter()) do
-                            for _, o in ipairs(owners:iter_many_mut(n:get("core/net/owns"))) do
-                                local s = o:get_mut("git/panel/state")
-                                s.repo = value
-                                s.branch = nil
-                                s.folder = nil
+                            for _, o in ipairs(owners:iter_many(n:get("core/net/owns"))) do
+                                ask_open(click_commands, o:id(), url, opens:iter_many(o:get("Children") or {}))
                             end
                         end
-                        close(nodes, arrows, pickers[1])
+                        if picker ~= nil then close(nodes, arrows, picker) end
                     end)
+                end
+                for _, pick in ipairs(pickers[1].picks) do
+                    local value = pick.value
+                    if pick.open ~= nil then
+                        install_on_click(pick.button, pick.open, pickers[1])
+                    else
+                        commands:entity(pick.button):observe(On[Pointer[Click]], {
+                            Query[{ with = { "git/panel", Mut["git/panel/state"] } }],
+                            Query[{ with = { Mut["Node"] } }],
+                            Query[{ with = { Mut["Text"] } }],
+                            Query[{ with = { "core/net", "core/net/owns" } }],
+                        }, function(_, owners, nodes, arrows, own)
+                            for _, n in ipairs(own:iter()) do
+                                for _, o in ipairs(owners:iter_many_mut(n:get("core/net/owns"))) do
+                                    local s = o:get_mut("git/panel/state")
+                                    s.repo = value
+                                    s.branch = nil
+                                    s.folder = nil
+                                end
+                            end
+                            close(nodes, arrows, pickers[1])
+                        end)
+                    end
                 end
                 for _, pick in ipairs(pickers[2].picks) do
                     local value = pick.value
@@ -1257,6 +1407,32 @@ app:add_systems(Update, {
                                 end
                             end
                         end)
+                    end
+                end
+
+                if notice ~= nil then
+                    local row = commands:spawn({
+                        ["git/panel/row"] = {},
+                        Node = {
+                            width = { Percent = 100 },
+                            flex_direction = "Row",
+                            flex_shrink = 0,
+                            align_items = "Center",
+                            column_gap = { Px = 6 },
+                            padding = { left = { Px = 8 } },
+                            margin = { top = { Px = 8 } },
+                        },
+                        ChildOf = scroll:id(),
+                    }):id()
+                    commands:spawn({
+                        Text = { text = notice.text },
+                        TextFont = { font_size = 11 },
+                        Node = { flex_grow = 1, flex_shrink = 1, min_width = { Px = 0 } },
+                        ["ui/style"] = { text = "text_dim" },
+                        ChildOf = row,
+                    })
+                    if notice.url ~= nil then
+                        install_on_click(spawn_action(commands, row, "Install", true, false, 64):id(), notice.url, nil)
                     end
                 end
 

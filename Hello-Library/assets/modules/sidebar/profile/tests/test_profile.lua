@@ -8,6 +8,8 @@
 -- C1  "Sign in" asks root to sign in on a new request; the standing ask stays
 -- P1  a pending sign-in shows the code and the address, and no button
 -- S1  signed in, a row shows the name root gave, with "Sign out"; GitHub's row appears
+-- S2  signed in, GitHub's row says nothing of which repositories; signed out, its row says GitHub
+--     will ask which repositories Hello may use
 -- O1  "Sign out" asks root to sign out, on a new request in place of the sign-in's
 -- G1  a Hello! sign-out hides GitHub's row and asks root nothing about GitHub
 -- G2  signed in to Hello! again, GitHub's row comes back as root left it
@@ -28,6 +30,7 @@ local MOD_FILE = "assets/modules/sidebar/profile/init.lua"
 local SITE_SECRET = "zz-site-access-secret"
 local GITHUB_SECRET = "zz-github-token-secret"
 local DEVICE_SECRET = "zz-device-code-secret"
+local GITHUB_NOTE = "GitHub will ask which repositories Hello may use."
 
 local original
 local function reload()
@@ -260,6 +263,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local site, github = row_texts(world, "Hello!"), row_texts(world, "GitHub")
         T("S1_signed_in_shows_the_name", has_text(site, "Zz Player") and not has_text(site, "ZZZZ-2222"), table.concat(site, "|"))
         T("S2_and_the_github_login", has_text(github, "zz-octo"), table.concat(github, "|"))
+        T("S2_signed_in_github_s_row_has_no_repositories_note", not has_text(github, GITHUB_NOTE), table.concat(github, "|"))
         step("scan")
 
     elseif phase == "scan" and clock > 0.6 then
@@ -297,6 +301,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "github_signed_out" and button_in(world, "GitHub", "Sign in") ~= nil then
         T("O3_signed_out_the_row_offers_sign_in_again", not has_text(row_texts(world, "GitHub"), "zz-octo"))
+        T("O3_and_says_github_will_ask_which_repositories", has_text(row_texts(world, "GitHub"), GITHUB_NOTE),
+            table.concat(row_texts(world, "GitHub"), "|"))
         reply(commands, standing(world, "vault/github/signin"), "vault/github/signin/reply", { login = "zz-octo", pending = false })
         step("github_again")
 

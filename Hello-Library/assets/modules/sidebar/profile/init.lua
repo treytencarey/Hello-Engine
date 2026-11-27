@@ -16,12 +16,17 @@ local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
 local Click = require("bevy::picking::prelude::Click")
 
+local GITHUB_NOTE = "GitHub will ask which repositories Hello may use."
+
 -- What one sign-in's row says. `known`: root has answered the standing ask. `who`: the name root
 -- gave, while signed in. `wish` and `said`: the player's last sign-in or sign-out ask and root's
 -- answer to it, if any.
 
-local function account(title, known, who, wish, said)
+-- `note`: a line the row shows while the player isn't signed in, under the code while a sign-in
+-- waits, or above Sign in.
+local function account(title, known, who, wish, said, note)
     local row = { title = title, status = "Not signed in", role = "text_dim" }
+    if who == nil and known and not (wish ~= nil and said == nil) then row.note = note end
     if who ~= nil then
         row.status, row.role, row.label = tostring(who), "text_good", "Sign out"
     elseif not known or (wish ~= nil and said == nil) then
@@ -47,6 +52,7 @@ local function texts_of(row)
     local out = { row.title, row.status }
     if row.hint ~= nil then out[#out + 1] = row.hint end
     if row.code ~= nil then out[#out + 1] = row.code end
+    if row.note ~= nil then out[#out + 1] = row.note end
     if row.label ~= nil then out[#out + 1] = row.label end
     return out
 end
@@ -120,6 +126,15 @@ local function spawn_account(commands, parent, row)
             TextFont = { font_size = 22 },
             ["ui/style"] = { text = "accent" },
             ChildOf = box,
+        })
+    end
+    if row.note ~= nil then
+        commands:spawn({
+            Text = { text = row.note },
+            TextFont = { font_size = 10 },
+            Node = { margin = { bottom = { Px = 4 } } },
+            ["ui/style"] = { text = "text_dim" },
+            ChildOf = card,
         })
     end
     if row.label == nil then
@@ -400,7 +415,10 @@ app:add_systems(Update, {
         local site = account("Hello!", site_known, site_who, site_wish, site_said)
         -- GitHub is offered only to a player signed in to Hello!, and only hidden by a Hello! sign-out:
         -- root keeps the GitHub session.
-        local github = site_who ~= nil and account("GitHub", github_known, github_who, github_wish, github_said) or nil
+        -- Signing in to GitHub is to the Hello Engine app, which reaches only the repositories it is
+        -- installed on: GitHub asks the player which.
+        local github = site_who ~= nil and account("GitHub", github_known, github_who, github_wish, github_said,
+            GITHUB_NOTE) or nil
 
         local wanted = { "SIGN-INS" }
         for _, text in ipairs(texts_of(site)) do wanted[#wanted + 1] = text end

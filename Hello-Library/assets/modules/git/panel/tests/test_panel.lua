@@ -9,8 +9,9 @@
 -- G1  before root answers, and signed out of GitHub, there is no "GitHub" button
 -- I1  signing in asks again for the repositories root answered signed out
 -- G2  ...and one "GitHub" button comes, in the bar
--- R1  the base repository is listed first and chosen, and its branches asked
--- B1  the first branch listed is chosen, though this world's own is listed too, and its commits asked
+-- R1  the base repository is listed first, this world's own repository is chosen, and its
+--     branches asked
+-- B1  this world's own branch is chosen, though another is listed first, and its commits asked
 -- B3  choosing a branch asks its commits in place of the old ones
 -- B4  a branch spelt with capitals keeps them in the target, where the owner and name are lowered
 -- C1  on this world's own branch: "● Current", Pull, and a Portal that does nothing
@@ -34,7 +35,17 @@
 -- H1  a reload keeps the panel open, its rows, its state and its asks, none doubled
 -- F4  choosing a repository clears the folder
 -- X1  the carrier taken off closes its asks, and its button and panel go
--- R2  with no base named, the first repository listed is chosen
+-- R2  with this world's repository not listed, none is chosen, and no branches are asked
+-- N0  with no `install_url` from root, neither Install nor "+ Add a repository…" is offered
+-- N1  a `not-installed` branches reply shows "⚠ the Hello Engine app isn't installed on <repo>",
+--     with Install once it carries `install_url`; a new choice takes it away
+-- N2  Install spawns exactly one `vault/open_url` request carrying root's `install_url`, and asks
+--     nothing else; root's answer closes it
+-- N3  "+ Add a repository…" ends the picker once the repositories reply carries `install_url`, spawns
+--     one request and leaves the chosen repository
+-- D1  a `denied` reply shows "GitHub access not allowed", and no second ask opens, not even on a
+--     sign-in reply changing
+-- D2  a new panel asks it again
 -- I2  signing out asks again for the repositories root answered signed in
 -- V1  ...and takes the button, closing the open panel
 require("modules/core/init.lua")
@@ -56,6 +67,9 @@ world_id = 7
 
 local MOD_FILE = "assets/modules/git/panel/client/init.lua"
 local HEAD_SHA = "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+local INSTALL_URL = "https://github.com/apps/zz-app/installations/new"
+local MISSING = "⚠ the Hello Engine app isn't installed on zz/b-repo"
+local ADD = "+ Add a repository…"
 
 local original
 local function reload()
@@ -303,8 +317,8 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             and b:get("sidebar/button").title == "GitHub")
         reply(commands, signins[1].id, "vault/github/signin/reply", { login = "zz-octo", pending = false })
         reply(commands, repos[1].id, "vault/github/repos/reply", { repos = {
-            { name = "Other-Repo", owner = "ZzOwner", default_branch = "main", is_base = false },
-            { name = "world", owner = "zzpanel", default_branch = "main", is_base = true },
+            { name = "world", owner = "zzpanel", default_branch = "main", is_base = false },
+            { name = "Other-Repo", owner = "ZzOwner", default_branch = "main", is_base = true },
             { name = "third", owner = "zzpanel", default_branch = "main", is_base = false },
         } })
         commands:entity(player):insert({ ["sidebar/open"] = {} })
@@ -316,9 +330,9 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local p = picker(world, "REPOSITORY")
         local wish = asks(world, "vault/github/branches")[1].wish
         T("V0_the_title_is_github", views(world)[1]:get("sidebar/panel").title == "GitHub")
-        T("R1_the_base_repository_is_chosen", state_of(world).repo == "zzpanel/world" and p.chosen == "world",
+        T("R1_this_world_s_own_repository_is_chosen", state_of(world).repo == "zzpanel/world" and p.chosen == "world",
             tostring(state_of(world).repo))
-        T("R1_and_listed_first", table.concat(p.options, "|") == "world|Other-Repo|third", table.concat(p.options, "|"))
+        T("R1_the_base_listed_first", table.concat(p.options, "|") == "Other-Repo|world|third", table.concat(p.options, "|"))
         T("R1_and_its_branches_asked", wish.owner == "zzpanel" and wish.name == "world")
         T("P0_the_picker_starts_shut", p.arrow == "▼" and p.shown == false)
         reply(commands, asks(world, "vault/github/branches")[1].id, "vault/github/branches/reply",
@@ -326,20 +340,26 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("branches")
 
     elseif phase == "branches" and state_of(world).branch ~= nil and #asks(world, "vault/github/commits") == 1
-        and button_labelled(world, "↗ Switch") ~= nil then
+        and button_labelled(world, "● Current") ~= nil then
         local wish = asks(world, "vault/github/commits")[1].wish
-        T("B1_the_first_branch_listed_is_chosen_though_this_world_s_own_is_listed", state_of(world).branch == "alpha",
+        T("B1_this_world_s_own_branch_is_chosen_though_another_is_listed_first", state_of(world).branch == "main",
             tostring(state_of(world).branch))
-        T("B1_and_its_commits_asked", wish.owner == "zzpanel" and wish.name == "world" and wish.branch == "alpha")
+        T("B1_and_its_commits_asked", wish.owner == "zzpanel" and wish.name == "world" and wish.branch == "main")
         mark.commits = asks(world, "vault/github/commits")[1].id
+        click(commands, option(world, "BRANCH", "alpha"))
+        step("alpha")
+
+    elseif phase == "alpha" and state_of(world).branch == "alpha" and #asks(world, "vault/github/commits") == 1
+        and asks(world, "vault/github/commits")[1].id ~= mark.commits and button_labelled(world, "↗ Switch") ~= nil then
+        local c = asks(world, "vault/github/commits")
+        T("B3_choosing_a_branch_asks_its_commits_in_place_of_the_old", c[1].wish.branch == "alpha", tostring(c[1].wish.branch))
+        mark.commits = c[1].id
         click(commands, option(world, "BRANCH", "main"))
         step("current")
 
     elseif phase == "current" and state_of(world).branch == "main" and #asks(world, "vault/github/commits") == 1
         and asks(world, "vault/github/commits")[1].id ~= mark.commits and button_labelled(world, "● Current") ~= nil then
-        local c = asks(world, "vault/github/commits")
         local shown = panel_texts(world)
-        T("B3_choosing_a_branch_asks_its_commits_in_place_of_the_old", c[1].wish.branch == "main", tostring(c[1].wish.branch))
         T("C1_on_this_world_s_branch_current_pull_and_portal", has_text(shown, "⭳ Pull") and has_text(shown, "🌀 Portal")
             and not has_text(shown, "↗ Switch"), table.concat(shown, "|"))
         reply(commands, asks(world, "vault/github/commits")[1].id, "vault/github/commits/reply", { commits = commits(10) })
@@ -614,12 +634,112 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         } })
         step("first")
 
-    elseif phase == "first" and state_of(world).repo ~= nil and #buttons(world) == 1 and clock > 0.5 then
-        T("R2_with_no_base_named_the_first_listed_is_chosen", state_of(world).repo == "zz/b-repo", tostring(state_of(world).repo))
+    elseif phase == "first" and #buttons(world) == 1 and clock > 0.5 then
+        T("R2_this_world_s_repository_not_listed_none_is_chosen", state_of(world).repo == nil
+            and state_of(world).branch == nil, tostring(state_of(world).repo))
+        T("R2_and_no_repository_s_branches_are_asked", #asks(world, "vault/github/branches") == 0
+            and #asks(world, "vault/github/commits") == 0, tostring(#asks(world, "vault/github/branches")))
         click(commands, buttons(world)[1]:id())
         step("reopened")
 
-    elseif phase == "reopened" and #views(world) == 1 and state_of(world).open and clock > 0.3 then
+    elseif phase == "reopened" and #views(world) == 1 and state_of(world).open and picker(world, "REPOSITORY") ~= nil
+        and clock > 0.3 then
+        T("N0_with_no_install_url_no_add_option", table.concat(picker(world, "REPOSITORY").options, "|") == "b-repo|a-repo",
+            table.concat(picker(world, "REPOSITORY").options, "|"))
+        click(commands, option(world, "REPOSITORY", "b-repo"))
+        step("picked_b")
+
+    elseif phase == "picked_b" and state_of(world).repo == "zz/b-repo" and #asks(world, "vault/github/branches") == 1 then
+        reply(commands, asks(world, "vault/github/branches")[1].id, "vault/github/branches/reply",
+            { error = "http-404", status = 404, reason = "not-installed" })
+        step("no_url")
+
+    elseif phase == "no_url" and has_text(panel_texts(world), MISSING) and clock > 0.3 then
+        T("N1_a_not_installed_reply_shows_the_line", true)
+        T("N0_with_no_install_url_no_install_button", button_labelled(world, "Install") == nil
+            and not has_text(panel_texts(world), "Install"), table.concat(panel_texts(world), "|"))
+        local repos = asks(world, "vault/github/repos")[1]
+        reply(commands, repos.id, "vault/github/repos/reply", { install_url = INSTALL_URL, repos = {
+            { name = "b-repo", owner = "zz", default_branch = "main" },
+            { name = "a-repo", owner = "zz", default_branch = "main" },
+        } })
+        reply(commands, asks(world, "vault/github/branches")[1].id, "vault/github/branches/reply",
+            { error = "http-404", status = 404, reason = "not-installed", install_url = INSTALL_URL })
+        step("with_url")
+
+    elseif phase == "with_url" and button_labelled(world, "Install") ~= nil and option(world, "REPOSITORY", ADD) ~= nil then
+        T("N1_with_root_s_install_url_the_line_has_install", has_text(panel_texts(world), MISSING))
+        T("N3_the_picker_ends_with_add_a_repository", picker(world, "REPOSITORY").options[3] == ADD,
+            table.concat(picker(world, "REPOSITORY").options, "|"))
+        mark.branches = asks(world, "vault/github/branches")[1].id
+        mark.flips_before = #flips(world)
+        click(commands, button_labelled(world, "Install"))
+        step("install")
+
+    elseif phase == "install" and #asks(world, "vault/open_url") > 0 and clock > 0.3 then
+        local o = asks(world, "vault/open_url")
+        T("N2_install_spawns_one_open_url_request_with_root_s_address", #o == 1 and o[1].wish.url == INSTALL_URL
+            and next(o[1].wish, next(o[1].wish)) == nil, tostring(#o) .. " " .. tostring(o[1].wish.url))
+        T("N2_and_asks_nothing_else", #asks(world, "vault/github/branches") == 1
+            and asks(world, "vault/github/branches")[1].id == mark.branches and #flips(world) == mark.flips_before)
+        reply(commands, o[1].id, "vault/open_url/reply", { status = "opened" })
+        step("install_answered")
+
+    elseif phase == "install_answered" and #asks(world, "vault/open_url") == 0 and clock > 0.2 then
+        T("N2_root_s_answer_closes_the_ask", true)
+        click(commands, picker(world, "REPOSITORY").trigger)
+        step("add_open")
+
+    elseif phase == "add_open" and picker(world, "REPOSITORY").shown then
+        click(commands, option(world, "REPOSITORY", ADD))
+        step("added")
+
+    elseif phase == "added" and #asks(world, "vault/open_url") > 0 and clock > 0.3 then
+        local o = asks(world, "vault/open_url")
+        T("N3_add_a_repository_spawns_one_open_url_request", #o == 1 and o[1].wish.url == INSTALL_URL, tostring(#o))
+        T("N3_and_leaves_the_chosen_repository", state_of(world).repo == "zz/b-repo"
+            and asks(world, "vault/github/branches")[1].id == mark.branches, tostring(state_of(world).repo))
+        T("N3_and_closes_the_picker", not picker(world, "REPOSITORY").shown)
+        reply(commands, o[1].id, "vault/open_url/reply", { status = "refused", message = "the player declined" })
+        click(commands, option(world, "REPOSITORY", "a-repo"))
+        step("picked_a")
+
+    elseif phase == "picked_a" and state_of(world).repo == "zz/a-repo" and #asks(world, "vault/github/branches") == 1
+        and asks(world, "vault/github/branches")[1].wish.name == "a-repo"
+        and picker(world, "REPOSITORY").chosen == "a-repo" and clock > 0.3 then
+        T("N1_a_new_choice_takes_the_line_away", not has_text(panel_texts(world), MISSING)
+            and button_labelled(world, "Install") == nil)
+        mark.branches = asks(world, "vault/github/branches")[1].id
+        reply(commands, mark.branches, "vault/github/branches/reply", { error = "denied" })
+        step("denied")
+
+    elseif phase == "denied" and has_text(panel_texts(world), "GitHub access not allowed") and clock > 1 then
+        local b = asks(world, "vault/github/branches")
+        T("D1_a_denied_read_says_github_access_not_allowed", true)
+        T("D1_and_no_second_ask_opens", #b == 1 and b[1].id == mark.branches, tostring(#b))
+        -- A sign-in reply changing while signed in replaces only what root answered signed out.
+        local repos = asks(world, "vault/github/repos")[1]
+        reply(commands, asks(world, "vault/github/signin", repos.id)[1].id, "vault/github/signin/reply",
+            { login = "zz-octo", pending = false, at = 1 })
+        step("denied_stays")
+
+    elseif phase == "denied_stays" and clock > 0.6 then
+        local b = asks(world, "vault/github/branches")
+        T("D1_a_sign_in_reply_changing_asks_it_nothing_again", #b == 1 and b[1].id == mark.branches, tostring(#b))
+        click(commands, buttons(world)[1]:id())
+        step("closed")
+
+    elseif phase == "closed" and #views(world) == 0 and clock > 0.3 then
+        click(commands, buttons(world)[1]:id())
+        step("opened_again")
+
+    elseif phase == "opened_again" and #views(world) == 1 and asks(world, "vault/github/branches")[1] ~= nil
+        and asks(world, "vault/github/branches")[1].id ~= mark.branches and clock > 0.3 then
+        local b = asks(world, "vault/github/branches")
+        T("D2_a_new_panel_asks_again", #b == 1 and b[1].reply == nil and b[1].wish.name == "a-repo", tostring(#b))
+        step("ready_off")
+
+    elseif phase == "ready_off" and clock > 0.3 then
         mark.repos = asks(world, "vault/github/repos")[1].id
         reply(commands, asks(world, "vault/github/signin", mark.repos)[1].id, "vault/github/signin/reply", { pending = false })
         step("signed_off")

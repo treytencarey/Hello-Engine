@@ -2,17 +2,21 @@
 -- re-point, and goes back to its authored value when the record goes. Each side spawns its own copy
 -- of the scene, so the door's `Name` is what the record names. The console's screen is this
 -- client's own: its node's mesh carries `ui/screen`, and the rows go under the screen's root. The
--- player points at it with `pointer`, and lists, picks or makes a branch.
+-- player points at it with `pointer`, and lists, picks or makes a branch. A repository the Hello Engine app
+-- isn't installed on says so, with Install, through root's `vault/open_url`.
 --
 -- scope/portal/console/state = {
 --     listed = <whether root has answered the branch list>,
 --     branches = { <branch name>, ... },
 --     error = <root's or the load's reason, shown on the screen>,
+--     missing = { repo, install_url } <root's branch list said the Hello Engine app isn't installed
+--         on the repository; install_url is root's, when it names one>,
 --     typing = <the new branch's name while its field is open>,
 -- }: on the console node, this client only
 --
--- scope/portal/console/row = { target } | { new = true } | {}: a row that acts when clicked: a
--- branch, "New branch" (or "Create" while the field is open), or "List branches"
+-- scope/portal/console/row = { target } | { new = true } | { install = <url> } | {}: a row that acts
+-- when clicked: a branch, "New branch" (or "Create" while the field is open), "Install" (root's
+-- install page, through `vault/open_url`), or "List branches"
 
 local On = require("bevy::ecs::prelude::On")
 local Pointer = require("bevy::picking::prelude::Pointer")
@@ -314,7 +318,16 @@ app:add_systems(Update, {
                         for _, n in ipairs(own:iter()) do
                             player = player or players:iter_many(n:get("core/net/owns"))[1]
                         end
-                        if what.target ~= nil and player ~= nil then
+                        if what.install ~= nil then
+                            -- Root's install page, through root's dialog, which shows the address
+                            -- first; root's answer closes the ask.
+                            click_commands:spawn({
+                                ["vault/open_url"] = { url = what.install },
+                                Request = {},
+                                ["core/script/owner"] = false,
+                                ChildOf = c:id(),
+                            })
+                        elseif what.target ~= nil and player ~= nil then
                             repoint(click_commands, player, c:get("scope/portal/console").door, what.target)
                         elseif what.new and s.typing == nil and player ~= nil then
                             s.typing, s.error = "", nil
@@ -326,7 +339,7 @@ app:add_systems(Update, {
                                 ["core/net/sync"] = false,
                             })
                         elseif not what.new and what.target == nil and owner ~= nil then
-                            s.error = nil
+                            s.error, s.missing = nil, nil
                             click_commands:spawn({
                                 ["vault/github/branches"] = { owner = owner, name = name },
                                 Request = {},
@@ -339,6 +352,10 @@ app:add_systems(Update, {
             end
             line("Points to " .. tostring(branch or "nothing"), "text")
             if state.error ~= nil then line("⚠ " .. tostring(state.error), "text_bad") end
+            if state.missing ~= nil then
+                line("⚠ the Hello Engine app isn't installed on " .. tostring(state.missing.repo), "text_bad")
+                if state.missing.install_url ~= nil then row("Install", { install = state.missing.install_url }) end
+            end
             if not state.listed then
                 row("List branches", {})
             else
@@ -411,11 +428,41 @@ app:add_systems(Update, {
         local c = consoles:iter_many_mut({ r:get("ChildOf") })[1]
         if c ~= nil then
             local said = r:get("vault/github/branches/reply")
+            local wish = r:get("vault/github/branches")
             local s = c:get_mut("scope/portal/console/state")
             s.listed = said.error == nil
             s.branches = said.branches or {}
-            s.error = said.error
+            s.error, s.missing = said.error, nil
+            -- The Hello Engine app isn't on this repository: the screen says so, with Install when
+            -- root names the app's install page, in place of root's error.
+            if said.reason == "not-installed" then
+                s.error = nil
+                s.missing = {
+                    repo = tostring(wish.owner) .. "/" .. tostring(wish.name),
+                    install_url = type(said.install_url) == "string" and said.install_url or nil,
+                }
+            end
             commands:entity(r:id()):despawn()
+        end
+    end
+end):in_set("scope/portal/console/client")
+
+-- An install ask under a console answered, opened or refused: root's dialog has gone, and the ask
+-- closes.
+app:add_systems(Update, {
+    Query[{
+        ["or"] = {
+            added = { "vault/open_url/reply" },
+            changed = { "vault/open_url/reply" },
+        },
+        with = { "vault/open_url", "Request", "ChildOf" },
+    }],
+    Query[{ with = { "scope/portal/console" } }],
+    Commands,
+}, function(answered, consoles, commands)
+    for _, ask in ipairs(answered:iter()) do
+        if consoles:contains(ask:get("ChildOf")) then
+            commands:entity(ask:id()):despawn()
         end
     end
 end):in_set("scope/portal/console/client")
