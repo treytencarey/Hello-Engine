@@ -43,6 +43,8 @@
 --       sync, here and in the target: that is the placer's client's to write
 --   R23 handed over, the player takes the target's framing (its eye height and scale) and keeps the
 --       look and zoom it left the source with
+--   R25 the placer's connection leaving the source takes the owner out of the target's mirror, and
+--       the return end stays there
 --   R24 handed back, the source frames it again as a new player (no eye height of the server's, as
 --       the camera's defaults are its client's, and full size), with the look and zoom it left the
 --       target with
@@ -88,7 +90,7 @@ end
 local DEFAULTS = {
     x_hosted = false, x_ends = 0, x_end_ok = false, x_end = "", x_door = false, x_placing = false,
     x_mirrors = 0, x_owned = false, x_same = false,
-    x_mark = false, x_walk_end = false, x_walk = false, x_despawn = false, x_place = false, x_unportal = false,
+    x_mark = false, x_walk_end = false, x_walk = false, x_despawn = false, x_place = false, x_unportal = false, x_leave = false,
     y_mirrors = 0, y_end_ok = false, y_end = "", y_at_x = 0, y_hosted = false, y_returns = 0, y_same = false,
     y_arrived = false, y_owned = false, y_handed = false, y_cooling = false, y_inside = false,
     y_mark = false, y_go = "", y_status = "ready",
@@ -207,7 +209,7 @@ app:add_systems(Startup, { World, Commands }, function(world, commands)
     })
 end)
 
-local kept, walked_end, walked, gone, placed, unportaled, added_later = nil, false, false, false, false, false, false
+local kept, walked_end, walked, gone, placed, unportaled, added_later, left = nil, false, false, false, false, false, false, false
 local rogued = false
 app:add_systems(Update, { World, Commands }, function(world, commands)
     local portals = {}
@@ -318,6 +320,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     if ts.x_place and not placed and placing ~= nil then
         placed = true
         commands:entity(placing:id()):remove("placement")
+    end
+    if ts.x_leave and not left then
+        left = true
+        commands:entity(C41):despawn()
     end
     if ts.x_unportal and not unportaled and placing ~= nil then
         unportaled = true
@@ -664,6 +670,11 @@ step(within(10, function() return ts.x_ends == 1 and ts.y_mirrors == 1 and ts.y_
         ts.x_ends == 1 and ts.y_mirrors == 1 and ts.y_at_x == 9, ends())
     T("R22_its_return_end_leaves_placement_out_here_and_there", not ts.x_end_placement and not ts.y_placement,
         string.format("placement here=%s there=%s", tostring(ts.x_end_placement), tostring(ts.y_placement)))
+    ts.x_leave = true
+end)
+step(after(3), function()
+    T("R25_the_placer_leaving_the_source_keeps_the_return_end_in_the_target", ts.y_mirrors == 1,
+        "y: " .. ts.y_owner .. "; " .. ends())
     ts.x_unportal = true
 end)
 step(within(10, function() return ts.x_ends == 0 and ts.y_mirrors == 0 end), function()

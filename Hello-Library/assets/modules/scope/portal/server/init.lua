@@ -492,21 +492,23 @@ end):in_set("scope/portal/server")
 -- A PORTAL ANOTHER WORLD STANDS HERE (a mirrored portal: its return end) stays only if it leads
 -- back to the world that sent it (`core/net/peer/mirror.source_peer`, the proved scope, so a world
 -- can stand here only a way back to itself), names no place (`at`: a return end never does) and
--- names its placer; it stands once this world holds the placer's connection (`waiting`, above). One
--- refused is despawned with one line, before it is linked or hosted. The source's later re-send is
--- refused the same way.
+-- names its placer when it arrives; it stands once this world holds the placer's connection
+-- (`waiting`, above). One refused is despawned with one line, before it is linked or hosted. The
+-- source's later re-send is refused the same way. The placer's connection leaving the source later
+-- takes the owner out of the mirror, and the return end stays.
 app:add_systems(Update, {
     Query[{
         ["or"] = { added = { "core/net/peer/mirror" }, changed = { "core/net/peer/mirror", "scope/portal" } },
         with = { "scope/portal", "core/net/peer/mirror" },
     }],
+    Query[{ added = { "core/net/peer/mirror" }, with = { "scope/portal" } }],
     Commands,
-}, function(mirrored, commands)
+}, function(mirrored, arrived, commands)
     for _, p in ipairs(mirrored:iter()) do
         local portal, m = p:get("scope/portal"), p:get("core/net/peer/mirror")
         local why = (portal.target ~= m.source_peer and "leads-elsewhere")
             or (portal.at ~= nil and "at-on-return")
-            or ((type(m.owner) ~= "table" or m.owner.client == nil) and "no-owner")
+            or (arrived:contains(p:id()) and (type(m.owner) ~= "table" or m.owner.client == nil) and "no-owner")
             or nil
         if why ~= nil then
             commands:entity(p:id()):despawn()
