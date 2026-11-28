@@ -636,6 +636,38 @@ end):in_set("git/panel"):run_if({
     return not changed:is_empty()
 end)
 
+-- Root's new answer to a repositories ask replaces the one the panel had: every other answered
+-- repositories ask under the same carrier closes.
+app:add_systems(Update, {
+    Query[{
+        added = { "vault/github/repos/reply" },
+        with = { "vault/github/repos", "Request", "ChildOf" },
+    }],
+    Query[{
+        with = { "vault/github/repos", "vault/github/repos/reply", "Request" },
+    }],
+    Query[{
+        with = { "git/panel" },
+        optional = { "Children" },
+    }],
+    Commands,
+}, function(answered, replied, carriers, commands)
+    local fresh = {}
+    for _, ask in ipairs(answered:iter()) do fresh[ask:id()] = true end
+    for _, ask in ipairs(answered:iter()) do
+        local carrier = carriers:get(ask:get("ChildOf"))
+        if carrier ~= nil then
+            for _, old in ipairs(replied:iter_many(carrier:get("Children") or {})) do
+                if not fresh[old:id()] then commands:entity(old:id()):despawn() end
+            end
+        end
+    end
+end):in_set("git/panel"):run_if({
+    Query[{ added = { "vault/github/repos/reply" } }],
+}, function(added)
+    return not added:is_empty()
+end)
+
 -- The button is in the bar only while the player is signed in to GitHub, as root answers the
 -- panel's sign-in ask; before root has answered, nothing changes, so a re-ask doesn't flicker it.
 -- It comes on a new bar (the sidebar built or reloaded), on the panel itself (added, or this mod
@@ -748,22 +780,30 @@ app:add_systems(Update, {
                 ["git/panel/view"] = {},
                 ChildOf = container:id(),
             })
-            -- A new panel asks again what the player denied, each in its ask's place.
+            -- A new panel asks again what the player denied, each in its ask's place. It also asks
+            -- again for the repositories, so one the player has just given the app shows: the answer
+            -- the panel has stays until root's new one replaces it. A reload, which keeps the panel
+            -- open, and an ask root hasn't answered yet, ask nothing more.
+            local opening = not carrier:get("git/panel/state").open
+            local reask = opening
             for _, ask in ipairs(reads:iter_many(carrier:get("Children") or {})) do
+                local b, c = opt(ask, "vault/github/branches"), opt(ask, "vault/github/commits")
                 local said = opt(ask, "vault/github/repos/reply") or opt(ask, "vault/github/branches/reply")
                     or opt(ask, "vault/github/commits/reply")
+                if b == nil and c == nil and said == nil then reask = false end
                 if said ~= nil and said.error == "denied" then
                     commands:entity(ask:id()):despawn()
-                    local b, c = opt(ask, "vault/github/branches"), opt(ask, "vault/github/commits")
                     if b ~= nil then
                         ask_branches(commands, carrier:id(), b.owner, b.name)
                     elseif c ~= nil then
                         ask_commits(commands, carrier:id(), c.owner, c.name, c.branch)
                     else
                         ask_repos(commands, carrier:id())
+                        reask = false
                     end
                 end
             end
+            if reask then ask_repos(commands, carrier:id()) end
             if not carrier:get("git/panel/state").open then
                 carrier:get_mut("git/panel/state").open = true
             end
@@ -1769,3 +1809,7 @@ end):in_set("git/panel/render"):after("git/panel"):run_if({
 end)
 
 return {}
+
+-- zz reload
+
+-- zz reload
