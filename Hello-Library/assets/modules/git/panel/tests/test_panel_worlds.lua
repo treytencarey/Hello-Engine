@@ -402,10 +402,10 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("portals")
 
     elseif phase == "portals" and has_text(shown, "PORTALS") and clock > 0.3 then
-        T("W10_a_portal_this_player_placed_has_close", has_text(shown, "🌀 zzpanel/world:door") and count(shown, "Close") == 1
-            and not has_text(shown, "🌀 zzpanel/world:placing") and not has_text(shown, "🌀 zzpanel/world:theirs"),
+        T("W10_a_portal_this_player_placed_has_close", has_text(shown, "◎ zzpanel/world:door") and count(shown, "Close") == 1
+            and not has_text(shown, "◎ zzpanel/world:placing") and not has_text(shown, "◎ zzpanel/world:theirs"),
             (table.concat(shown, "|"):gsub("[^%g%s]+", "?")))
-        click(commands, button_in(world, "🌀 zzpanel/world:door", "Close"))
+        click(commands, button_in(world, "◎ zzpanel/world:door", "Close"))
         step("closed")
 
     elseif phase == "closed" and clock > 0.5 then

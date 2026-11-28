@@ -16,7 +16,7 @@
 -- B4  a branch spelt with capitals keeps them in the target, where the owner and name are lowered
 -- C1  on this world's own branch: "● Current", Pull, and a Portal that does nothing
 -- K1  8 of root's 10 commits, the message's first line cut to 30
--- U1  Pull asks the world to pull its commit, and reads "⏳ Pulling…" while the ask is out
+-- U1  Pull asks the world to pull its commit, and reads "◔ Pulling…" while the ask is out
 -- P1  a picker opens on a click, and opening one closes the other; the chosen option can't be clicked
 -- P2  the wheel over an open picker's list scrolls it, 20 px a step, and no further than its content
 -- P3  choosing a repository closes the picker, clears the branch and the commits, asks its branches
@@ -387,7 +387,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
     elseif phase == "current" and state_of(world).branch == "main" and #asks(world, "vault/github/commits") == 1
         and asks(world, "vault/github/commits")[1].id ~= mark.commits and button_labelled(world, "● Current") ~= nil then
         local shown = panel_texts(world)
-        T("C1_on_this_world_s_branch_current_pull_and_portal", has_text(shown, "⭳ Pull") and has_text(shown, "🌀 Portal")
+        T("C1_on_this_world_s_branch_current_pull_and_portal", has_text(shown, "⬇ Pull") and has_text(shown, "◎ Portal")
             and not has_text(shown, "↗ Switch"), table.concat(shown, "|"))
         reply(commands, asks(world, "vault/github/commits")[1].id, "vault/github/commits/reply", { commits = commits(10) })
         step("commits")
@@ -398,21 +398,21 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
             table.concat(shown, "|"))
         T("K1_the_first_line_cut_to_thirty", has_text(shown, "Fix the very long thing tha...")
             and has_text(shown, "commit 8"))
-        click(commands, button_labelled(world, "🌀 Portal"))
-        click(commands, button_labelled(world, "⭳ Pull"))
+        click(commands, button_labelled(world, "◎ Portal"))
+        click(commands, button_labelled(world, "⬇ Pull"))
         step("pull")
 
     elseif phase == "pull" and #world:query({ with = { "git/world/head/pull" } }) > 0
-        and has_text(panel_texts(world), "⏳ Pulling…") and clock > 0.3 then
+        and has_text(panel_texts(world), "◔ Pulling…") and clock > 0.3 then
         local pulls = world:query({ with = { "git/world/head/pull" } })
         T("U1_pull_asks_the_world_to_pull_its_commit", #pulls == 1 and pulls[1]:get("git/world/head/pull").sha == HEAD_SHA)
-        T("U1_and_reads_pulling_while_the_ask_is_out", not has_text(panel_texts(world), "⭳ Pull"))
+        T("U1_and_reads_pulling_while_the_ask_is_out", not has_text(panel_texts(world), "⬇ Pull"))
         T("C1_the_portal_on_this_world_s_branch_does_nothing", #portals(world) == 0 and request_of(world) == nil)
         -- The server takes the ask and its copy goes, which despawns the client's.
         commands:entity(pulls[1]:id()):despawn()
         step("pulled")
 
-    elseif phase == "pulled" and has_text(panel_texts(world), "⭳ Pull") then
+    elseif phase == "pulled" and has_text(panel_texts(world), "⬇ Pull") then
         click(commands, picker(world, "REPOSITORY").trigger)
         step("repo_open")
 
@@ -483,7 +483,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         local wish = asks(world, "vault/github/commits")[1].wish
         T("B2_another_repository_s_first_branch_is_chosen", state_of(world).branch == "Dev")
         T("B2_and_its_commits_asked", wish.owner == "ZzOwner" and wish.name == "Other-Repo" and wish.branch == "Dev")
-        T("B2_another_branch_offers_no_pull", not has_text(panel_texts(world), "⭳ Pull"))
+        T("B2_another_branch_offers_no_pull", not has_text(panel_texts(world), "⬇ Pull"))
         mark.commits = asks(world, "vault/github/commits")[1].id
         click(commands, button_labelled(world, "↗ Switch"))
         step("switched")
@@ -501,7 +501,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         commands:entity(mark.flip):insert({ ["core/world/flip"] = { scope = "github:zzowner/other-repo:Dev", status = "resolving" } })
         step("switching")
 
-    elseif phase == "switching" and button_labelled(world, "⏳ Switching…") ~= nil then
+    elseif phase == "switching" and button_labelled(world, "◔ Switching…") ~= nil then
         commands:entity(mark.flip):insert({ ["core/world/flip"] = {
             scope = "github:zzowner/other-repo:Dev", status = "failed", reason = "zz-refused",
         } })
@@ -509,7 +509,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "failed" and button_labelled(world, "⚠ zz-refused — retry") ~= nil then
         T("S2_the_label_follows_the_flip_ask", true)
-        click(commands, button_labelled(world, "🌀 Portal"))
+        click(commands, button_labelled(world, "◎ Portal"))
         step("portal")
 
     elseif phase == "portal" and request_of(world) ~= nil and clock > 0.3 then
@@ -524,7 +524,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
 
     elseif phase == "answered" and request_of(world) ~= nil and request_of(world).op == nil and clock > 0.2 then
         T("O2_the_server_s_answer_takes_the_ask_back", next(request_of(world)) == nil)
-        click(commands, button_labelled(world, "🌀 Portal"))
+        click(commands, button_labelled(world, "◎ Portal"))
         step("standing")
 
     elseif phase == "standing" and clock > 0.3 then
@@ -534,7 +534,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         step("cleared")
 
     elseif phase == "cleared" and clock > 0.3 then
-        click(commands, button_labelled(world, "🌀 Portal"))
+        click(commands, button_labelled(world, "◎ Portal"))
         step("asked_again")
 
     elseif phase == "asked_again" and request_of(world) ~= nil and request_of(world).op ~= nil then
@@ -578,7 +578,7 @@ app:add_systems(Update, { World, Commands }, function(world, commands)
         T("F1_enter_keeps_the_folder", state_of(world).folder == "/Hello/", tostring(state_of(world).folder))
         mark.flips = #flips(world)
         click(commands, button_labelled(world, "↗ Switch") or button_labelled(world, "⚠ zz-refused — retry"))
-        click(commands, button_labelled(world, "🌀 Portal"))
+        click(commands, button_labelled(world, "◎ Portal"))
         step("folder_asked")
 
     elseif phase == "folder_asked" and #flips(world) > mark.flips and request_of(world) ~= nil and clock > 0.5 then

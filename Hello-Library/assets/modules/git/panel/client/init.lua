@@ -1038,7 +1038,7 @@ app:add_systems(Update, {
         if current then
             switch = "● Current"
         elseif flipping then
-            switch = "⏳ Switching…"
+            switch = "◔ Switching…"
         elseif failed ~= nil then
             switch = "⚠ " .. failed .. " — retry"
         end
@@ -1160,7 +1160,7 @@ app:add_systems(Update, {
         local mine = {}
         for _, n in ipairs(own:iter()) do
             for _, p in ipairs(placed:iter_many(n:get("core/net/owns"))) do
-                mine[#mine + 1] = { id = p:id(), label = "🌀 " .. short(p:get("scope/portal").target) }
+                mine[#mine + 1] = { id = p:id(), label = "◎ " .. short(p:get("scope/portal").target) }
             end
         end
 
@@ -1180,8 +1180,8 @@ app:add_systems(Update, {
             wanted[#wanted + 1] = folder_line
             if key ~= nil then
                 wanted[#wanted + 1] = switch
-                if current then wanted[#wanted + 1] = pulling and "⏳ Pulling…" or "⭳ Pull" end
-                wanted[#wanted + 1] = "🌀 Portal"
+                if current then wanted[#wanted + 1] = pulling and "◔ Pulling…" or "⬇ Pull" end
+                wanted[#wanted + 1] = "◎ Portal"
             end
             if notice ~= nil then
                 wanted[#wanted + 1] = notice.text
@@ -1377,8 +1377,8 @@ app:add_systems(Update, {
                     }):id()
                     local switch_button = spawn_action(commands, actions, switch, not current, current or flipping, nil)
                     local pull_button = current
-                        and spawn_action(commands, actions, pulling and "⏳ Pulling…" or "⭳ Pull", not pulling, pulling, 76)
-                    local portal_button = spawn_action(commands, actions, "🌀 Portal", not current, current, nil)
+                        and spawn_action(commands, actions, pulling and "◔ Pulling…" or "⬇ Pull", not pulling, pulling, 76)
+                    local portal_button = spawn_action(commands, actions, "◎ Portal", not current, current, nil)
                     -- A click after a failure is the retry: root's driver retires the failed ask.
                     if not current then
                         switch_button:observe(On[Pointer[Click]], {
