@@ -378,23 +378,25 @@ local function label_text(target, said)
     local path, branch = tostring(target):match("^github:([^:]+):(.+)$")
     local title = path and (path:match("^[^/]+/(.+)$") or path) or tostring(target)
     if said == nil or said.sessions == nil or said.error ~= nil then
-        return branch and (title .. "  ·  " .. branch) or title
+        return branch and (title .. "  |  " .. branch) or title
     end
     local active = 0
     for _, s in ipairs(said.sessions) do
         if canonical(s.scope) == canonical(target) then active = tonumber(s.active) or 0 end
     end
     local count = active == 0 and "no one here" or (active == 1 and "1 player" or (active .. " players"))
-    return title .. "  ·  " .. (branch and (branch .. "  ·  " .. count) or count)
+    return title .. "  |  " .. (branch and (branch .. "  |  " .. count) or count)
 end
 
 -- The outline: dark copies of the line, each set off this many pixels, drawn under it.
 local OUTLINE = { { -2, -2 }, { 0, -2 }, { 2, -2 }, { -2, 0 }, { 2, 0 }, { -2, 2 }, { 0, 2 }, { 2, 2 } }
 local OUTLINE_COLOR = { r = 0, g = 0, b = 0, a = 0.85 }
+-- One line: a long one runs past the screen's edges rather than onto a second line.
+local NO_WRAP = { linebreak = "NoWrap", justify = "Center" }
 
 -- One label per portal that shows another world, its child: a plane facing its +Z, with a
--- transparent screen 720 x 60 pixels, 2.4 x 0.2 m. A label naming another target (the portal's changed) or a second
--- one goes. Each label asks root for the sessions list itself: root keeps one list however many
+-- transparent screen 1440 x 60 pixels, 4.8 x 0.2 m, wide enough for a long line, which never
+-- wraps. A label naming another target (the portal's changed) or a second one goes. Each label asks root for the sessions list itself: root keeps one list however many
 -- ask, and the ask goes with its label.
 app:add_systems(Update, {
     Query[{
@@ -428,8 +430,8 @@ app:add_systems(Update, {
         if kept == nil and target ~= nil and target ~= scope then
             local label = commands:spawn({
                 ["scope/portal/view/label"] = { target = target },
-                Mesh3d = meshes:add(Plane3d.new({ x = 0, y = 0, z = 1 }, { x = 1.2, y = 0.1 })),
-                ["ui/screen"] = { width = 720, height = 60, transparent = true },
+                Mesh3d = meshes:add(Plane3d.new({ x = 0, y = 0, z = 1 }, { x = 2.4, y = 0.1 })),
+                ["ui/screen"] = { width = 1440, height = 60, transparent = true },
                 Transform = {},
                 ["transform/follow"] = { rotation = { x = 0, y = 0, z = 0, w = 1 }, offset = { x = 0, y = 1.7, z = 0 } },
                 Visibility = "Visible",
@@ -558,11 +560,11 @@ app:add_systems(Update, {
                         end
                         for _, at in ipairs(OUTLINE) do
                             commands:spawn({ ["scope/portal/view/line"] = { part = "outline" }, Text = { text = text },
-                                TextFont = { font_size = 34 }, TextColor = { color = OUTLINE_COLOR },
+                                TextFont = { font_size = 34 }, TextLayout = NO_WRAP, TextColor = { color = OUTLINE_COLOR },
                                 ChildOf = layer(at[1], at[2]) })
                         end
                         commands:spawn({ ["scope/portal/view/line"] = { part = "text" }, Text = { text = text },
-                            TextFont = { font_size = 34 }, ["ui/style"] = { text = "text" }, ChildOf = layer(0, 0) })
+                            TextFont = { font_size = 34 }, TextLayout = NO_WRAP, ["ui/style"] = { text = "text" }, ChildOf = layer(0, 0) })
                     elseif shown[1]:get("Text") ~= text then
                         for _, line in ipairs(shown) do
                             line:get_mut("Text"):set_if_neq(text)
