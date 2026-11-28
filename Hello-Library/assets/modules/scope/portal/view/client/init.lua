@@ -378,14 +378,14 @@ local function label_text(target, said)
     local path, branch = tostring(target):match("^github:([^:]+):(.+)$")
     local title = path and (path:match("^[^/]+/(.+)$") or path) or tostring(target)
     if said == nil or said.sessions == nil or said.error ~= nil then
-        return branch and (title .. "  |  " .. branch) or title
+        return branch and (title .. "  ·  " .. branch) or title
     end
     local active = 0
     for _, s in ipairs(said.sessions) do
         if canonical(s.scope) == canonical(target) then active = tonumber(s.active) or 0 end
     end
     local count = active == 0 and "no one here" or (active == 1 and "1 player" or (active .. " players"))
-    return title .. "  |  " .. (branch and (branch .. "  |  " .. count) or count)
+    return title .. "  ·  " .. (branch and (branch .. "  ·  " .. count) or count)
 end
 
 -- The outline: dark copies of the line, each set off this many pixels, drawn under it.

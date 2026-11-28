@@ -14,7 +14,7 @@
 --   L6  a door's label stands over its mesh children, and the door's stencils never land on it
 --   L7  the portal's target changed, its label names the new one
 --   L8  the target taken away, the label and its ask go
---   L9  the label is one line, "<name>  |  <branch>  |  <count>", over eight dark copies set off
+--   L9  the label is one line, "<name>  ·  <branch>  ·  <count>", over eight dark copies set off
 --       around it (its outline), on a transparent screen with no background; a changed line gets a
 --       fresh image
 require("modules/core/init.lua")
@@ -139,7 +139,7 @@ app:add_systems(Update, { World, Commands, ResMut[Assets[Mesh]] }, function(worl
         T("L2_a_portal_to_this_world_gets_none", #labels_of(world, portal(world, "self")) == 0)
         T("L2_nor_one_being_placed", #labels_of(world, portal(world, "placing")) == 0)
         local said = lines_of(world, label)
-        T("L3_before_root_answers_the_repository_and_the_branch", said.text == "Other-World  |  dev", tostring(said.text))
+        T("L3_before_root_answers_the_repository_and_the_branch", said.text == "Other-World  ·  dev", tostring(said.text))
         T("L9_one_line_over_its_outline_saying_the_same", said.copies == 8 and said.outlines == 8,
             said.copies .. " " .. said.outlines)
         T("L9_on_a_transparent_screen_with_no_background", label:get("ui/screen").transparent == true
@@ -164,13 +164,13 @@ app:add_systems(Update, { World, Commands, ResMut[Assets[Mesh]] }, function(worl
     elseif phase == "counted" and clock > 0.5 then
         local label = labels_of(world, portal(world, "a"))[1]
         local said = lines_of(world, label)
-        T("L4_root_s_list_gives_the_count", said.text == "Other-World  |  dev  |  2 players" and said.outlines == 8,
+        T("L4_root_s_list_gives_the_count", said.text == "Other-World  ·  dev  ·  2 players" and said.outlines == 8,
             tostring(said.text) .. " " .. said.outlines)
         T("L9_a_changed_line_gets_a_fresh_empty_image", label:get("ui/screen").fresh == 1
             and label:has("pointer/target") and label:get("pointer/target").fresh == 1, tostring(label:get("ui/screen").fresh))
         local door_label = labels_of(world, portal(world, "door"))[1]
         local door_said = lines_of(world, door_label)
-        T("L4_a_world_with_no_session_has_no_one_in_it", door_said.text == "door/Hello  |  main  |  no one here",
+        T("L4_a_world_with_no_session_has_no_one_in_it", door_said.text == "door/Hello  ·  main  ·  no one here",
             tostring(door_said.text))
         T("L5_the_eye_moved_the_label_turns", near(yaw_of(label:get("transform/follow")), 0),
             tostring(yaw_of(label:get("transform/follow"))))
@@ -185,7 +185,7 @@ app:add_systems(Update, { World, Commands, ResMut[Assets[Mesh]] }, function(worl
         and labels_of(world, portal(world, "a"))[1]:get("scope/portal/view/label").target == LATER
         and lines_of(world, labels_of(world, portal(world, "a"))[1]).text ~= nil and clock > 0.3 then
         local label = labels_of(world, portal(world, "a"))[1]
-        T("L7_a_changed_target_s_label_names_the_new_one", tostring(lines_of(world, label).text):match("^later  |  ") ~= nil
+        T("L7_a_changed_target_s_label_names_the_new_one", tostring(lines_of(world, label).text):match("^later  ·  ") ~= nil
             and world:get_entity(old_label) == nil, tostring(lines_of(world, label).text))
         old_label = label:id()
         old_ask = sessions_ask(world, label):id()

@@ -17,6 +17,7 @@ UI colors by role. A UI node says what it is, and `ui/style` alone writes its `B
   - Neither reads `Interaction`: bevy_ui updates it only for cameras drawing to a window, and a world draws to a texture.
   - `alpha`: scales every color's alpha, 0 to 1 (fades).
 - The colors come from `ui/theme`, filled by a theme mod (`ui/theme/dark`); without one, nothing is colored.
+- The theme's `font` (an asset path; `ui/theme/dark` names `fonts/DejaVuSans.ttf`, in the library's assets with its licence) goes on every `Text`, `TextSpan` and `Text2d` in the world, styled or not, as `TextFont.font`; each keeps its own size. Bevy's own font has ASCII only, so a `·`, `…`, `▼`, `●` or `⚠` would be a box. A theme with no `font` leaves text on Bevy's.
 
 ## Roles
 
@@ -28,6 +29,7 @@ UI colors by role. A UI node says what it is, and `ui/style` alone writes its `B
 |----------|-------|---------|
 | First | `ui/style/init` | On a style's `changed` edge (`added` included), give a node with a hover role `Hovered`, if it has none |
 | PostUpdate | `ui/style` | Color each node whose style or `Hovered` changed, or that gained or lost `Pressed`; every node when the theme changed |
+| PostUpdate | `ui/style/font` | Put the theme's `font` on each new text; on every text when the theme changed. A headless run has no font loader: the load is refused once, and text stays on Bevy's font |
 | First | `ui/style/removed` | When `ui/style` is removed from a node that stays, remove its colors and `Pressed` |
 
 | Observer | Purpose |
@@ -59,3 +61,4 @@ commands:entity(theme):patch({ ["ui/theme"] = { bg = { r = 0.1, g = 0.1, b = 0.2
 - A pointer event goes up from the node it hit only where Bevy knows the `Window` component: its traversal reads `Option<&Window>`, and with no `Window` registered it stops at the first node. A world VM registers it (bevy_ui's focus system queries it); a headless suite does not, so `test_style` spawns and despawns one before it presses a label.
 - `Hovered` itself is picking's; a headless suite has no picking, so `test_style` inserts it as picking does. That a label keeps its button hovered is Bevy's rule (picking walks up from the node under the pointer), seen only in a window.
 - A role is a colour's name in the theme: `text = "text_dim"`.
+- Suites: `test_style` (headless, `--host --headless`), `test_style_font` (windowed, `--host`: the font needs the loader a window brings).

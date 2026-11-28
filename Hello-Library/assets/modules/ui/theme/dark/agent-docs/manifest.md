@@ -10,7 +10,7 @@ A dark theme: dark panels, light text, blue accents. Extends `ui/theme`.
 
 ## Components
 
-- `ui/theme/dark = {}`: put on any one entity of the world, usually at world start. `ui/theme` arrives with it, and this mod fills every role.
+- `ui/theme/dark = {}`: put on any one entity of the world, usually at world start. `ui/theme` arrives with it, and this mod fills every role, and `font = "fonts/DejaVuSans.ttf"` (DejaVu Sans, licence beside it in `fonts/`), which `ui/style` puts on every text.
 
 ## Systems
 

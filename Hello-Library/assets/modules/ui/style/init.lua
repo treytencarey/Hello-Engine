@@ -20,6 +20,7 @@ local Press = require("bevy::picking::prelude::Press")
 local Release = require("bevy::picking::prelude::Release")
 local DragEnd = require("bevy::picking::prelude::DragEnd")
 local Cancel = require("bevy::picking::prelude::Cancel")
+local AssetServer = require("bevy::asset::AssetServer")
 
 -- Picking keeps `Hovered` only on the entities that carry it, so a node with a hover role gets one.
 -- `Interaction` would not do: bevy_ui updates it only for cameras drawing to a window, and a world
@@ -100,6 +101,44 @@ app:add_systems(PostUpdate, {
         end
     end
 end):in_set("ui/style")
+
+-- The theme's `font` (an asset path) on every text in the world, styled or not: Bevy's own font
+-- has ASCII only, so a `·` or a `⚠` in any mod's text would be a box. A new text gets it; every
+-- text gets it when the theme changes. A theme with no font leaves the text on Bevy's.
+local fonts = {}
+app:add_systems(PostUpdate, {
+    Query[{ added = { "Text" } }],
+    Query[{ added = { "TextSpan" } }],
+    Query[{ added = { "Text2d" } }],
+    Query[{ with = { "Text" } }],
+    Query[{ with = { "TextSpan" } }],
+    Query[{ with = { "Text2d" } }],
+    Query[{ changed = { "ui/theme" } }],
+    Query[{ with = { "ui/theme" } }],
+    Res[AssetServer],
+    Commands,
+}, function(new_texts, new_spans, new_2d, texts, spans, texts_2d, theme_changes, themes, asset_server, commands)
+    local t = themes:iter()[1]
+    local path = t and t:get("ui/theme").font
+    if path == nil then return end
+    local kinds = { new_texts, new_spans, new_2d }
+    if not theme_changes:is_empty() then kinds = { texts, spans, texts_2d } end
+    local found = {}
+    for _, kind in ipairs(kinds) do
+        for _, e in ipairs(kind:iter()) do found[#found + 1] = e end
+    end
+    if #found == 0 or fonts[path] == false then return end
+    if fonts[path] == nil then
+        -- A headless run has no font loader, and the load is refused there: its text stays on
+        -- Bevy's font, which nothing draws.
+        local ok, handle = pcall(asset_server.load, asset_server, path)
+        fonts[path] = ok and handle or false
+        if not ok then return end
+    end
+    for _, e in ipairs(found) do
+        commands:entity(e:id()):patch({ TextFont = { font = fonts[path] } })
+    end
+end):in_set("ui/style/font")
 
 -- A pointer event reaches each node on its way up from the node it hit (a button's label is hit,
 -- not the button), so a node with a press role is pressed whichever of its descendants was.

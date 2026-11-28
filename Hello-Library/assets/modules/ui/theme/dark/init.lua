@@ -11,6 +11,7 @@ app:add_systems(First, {
     for _, e in ipairs(themes:iter()) do
         commands:entity(e:id()):patch({
             ["ui/theme"] = {
+                font = "fonts/DejaVuSans.ttf",
                 bg = { r = 0.12, g = 0.12, b = 0.14, a = 1 },
                 header_bg = { r = 0.15, g = 0.15, b = 0.18, a = 1 },
                 icon_bar_bg = { r = 0.08, g = 0.08, b = 0.10, a = 1 },

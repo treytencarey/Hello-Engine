@@ -10,7 +10,7 @@ The colors UI roles stand for, one theme per world. A theme mod extends it with 
 
 ## Components
 
-- `ui/theme = { <role> = { r, g, b, a } }`: written by the theme mod. The roles `ui/style` users rely on are listed in the `ui/style` manifest; a theme may add more.
+- `ui/theme = { <role> = { r, g, b, a }, font = <asset path> }`: written by the theme mod. The roles `ui/style` users rely on are listed in the `ui/style` manifest; a theme may add more. `font` is optional: `ui/style` puts it on every text in the world.
 
 ## Use
 
