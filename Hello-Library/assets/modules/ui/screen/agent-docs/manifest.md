@@ -10,17 +10,17 @@ UI drawn on a mesh. `ui/screen` gives a mesh an image of its size, a camera of i
 
 ## Components
 
-- `ui/screen = { width, height }`: on a mesh, the image's size in pixels. Added and removed by the mod that makes the mesh. A changed size builds a new image for the same camera and root.
+- `ui/screen = { width, height, transparent, fresh }`: on a mesh, the image's size in pixels. Added and removed by the mod that makes the mesh. A changed size builds a new image for the same camera and root. With `transparent = true` what the UI leaves undrawn shows the scene behind: the material blends, and the camera never clears the image (`ClearColorConfig::None`), as a transparent clear colour is a `Color` inside the enum, which Lua cannot set. A new image starts empty, so a transparent UI that changes bumps `fresh` (any number) for a new image; otherwise the old drawing stays under the new. `transparent` is read when the camera is first spawned.
 - `ui/screen/camera = {}`: the `Camera2d` drawing the screen, a child of the mesh, order -200 (before the window's).
 - `ui/screen/root = {}`: the screen's UI root, a `Node` of the image's size, with `UiTargetCamera` naming the screen's camera. A root of its own, not a child of the mesh: a UI node under a scene entity is not laid out. Its `Pickable` neither blocks nor hovers, so it never stands between the pointer and the UI on it, nor between the pointer and another root drawn by the same camera.
 
-The mesh also gets `MeshMaterial3d<StandardMaterial>` (the image, unlit) and `pointer/target = { image, width, height }`. Taking `ui/screen` off takes those off and despawns the camera and the root; despawning the mesh takes the camera with it, and the root follows.
+The mesh also gets `MeshMaterial3d<StandardMaterial>` (the image, unlit, blended when transparent) and `pointer/target = { image, width, height, fresh }`. Taking `ui/screen` off takes those off and despawns the camera and the root; despawning the mesh takes the camera with it, and the root follows.
 
 ## Systems
 
 | Schedule | Set | Purpose |
 |----------|-------|---------|
-| First | `ui/screen/build` | On an added or changed `ui/screen` whose size differs from its `pointer/target`: a new image; the camera and root spawned the first time, retargeted and resized after; the material and `pointer/target` |
+| First | `ui/screen/build` | On an added or changed `ui/screen` whose size or `fresh` differs from its `pointer/target`: a new image; the camera and root spawned the first time, retargeted and resized after; the material and `pointer/target` |
 | First | `ui/screen/target_back` | On a removed `pointer/target` while `ui/screen` stays: build again |
 | First | `ui/screen/taken_off` | On a removed `ui/screen` on a mesh that stays: take the material and `pointer/target` off, despawn the camera |
 | First, after `ui/screen/taken_off` | `ui/screen/removed` | On a removed camera: despawn the roots naming no camera |

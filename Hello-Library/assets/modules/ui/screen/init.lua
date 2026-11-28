@@ -4,7 +4,9 @@
 -- points a root of its own at the camera. A size changed builds a new image for the same camera
 -- and root.
 --
--- ui/screen = { width = <pixels>, height = <pixels> }: on a mesh
+-- ui/screen = { width = <pixels>, height = <pixels>, transparent, fresh }: on a mesh. `transparent`:
+-- true, what the UI leaves undrawn shows the scene behind; the image is then never cleared, so a UI
+-- that changes bumps `fresh` (any number) for a new, empty image
 --
 -- ui/screen/camera = {}: the camera drawing the screen, a child of the mesh
 --
@@ -33,14 +35,21 @@ app:add_systems(First, {
         local s = e:get("ui/screen")
         local w, h = math.floor(s.width or 0), math.floor(s.height or 0)
         local target = e:get("pointer/target")
-        if w > 0 and h > 0 and (target == nil or target.width ~= w or target.height ~= h) then
+        if w > 0 and h > 0 and (target == nil or target.width ~= w or target.height ~= h
+                or (s.fresh or 0) ~= (target.fresh or 0)) then
             local image = images:add(Image.new_target_texture(w, h, "bgra8unorm-srgb"))
             local camera = cameras:iter_many_mut(e:get("Children") or {})[1]
             if camera == nil then
                 local id = commands:spawn({
                     ["ui/screen/camera"] = {},
                     Camera2d = {},
-                    Camera = { order = CAMERA_ORDER, target = { Image = image } },
+                    Camera = {
+                        order = CAMERA_ORDER,
+                        target = { Image = image },
+                        -- A transparent screen is never cleared: a new image starts empty, and a
+                        -- transparent clear colour (a `Color` inside the enum) is not one Lua can set.
+                        clear_color = s.transparent and "None" or "Default",
+                    },
                     ChildOf = e:id(),
                 }):id()
                 commands:spawn({
@@ -60,8 +69,12 @@ app:add_systems(First, {
                 end
             end
             commands:entity(e:id()):insert({
-                ["MeshMaterial3d<StandardMaterial>"] = materials:add({ base_color_texture = image, unlit = true }),
-                ["pointer/target"] = { image = image, width = w, height = h },
+                ["MeshMaterial3d<StandardMaterial>"] = materials:add({
+                    base_color_texture = image,
+                    unlit = true,
+                    alpha_mode = s.transparent and "Blend" or "Opaque",
+                }),
+                ["pointer/target"] = { image = image, width = w, height = h, fresh = s.fresh },
             })
         end
     end
